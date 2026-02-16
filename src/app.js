@@ -65,12 +65,15 @@ app.use('/api/customers', customerRoutes);
 app.use('/api/categories', categoryRoutes);
 app.use('/api/modifications', modificationRoutes);
 
-// Database Sync
-sequelize.sync().then(() => {
-    console.log('Database connected and synced');
-}).catch(err => {
-    console.error('Database connection failed:', err);
-});
+// Database Sync - Branch must exist before UserDetail (FK reference)
+Branch.sync()
+    .then(() => sequelize.sync())
+    .then(() => {
+        console.log('Database connected and synced');
+    })
+    .catch(err => {
+        console.error('Database connection failed:', err);
+    });
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
