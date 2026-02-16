@@ -17,9 +17,22 @@ const User = sequelize.define('User', {
         allowNull: false,
     },
     role: {
-        type: DataTypes.ENUM('admin', 'staff'),
-        defaultValue: 'staff',
+        type: DataTypes.ENUM('admin', 'manager', 'cashier'),
+        allowNull: false,
     },
+    passcode: {
+        type: DataTypes.STRING,
+        allowNull: true,
+        comment: 'Hashed passcode - only for admin and manager roles',
+    },
+    status: {
+        type: DataTypes.ENUM('active', 'inactive'),
+        defaultValue: 'active',
+    },
+}, {
+    tableName: 'users',
+    underscored: true,
+    timestamps: true,
 });
 
 module.exports = User;
