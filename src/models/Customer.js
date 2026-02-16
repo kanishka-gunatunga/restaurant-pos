@@ -2,10 +2,15 @@ const { DataTypes } = require('sequelize');
 const sequelize = require('../config/database');
 
 const Customer = sequelize.define('Customer', {
+    id:{
+        type: DataTypes.INTEGER,
+        autoIncrement: true,
+        primaryKey: true,
+    },
     mobile: {
         type: DataTypes.STRING,
-        primaryKey: true,
         allowNull: false,
+        unique: true,
     },
     name: {
         type: DataTypes.STRING,

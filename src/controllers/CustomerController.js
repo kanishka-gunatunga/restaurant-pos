@@ -12,7 +12,7 @@ exports.findOrCreate = async (req, res) => {
             return res.status(400).json({ message: 'Mobile and name are required' });
         }
 
-        let customer = await Customer.findByPk(mobile);
+        let customer = await Customer.findOne({ where: { mobile } });
 
         if (customer) {
             return res.json(customer);
@@ -28,7 +28,7 @@ exports.findOrCreate = async (req, res) => {
 exports.getByMobile = async (req, res) => {
     try {
         const { mobile } = req.params;
-        const customer = await Customer.findByPk(mobile);
+        const customer = await Customer.findOne({ where: { mobile } });
 
         if (!customer) {
             return res.status(404).json({ message: 'Customer not found' });

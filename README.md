@@ -6,12 +6,7 @@ Node.js/Express backend for a restaurant Point of Sale system.
 
 **New to this project?** Start here:
 
-👉 **[Complete Setup Guide](docs/SETUP_GUIDE.md)** - Step-by-step guide covering:
-- Creating the MySQL database
-- Understanding JWT_SECRET
-- Configuring .env
-- Running the application
-- Testing your setup
+👉 **[Setup Guide](docs/SETUP_GUIDE.md)** - Database, JWT_SECRET, .env, running the app
 
 ## Quick Start (after setup)
 
