@@ -1,7 +1,7 @@
 const { DataTypes } = require('sequelize');
 const sequelize = require('../config/database');
 
-const Product = sequelize.define('Product', {
+const Category = sequelize.define('Category', {
     id: {
         type: DataTypes.INTEGER,
         autoIncrement: true,
@@ -11,21 +11,9 @@ const Product = sequelize.define('Product', {
         type: DataTypes.STRING,
         allowNull: false,
     },
-    image: {
-        type: DataTypes.STRING,
-    },
-    shortDescription: {
-        type: DataTypes.STRING,
-    },
-    description: {
-        type: DataTypes.TEXT,
-    },
-    sku: {
-        type: DataTypes.STRING,
-        unique: true,
-    },
-    categoryId: {
+    parentId: {
         type: DataTypes.INTEGER,
+        allowNull: true,
         references: {
             model: 'Categories',
             key: 'id',
@@ -33,4 +21,8 @@ const Product = sequelize.define('Product', {
     },
 });
 
-module.exports = Product;
+// Self-association for subcategories
+Category.hasMany(Category, { as: 'subcategories', foreignKey: 'parentId' });
+Category.belongsTo(Category, { as: 'parent', foreignKey: 'parentId' });
+
+module.exports = Category;
