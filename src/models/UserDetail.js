@@ -34,7 +34,10 @@ const UserDetail = sequelize.define('UserDetail', {
         type: DataTypes.INTEGER,
         allowNull: false,
         defaultValue: 1,
-        comment: 'Placeholder for future branch table - default 1 for now',
+        references: {
+            model: 'branches',
+            key: 'id',
+        },
     },
 }, {
     tableName: 'user_details',
