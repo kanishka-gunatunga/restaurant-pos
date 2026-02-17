@@ -1,19 +1,25 @@
 const { DataTypes } = require('sequelize');
 const sequelize = require('../config/database');
 
-const Branch = sequelize.define('Branch', {
-    id: {
+const Customer = sequelize.define('Customer', {
+    id:{
         type: DataTypes.INTEGER,
         autoIncrement: true,
         primaryKey: true,
+    },
+    mobile: {
+        type: DataTypes.STRING,
+        allowNull: false,
+        unique: true,
     },
     name: {
         type: DataTypes.STRING,
         allowNull: false,
     },
 }, {
-    tableName: 'branches',
+    tableName: 'customers',
     underscored: true,
+    timestamps: true,
 });
 
-module.exports = Branch;
+module.exports = Customer;

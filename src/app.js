@@ -4,10 +4,15 @@ const bodyParser = require('body-parser');
 const sequelize = require('./config/database');
 require('dotenv').config();
 
+// Load model associations (must run after models are loaded)
+require('./models/associations');
+
 const authRoutes = require('./routes/authRoutes');
+const userRoutes = require('./routes/userRoutes');
 const productRoutes = require('./routes/productRoutes');
 const orderRoutes = require('./routes/orderRoutes');
 const uploadRoutes = require('./routes/uploadRoutes');
+const customerRoutes = require('./routes/customerRoutes');
 const categoryRoutes = require('./routes/categoryRoutes');
 const modificationRoutes = require('./routes/modificationRoutes');
 
@@ -74,9 +79,11 @@ app.use(express.urlencoded({ extended: true }));
 
 // Routes
 app.use('/api/auth', authRoutes);
+app.use('/api/users', userRoutes);
 app.use('/api/products', productRoutes);
 app.use('/api/orders', orderRoutes);
 app.use('/api/upload', uploadRoutes);
+app.use('/api/customers', customerRoutes);
 app.use('/api/categories', categoryRoutes);
 app.use('/api/modifications', modificationRoutes);
 

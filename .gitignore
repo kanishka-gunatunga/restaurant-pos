@@ -1,5 +1,28 @@
-node_modules
+# Dependencies
+node_modules/
+
+# Environment variables (never commit secrets)
 .env
+.env.local
+.env.*.local
+
+# Build output
+dist/
+build/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# OS files
 .DS_Store
-dist
-package-lock.json
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+.history/
+
+# Testing
+coverage/
