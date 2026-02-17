@@ -24,6 +24,8 @@ const VariationPrice = require('./models/VariationPrice');
 const Modification = require('./models/Modification');
 const ProductModification = require('./models/ProductModification');
 const ProductModificationPrice = require('./models/ProductModificationPrice');
+const OrderItem = require('./models/OrderItem');
+const OrderItemModification = require('./models/OrderItemModification');
 
 // Product - Category Association
 Category.hasMany(Product, { foreignKey: 'categoryId' });
@@ -53,6 +55,17 @@ ProductModification.belongsTo(Modification, { foreignKey: 'modificationId' });
 ProductModification.hasMany(ProductModificationPrice, { foreignKey: 'productModificationId', as: 'prices', onDelete: 'CASCADE', hooks: true });
 ProductModificationPrice.belongsTo(ProductModification, { foreignKey: 'productModificationId' });
 ProductModificationPrice.belongsTo(Branch, { foreignKey: 'branchId' });
+
+// Order - OrderItem Association
+Order.hasMany(OrderItem, { foreignKey: 'orderId', as: 'items', onDelete: 'CASCADE', hooks: true });
+OrderItem.belongsTo(Order, { foreignKey: 'orderId' });
+OrderItem.belongsTo(Product, { foreignKey: 'productId', as: 'product' });
+OrderItem.belongsTo(Variation, { foreignKey: 'variationId', as: 'variation' });
+
+// OrderItem - OrderItemModification Association
+OrderItem.hasMany(OrderItemModification, { foreignKey: 'orderItemId', as: 'modifications', onDelete: 'CASCADE', hooks: true });
+OrderItemModification.belongsTo(OrderItem, { foreignKey: 'orderItemId' });
+OrderItemModification.belongsTo(Modification, { foreignKey: 'modificationId', as: 'modification' });
 
 // Middleware
 app.use(cors());

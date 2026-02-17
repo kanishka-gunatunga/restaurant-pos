@@ -85,12 +85,12 @@ exports.createProduct = async (req, res) => {
         }
 
         const {
-            name, shortDescription, description, sku, categoryId,
+            name, code, shortDescription, description, sku, categoryId,
             variations, modifications
         } = productData;
 
         const product = await Product.create({
-            name, image: imageUrl, shortDescription, description, sku, categoryId
+            name, code, image: imageUrl, shortDescription, description, sku, categoryId
         }, { transaction: t });
 
         // Handle Variations
@@ -173,7 +173,7 @@ exports.updateProduct = async (req, res) => {
 
         // 1. Update base product
         await Product.update({
-            name, image: imageUrl, shortDescription, description, sku, categoryId
+            name, code, image: imageUrl, shortDescription, description, sku, categoryId
         }, { where: { id }, transaction: t });
 
         // 2. Sync Variations
@@ -244,6 +244,34 @@ exports.updateProduct = async (req, res) => {
             });
         }
         res.status(400).json({ message: error.message });
+    }
+};
+
+exports.getProductsByCategory = async (req, res) => {
+    try {
+        const { categoryId } = req.params;
+        const products = await Product.findAll({
+            where: { categoryId },
+            include: [
+                { model: Category },
+                {
+                    model: Variation,
+                    as: 'variations',
+                    include: [{ model: VariationPrice, as: 'prices' }]
+                },
+                {
+                    model: ProductModification,
+                    as: 'productModifications',
+                    include: [
+                        { model: Modification },
+                        { model: ProductModificationPrice, as: 'prices' }
+                    ]
+                }
+            ]
+        });
+        res.json(products);
+    } catch (error) {
+        res.status(500).json({ message: error.message });
     }
 };
 
