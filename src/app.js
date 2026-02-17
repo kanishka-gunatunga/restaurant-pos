@@ -30,20 +30,27 @@ Category.hasMany(Product, { foreignKey: 'categoryId' });
 Product.belongsTo(Category, { foreignKey: 'categoryId' });
 
 // Product - Variation Association
-Product.hasMany(Variation, { foreignKey: 'productId', as: 'variations' });
+Product.hasMany(Variation, { foreignKey: 'productId', as: 'variations', onDelete: 'CASCADE', hooks: true });
 Variation.belongsTo(Product, { foreignKey: 'productId' });
 
 // Variation - VariationPrice Association
-Variation.hasMany(VariationPrice, { foreignKey: 'variationId', as: 'prices' });
+Variation.hasMany(VariationPrice, { foreignKey: 'variationId', as: 'prices', onDelete: 'CASCADE', hooks: true });
 VariationPrice.belongsTo(Variation, { foreignKey: 'variationId' });
 VariationPrice.belongsTo(Branch, { foreignKey: 'branchId' });
 
-// Product - Modification (Many-to-Many via ProductModification)
+// Product - Modification Many-to-Many
 Product.belongsToMany(Modification, { through: ProductModification, foreignKey: 'productId', as: 'modifications' });
 Modification.belongsToMany(Product, { through: ProductModification, foreignKey: 'modificationId' });
 
+// Explicit associations for the join table to allow nested includes
+Product.hasMany(ProductModification, { foreignKey: 'productId', as: 'productModifications', onDelete: 'CASCADE', hooks: true });
+ProductModification.belongsTo(Product, { foreignKey: 'productId' });
+
+Modification.hasMany(ProductModification, { foreignKey: 'modificationId', as: 'productModifications' });
+ProductModification.belongsTo(Modification, { foreignKey: 'modificationId' });
+
 // ProductModification - ProductModificationPrice Association
-ProductModification.hasMany(ProductModificationPrice, { foreignKey: 'productModificationId', as: 'prices' });
+ProductModification.hasMany(ProductModificationPrice, { foreignKey: 'productModificationId', as: 'prices', onDelete: 'CASCADE', hooks: true });
 ProductModificationPrice.belongsTo(ProductModification, { foreignKey: 'productModificationId' });
 ProductModificationPrice.belongsTo(Branch, { foreignKey: 'branchId' });
 
@@ -61,7 +68,7 @@ app.use('/api/categories', categoryRoutes);
 app.use('/api/modifications', modificationRoutes);
 
 // Database Sync
-sequelize.sync().then(() => {
+sequelize.sync({ alter: true }).then(() => {
     console.log('Database connected and synced');
 }).catch(err => {
     console.error('Database connection failed:', err);
