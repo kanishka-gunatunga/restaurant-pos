@@ -44,12 +44,16 @@ const Order = sequelize.define('Order', {
         allowNull: true,
     },
     status: {
-        type: DataTypes.ENUM('pending', 'preparing', 'ready', 'reject', 'completed', 'canceled'),
+        type: DataTypes.ENUM('pending', 'preparing', 'ready', 'hold', 'complete', 'cancel'),
         defaultValue: 'pending',
     },
     rejectReason: {
         type: DataTypes.TEXT,
         allowNull: true,
+    },
+    userId: {
+        type: DataTypes.INTEGER,
+        allowNull: true, // Allow null for now, but should be populated via controller
     },
 });
 

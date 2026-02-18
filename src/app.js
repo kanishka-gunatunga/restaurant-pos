@@ -15,6 +15,8 @@ const uploadRoutes = require('./routes/uploadRoutes');
 const customerRoutes = require('./routes/customerRoutes');
 const categoryRoutes = require('./routes/categoryRoutes');
 const modificationRoutes = require('./routes/modificationRoutes');
+const paymentRoutes = require('./routes/paymentRoutes');
+const reportRoutes = require('./routes/reportRoutes');
 
 const app = express();
 
@@ -31,6 +33,7 @@ const ProductModification = require('./models/ProductModification');
 const ProductModificationPrice = require('./models/ProductModificationPrice');
 const OrderItem = require('./models/OrderItem');
 const OrderItemModification = require('./models/OrderItemModification');
+const Payment = require('./models/Payment');
 
 // Product - Category Association
 Category.hasMany(Product, { foreignKey: 'categoryId' });
@@ -72,6 +75,10 @@ OrderItem.hasMany(OrderItemModification, { foreignKey: 'orderItemId', as: 'modif
 OrderItemModification.belongsTo(OrderItem, { foreignKey: 'orderItemId' });
 OrderItemModification.belongsTo(Modification, { foreignKey: 'modificationId', as: 'modification' });
 
+// Order - Payment Association
+Order.hasMany(Payment, { foreignKey: 'orderId', as: 'payments', onDelete: 'CASCADE', hooks: true });
+Payment.belongsTo(Order, { foreignKey: 'orderId' });
+
 // Middleware
 app.use(cors());
 app.use(express.json());
@@ -86,9 +93,11 @@ app.use('/api/upload', uploadRoutes);
 app.use('/api/customers', customerRoutes);
 app.use('/api/categories', categoryRoutes);
 app.use('/api/modifications', modificationRoutes);
+app.use('/api/payments', paymentRoutes);
+app.use('/api/reports', reportRoutes);
 
 // Database Sync
-sequelize.sync({ alter: true }).then(() => {
+sequelize.sync().then(() => {
     console.log('Database connected and synced');
 }).catch(err => {
     console.error('Database connection failed:', err);

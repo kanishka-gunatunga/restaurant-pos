@@ -107,7 +107,8 @@ exports.createProduct = async (req, res) => {
                             variationId: variation.id,
                             branchId: p.branchId,
                             price: p.price,
-                            discountPrice: p.discountPrice
+                            discountPrice: p.discountPrice,
+                            stockQuantity: p.stockQuantity || 0
                         }, { transaction: t });
                     }
                 }
@@ -198,7 +199,8 @@ exports.updateProduct = async (req, res) => {
                             variationId: variation.id,
                             branchId: p.branchId,
                             price: p.price,
-                            discountPrice: p.discountPrice
+                            discountPrice: p.discountPrice,
+                            stockQuantity: p.stockQuantity || 0
                         }, { transaction: t });
                     }
                 }

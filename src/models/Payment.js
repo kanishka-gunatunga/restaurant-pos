@@ -1,33 +1,40 @@
 const { DataTypes } = require('sequelize');
 const sequelize = require('../config/database');
 
-const VariationPrice = sequelize.define('VariationPrice', {
+const Payment = sequelize.define('Payment', {
     id: {
         type: DataTypes.INTEGER,
         autoIncrement: true,
         primaryKey: true,
     },
-    variationId: {
+    orderId: {
         type: DataTypes.INTEGER,
         allowNull: false,
     },
-    branchId: {
-        type: DataTypes.INTEGER,
+    paymentMethod: {
+        type: DataTypes.ENUM('cash', 'card'),
         allowNull: false,
     },
-    price: {
+    amount: {
         type: DataTypes.DECIMAL(10, 2),
         allowNull: false,
-        defaultValue: 0.00,
     },
-    discountPrice: {
-        type: DataTypes.DECIMAL(10, 2),
+    transactionId: {
+        type: DataTypes.STRING,
         allowNull: true,
     },
-    stockQuantity: {
+    status: {
+        type: DataTypes.ENUM('pending', 'paid', 'refund'),
+        defaultValue: 'pending',
+    },
+    userId: {
         type: DataTypes.INTEGER,
         allowNull: true,
-    }
+    },
+}, {
+    tableName: 'payments',
+    underscored: true,
+    timestamps: true,
 });
 
-module.exports = VariationPrice;
+module.exports = Payment;
