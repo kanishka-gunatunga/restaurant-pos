@@ -1,5 +1,7 @@
 const Payment = require('../models/Payment');
 const Order = require('../models/Order');
+const Session = require('../models/Session');
+const SessionTransaction = require('../models/SessionTransaction');
 const sequelize = require('../config/database');
 
 exports.createPayment = async (req, res) => {
@@ -25,10 +27,35 @@ exports.createPayment = async (req, res) => {
             userId: req.user?.id
         }, { transaction: t });
 
-        // Update order status if payment is successful
         // if (status === 'paid') {
         //     await order.update({ status: 'complete' }, { transaction: t });
         // }
+
+        // Session integration for cash payments
+        if (paymentMethod === 'cash' && (status === 'paid' || !status)) {
+            const session = await Session.findOne({
+                where: {
+                    userId: req.user?.id,
+                    status: 'open'
+                }
+            });
+
+            if (session) {
+                const amountFloat = parseFloat(amount);
+                await session.update({
+                    currentBalance: parseFloat(session.currentBalance) + amountFloat
+                }, { transaction: t });
+
+                await SessionTransaction.create({
+                    sessionId: session.id,
+                    type: 'sale',
+                    amount: amountFloat,
+                    paymentId: payment.id,
+                    userId: req.user?.id,
+                    description: `Cash sale for Order #${orderId}`
+                }, { transaction: t });
+            }
+        }
 
         await t.commit();
         res.status(201).json(payment);
@@ -58,7 +85,6 @@ exports.updatePaymentStatus = async (req, res) => {
 
         await payment.update({ status: finalStatus }, { transaction: t });
 
-        // const order = await Order.findByPk(payment.orderId);
         // if (order) {
         //     if (finalStatus === 'paid') {
         //         await order.update({ status: 'completed' }, { transaction: t });
@@ -67,7 +93,33 @@ exports.updatePaymentStatus = async (req, res) => {
         //     }
         // }
 
-        // await t.commit();
+        // Session integration for cash refunds
+        if (payment.paymentMethod === 'cash' && finalStatus === 'refund') {
+            const session = await Session.findOne({
+                where: {
+                    userId: req.user?.id,
+                    status: 'open'
+                }
+            });
+
+            if (session) {
+                const amountFloat = parseFloat(payment.amount);
+                await session.update({
+                    currentBalance: parseFloat(session.currentBalance) - amountFloat
+                }, { transaction: t });
+
+                await SessionTransaction.create({
+                    sessionId: session.id,
+                    type: 'refund',
+                    amount: amountFloat,
+                    paymentId: payment.id,
+                    userId: req.user?.id,
+                    description: `Refund for Payment #${payment.id} (Order #${payment.orderId})`
+                }, { transaction: t });
+            }
+        }
+
+        await t.commit();
         res.json({ message: 'Payment status updated', payment });
     } catch (error) {
         await t.rollback();

@@ -17,6 +17,8 @@ const categoryRoutes = require('./routes/categoryRoutes');
 const modificationRoutes = require('./routes/modificationRoutes');
 const paymentRoutes = require('./routes/paymentRoutes');
 const reportRoutes = require('./routes/reportRoutes');
+const sessionRoutes = require('./routes/sessionRoutes');
+const branchRoutes = require('./routes/branchRoutes');
 
 const app = express();
 
@@ -29,11 +31,15 @@ const Branch = require('./models/Branch');
 const Variation = require('./models/Variation');
 const VariationPrice = require('./models/VariationPrice');
 const Modification = require('./models/Modification');
+const ModificationItem = require('./models/ModificationItem');
 const ProductModification = require('./models/ProductModification');
 const ProductModificationPrice = require('./models/ProductModificationPrice');
+const ProductModificationItemPrice = require('./models/ProductModificationItemPrice');
 const OrderItem = require('./models/OrderItem');
 const OrderItemModification = require('./models/OrderItemModification');
 const Payment = require('./models/Payment');
+const Session = require('./models/Session');
+const SessionTransaction = require('./models/SessionTransaction');
 
 // Product - Category Association
 Category.hasMany(Product, { foreignKey: 'categoryId' });
@@ -52,17 +58,30 @@ VariationPrice.belongsTo(Branch, { foreignKey: 'branchId' });
 Product.belongsToMany(Modification, { through: ProductModification, foreignKey: 'productId', as: 'modifications' });
 Modification.belongsToMany(Product, { through: ProductModification, foreignKey: 'modificationId' });
 
+// Modification - ModificationItem Association
+Modification.hasMany(ModificationItem, { foreignKey: 'modificationId', as: 'items', onDelete: 'CASCADE', hooks: true });
+ModificationItem.belongsTo(Modification, { foreignKey: 'modificationId' });
+
 // Explicit associations for the join table to allow nested includes
 Product.hasMany(ProductModification, { foreignKey: 'productId', as: 'productModifications', onDelete: 'CASCADE', hooks: true });
 ProductModification.belongsTo(Product, { foreignKey: 'productId' });
 
+Variation.hasMany(ProductModification, { foreignKey: 'variationId', as: 'variationModifications', onDelete: 'CASCADE', hooks: true });
+ProductModification.belongsTo(Variation, { foreignKey: 'variationId' });
+
 Modification.hasMany(ProductModification, { foreignKey: 'modificationId', as: 'productModifications' });
 ProductModification.belongsTo(Modification, { foreignKey: 'modificationId' });
 
-// ProductModification - ProductModificationPrice Association
+// ProductModification - ProductModificationPrice Association (Legacy)
 ProductModification.hasMany(ProductModificationPrice, { foreignKey: 'productModificationId', as: 'prices', onDelete: 'CASCADE', hooks: true });
 ProductModificationPrice.belongsTo(ProductModification, { foreignKey: 'productModificationId' });
 ProductModificationPrice.belongsTo(Branch, { foreignKey: 'branchId' });
+
+// ProductModification - ProductModificationItemPrice Association (New)
+ProductModification.hasMany(ProductModificationItemPrice, { foreignKey: 'productModificationId', as: 'itemPrices', onDelete: 'CASCADE', hooks: true });
+ProductModificationItemPrice.belongsTo(ProductModification, { foreignKey: 'productModificationId' });
+ProductModificationItemPrice.belongsTo(ModificationItem, { foreignKey: 'modificationItemId', as: 'item' });
+ProductModificationItemPrice.belongsTo(Branch, { foreignKey: 'branchId' });
 
 // Order - OrderItem Association
 Order.hasMany(OrderItem, { foreignKey: 'orderId', as: 'items', onDelete: 'CASCADE', hooks: true });
@@ -73,11 +92,12 @@ OrderItem.belongsTo(Variation, { foreignKey: 'variationId', as: 'variation' });
 // OrderItem - OrderItemModification Association
 OrderItem.hasMany(OrderItemModification, { foreignKey: 'orderItemId', as: 'modifications', onDelete: 'CASCADE', hooks: true });
 OrderItemModification.belongsTo(OrderItem, { foreignKey: 'orderItemId' });
-OrderItemModification.belongsTo(Modification, { foreignKey: 'modificationId', as: 'modification' });
+OrderItemModification.belongsTo(ModificationItem, { foreignKey: 'modificationId', as: 'modification' });
 
 // Order - Payment Association
 Order.hasMany(Payment, { foreignKey: 'orderId', as: 'payments', onDelete: 'CASCADE', hooks: true });
 Payment.belongsTo(Order, { foreignKey: 'orderId' });
+
 
 // Middleware
 app.use(cors());
@@ -95,6 +115,8 @@ app.use('/api/categories', categoryRoutes);
 app.use('/api/modifications', modificationRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/reports', reportRoutes);
+app.use('/api/sessions', sessionRoutes);
+app.use('/api/branches', branchRoutes);
 
 // Database Sync
 sequelize.sync().then(() => {

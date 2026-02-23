@@ -4,6 +4,7 @@ const OrderItemModification = require('../models/OrderItemModification');
 const Product = require('../models/Product');
 const Variation = require('../models/Variation');
 const Modification = require('../models/Modification');
+const ModificationItem = require('../models/ModificationItem');
 const Customer = require('../models/Customer');
 const User = require('../models/User');
 const sequelize = require('../config/database');
@@ -39,7 +40,7 @@ exports.getAllOrders = async (req, res) => {
                         {
                             model: OrderItemModification,
                             as: 'modifications',
-                            include: [{ model: Modification, as: 'modification' }]
+                            include: [{ model: ModificationItem, as: 'modification' }]
                         }
                     ]
                 }
@@ -66,7 +67,7 @@ exports.getOrderById = async (req, res) => {
                         {
                             model: OrderItemModification,
                             as: 'modifications',
-                            include: [{ model: Modification, as: 'modification' }]
+                            include: [{ model: ModificationItem, as: 'modification' }]
                         }
                     ]
                 }
@@ -163,7 +164,7 @@ exports.createOrder = async (req, res) => {
                         {
                             model: OrderItemModification,
                             as: 'modifications',
-                            include: [{ model: Modification, as: 'modification' }]
+                            include: [{ model: ModificationItem, as: 'modification' }]
                         }
                     ]
                 }
@@ -172,7 +173,8 @@ exports.createOrder = async (req, res) => {
 
         res.status(201).json(fullOrder);
     } catch (error) {
-        await t.rollback();
+        if (t && !t.finished) await t.rollback();
+        console.error('Create Order Error:', error);
         res.status(400).json({ message: error.message });
     }
 };
@@ -310,7 +312,7 @@ exports.updateOrder = async (req, res) => {
                         {
                             model: OrderItemModification,
                             as: 'modifications',
-                            include: [{ model: Modification, as: 'modification' }]
+                            include: [{ model: ModificationItem, as: 'modification' }]
                         }
                     ]
                 }

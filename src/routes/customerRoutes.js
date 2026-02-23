@@ -8,5 +8,9 @@ router.get('/', authenticate, CustomerController.getAllCustomers);
 router.get('/mobile/:mobile', authenticate, CustomerController.getByMobile);
 router.get('/:id', authenticate, CustomerController.getCustomerById);
 router.put('/:id', authenticate, CustomerController.updateCustomer);
+router.put('/:id/promotions', authenticate, CustomerController.updatePromotionPreference);
+router.post('/send-promotions', authenticate, CustomerController.sendBulkPromotions);
+
+
 
 module.exports = router;

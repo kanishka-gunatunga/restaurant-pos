@@ -5,6 +5,8 @@ const VariationPrice = require('../models/VariationPrice');
 const Modification = require('../models/Modification');
 const ProductModification = require('../models/ProductModification');
 const ProductModificationPrice = require('../models/ProductModificationPrice');
+const ProductModificationItemPrice = require('../models/ProductModificationItemPrice');
+const ModificationItem = require('../models/ModificationItem');
 const sequelize = require('../config/database');
 const { put } = require('@vercel/blob');
 
@@ -19,14 +21,32 @@ exports.getAllProducts = async (req, res) => {
                 {
                     model: Variation,
                     as: 'variations',
-                    include: [{ model: VariationPrice, as: 'prices' }]
+                    include: [
+                        { model: VariationPrice, as: 'prices' },
+                        {
+                            model: ProductModification,
+                            as: 'variationModifications',
+                            include: [
+                                { model: Modification },
+                                {
+                                    model: ProductModificationItemPrice,
+                                    as: 'itemPrices',
+                                    include: [{ model: ModificationItem, as: 'item' }]
+                                }
+                            ]
+                        }
+                    ]
                 },
                 {
                     model: ProductModification,
                     as: 'productModifications',
                     include: [
                         { model: Modification },
-                        { model: ProductModificationPrice, as: 'prices' }
+                        {
+                            model: ProductModificationItemPrice,
+                            as: 'itemPrices',
+                            include: [{ model: ModificationItem, as: 'item' }]
+                        }
                     ]
                 }
             ]
@@ -46,14 +66,32 @@ exports.getProductById = async (req, res) => {
                 {
                     model: Variation,
                     as: 'variations',
-                    include: [{ model: VariationPrice, as: 'prices' }]
+                    include: [
+                        { model: VariationPrice, as: 'prices' },
+                        {
+                            model: ProductModification,
+                            as: 'variationModifications',
+                            include: [
+                                { model: Modification },
+                                {
+                                    model: ProductModificationItemPrice,
+                                    as: 'itemPrices',
+                                    include: [{ model: ModificationItem, as: 'item' }]
+                                }
+                            ]
+                        }
+                    ]
                 },
                 {
                     model: ProductModification,
                     as: 'productModifications',
                     include: [
                         { model: Modification },
-                        { model: ProductModificationPrice, as: 'prices' }
+                        {
+                            model: ProductModificationItemPrice,
+                            as: 'itemPrices',
+                            include: [{ model: ModificationItem, as: 'item' }]
+                        }
                     ]
                 }
             ]
@@ -112,6 +150,27 @@ exports.createProduct = async (req, res) => {
                         }, { transaction: t });
                     }
                 }
+
+                if (v.modifications && v.modifications.length > 0) {
+                    for (const m of v.modifications) {
+                        const variationMod = await ProductModification.create({
+                            productId: productData.id || product.id,
+                            variationId: variation.id,
+                            modificationId: m.modificationId
+                        }, { transaction: t });
+
+                        if (m.itemPrices && m.itemPrices.length > 0) {
+                            for (const ip of m.itemPrices) {
+                                await ProductModificationItemPrice.create({
+                                    productModificationId: variationMod.id,
+                                    modificationItemId: ip.modificationItemId,
+                                    branchId: ip.branchId,
+                                    price: ip.price
+                                }, { transaction: t });
+                            }
+                        }
+                    }
+                }
             }
         }
 
@@ -123,12 +182,13 @@ exports.createProduct = async (req, res) => {
                     modificationId: m.modificationId
                 }, { transaction: t });
 
-                if (m.prices && m.prices.length > 0) {
-                    for (const mp of m.prices) {
-                        await ProductModificationPrice.create({
+                if (m.itemPrices && m.itemPrices.length > 0) {
+                    for (const ip of m.itemPrices) {
+                        await ProductModificationItemPrice.create({
                             productModificationId: productMod.id,
-                            branchId: mp.branchId,
-                            price: mp.price
+                            modificationItemId: ip.modificationItemId,
+                            branchId: ip.branchId,
+                            price: ip.price
                         }, { transaction: t });
                     }
                 }
@@ -204,17 +264,37 @@ exports.updateProduct = async (req, res) => {
                         }, { transaction: t });
                     }
                 }
+
+                if (v.modifications && v.modifications.length > 0) {
+                    for (const m of v.modifications) {
+                        const variationMod = await ProductModification.create({
+                            variationId: variation.id,
+                            modificationId: m.modificationId
+                        }, { transaction: t });
+
+                        if (m.itemPrices && m.itemPrices.length > 0) {
+                            for (const ip of m.itemPrices) {
+                                await ProductModificationItemPrice.create({
+                                    productModificationId: variationMod.id,
+                                    modificationItemId: ip.modificationItemId,
+                                    branchId: ip.branchId,
+                                    price: ip.price
+                                }, { transaction: t });
+                            }
+                        }
+                    }
+                }
             }
         }
 
-        // 3. Sync Modifications
+        // 3. Sync Modifications (Product level)
         if (modifications) {
             // Delete existing product-modification prices and associations
-            const oldProductMods = await ProductModification.findAll({ where: { productId: id } });
+            const oldProductMods = await ProductModification.findAll({ where: { productId: id, variationId: null } });
             for (const pm of oldProductMods) {
-                await ProductModificationPrice.destroy({ where: { productModificationId: pm.id }, transaction: t });
+                await ProductModificationItemPrice.destroy({ where: { productModificationId: pm.id }, transaction: t });
             }
-            await ProductModification.destroy({ where: { productId: id }, transaction: t });
+            await ProductModification.destroy({ where: { productId: id, variationId: null }, transaction: t });
 
             // Re-create new modification associations and prices
             for (const m of modifications) {
@@ -223,12 +303,13 @@ exports.updateProduct = async (req, res) => {
                     modificationId: m.modificationId
                 }, { transaction: t });
 
-                if (m.prices && m.prices.length > 0) {
-                    for (const mp of m.prices) {
-                        await ProductModificationPrice.create({
+                if (m.itemPrices && m.itemPrices.length > 0) {
+                    for (const ip of m.itemPrices) {
+                        await ProductModificationItemPrice.create({
                             productModificationId: productMod.id,
-                            branchId: mp.branchId,
-                            price: mp.price
+                            modificationItemId: ip.modificationItemId,
+                            branchId: ip.branchId,
+                            price: ip.price
                         }, { transaction: t });
                     }
                 }
@@ -259,14 +340,32 @@ exports.getProductsByCategory = async (req, res) => {
                 {
                     model: Variation,
                     as: 'variations',
-                    include: [{ model: VariationPrice, as: 'prices' }]
+                    include: [
+                        { model: VariationPrice, as: 'prices' },
+                        {
+                            model: ProductModification,
+                            as: 'variationModifications',
+                            include: [
+                                { model: Modification },
+                                {
+                                    model: ProductModificationItemPrice,
+                                    as: 'itemPrices',
+                                    include: [{ model: ModificationItem, as: 'item' }]
+                                }
+                            ]
+                        }
+                    ]
                 },
                 {
                     model: ProductModification,
                     as: 'productModifications',
                     include: [
                         { model: Modification },
-                        { model: ProductModificationPrice, as: 'prices' }
+                        {
+                            model: ProductModificationItemPrice,
+                            as: 'itemPrices',
+                            include: [{ model: ModificationItem, as: 'item' }]
+                        }
                     ]
                 }
             ]

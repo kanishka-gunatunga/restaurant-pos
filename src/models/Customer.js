@@ -2,7 +2,7 @@ const { DataTypes } = require('sequelize');
 const sequelize = require('../config/database');
 
 const Customer = sequelize.define('Customer', {
-    id:{
+    id: {
         type: DataTypes.INTEGER,
         autoIncrement: true,
         primaryKey: true,
@@ -15,6 +15,10 @@ const Customer = sequelize.define('Customer', {
     name: {
         type: DataTypes.STRING,
         allowNull: false,
+    },
+    promotions_enabled: {
+        type: DataTypes.BOOLEAN,
+        defaultValue: true,
     },
 }, {
     tableName: 'customers',
