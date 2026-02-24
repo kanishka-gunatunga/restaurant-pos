@@ -20,6 +20,14 @@ const Customer = sequelize.define('Customer', {
         type: DataTypes.BOOLEAN,
         defaultValue: true,
     },
+    address: {
+        type: DataTypes.TEXT,
+        allowNull: true,
+    },
+    email: {
+        type: DataTypes.STRING,
+        allowNull: true,
+    },
 }, {
     tableName: 'customers',
     underscored: true,

@@ -6,7 +6,7 @@ const MobitelSmsService = require('../services/MobitelSmsService');
  */
 exports.findOrCreate = async (req, res) => {
     try {
-        const { mobile, name } = req.body;
+        const { mobile, name, address, email } = req.body;
 
         if (!mobile || !name) {
             return res.status(400).json({ message: 'Mobile and name are required' });
@@ -15,10 +15,39 @@ exports.findOrCreate = async (req, res) => {
         let customer = await Customer.findOne({ where: { mobile } });
 
         if (customer) {
+            // Optionally update existing customer if additional info provided? 
+            // For now, just return existing.
             return res.json(customer);
         }
 
-        customer = await Customer.create({ mobile, name });
+        customer = await Customer.create({ mobile, name, address, email });
+        res.status(201).json(customer);
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
+exports.createCustomer = async (req, res) => {
+    try {
+        const { mobile, name, address, email, promotions_enabled } = req.body;
+
+        if (!mobile || !name) {
+            return res.status(400).json({ message: 'Mobile and name are required' });
+        }
+
+        const existing = await Customer.findOne({ where: { mobile } });
+        if (existing) {
+            return res.status(400).json({ message: 'Customer with this mobile already exists' });
+        }
+
+        const customer = await Customer.create({
+            mobile,
+            name,
+            address,
+            email,
+            promotions_enabled: promotions_enabled !== undefined ? promotions_enabled : true
+        });
+
         res.status(201).json(customer);
     } catch (error) {
         res.status(500).json({ message: error.message });
@@ -69,7 +98,7 @@ exports.getCustomerById = async (req, res) => {
 exports.updateCustomer = async (req, res) => {
     try {
         const { id } = req.params;
-        const { name, mobile } = req.body;
+        const { name, mobile, address, email } = req.body;
 
         const customer = await Customer.findByPk(id);
         if (!customer) {
@@ -78,6 +107,8 @@ exports.updateCustomer = async (req, res) => {
 
         if (name !== undefined) customer.name = name;
         if (mobile !== undefined) customer.mobile = mobile;
+        if (address !== undefined) customer.address = address;
+        if (email !== undefined) customer.email = email;
         await customer.save();
 
         res.json(customer);
