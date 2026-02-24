@@ -23,7 +23,7 @@ exports.register = async (req, res) => {
         }
 
         const hashedPassword = await bcrypt.hash(password, 10);
-        const hashedPasscode = ['admin', 'manager'].includes(role)
+        const encryptedPasscode = ['admin', 'manager'].includes(role)
             ? encrypt(passcode)
             : null;
 
@@ -31,13 +31,12 @@ exports.register = async (req, res) => {
             employeeId,
             password: hashedPassword,
             role,
-            passcode: hashedPasscode,
+            passcode: encryptedPasscode,
         });
 
         await UserDetail.create({
             userId: user.id,
             name,
-            employeeId,
             email: email || null,
             branchId: branchId ?? 1,
         });
@@ -46,7 +45,10 @@ exports.register = async (req, res) => {
     } catch (error) {
         if (error.name === 'SequelizeUniqueConstraintError') {
             const field = error.errors?.[0]?.path || error.fields?.[0];
-            const msg = field === 'employee_id' ? 'Employee ID' : 'Unique field';
+            let msg = 'Unique field';
+            if (field === 'employee_id' || field === 'users.employee_id') msg = 'Employee ID';
+            if (field === 'email' || field === 'user_details.email') msg = 'Email';
+
             return res.status(400).json({
                 message: `${msg} already exists. Try a different value.`,
             });
@@ -276,7 +278,6 @@ exports.updateUser = async (req, res) => {
             if (name !== undefined) userDetail.name = name;
             if (email !== undefined) userDetail.email = email;
             if (branchId !== undefined) userDetail.branchId = branchId;
-            if (employeeId !== undefined) userDetail.employeeId = employeeId;
             await userDetail.save();
         }
 

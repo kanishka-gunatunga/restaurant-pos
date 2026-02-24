@@ -9,17 +9,17 @@ async function seedUser() {
         const hashedPasscode = await bcrypt.hash('1234', 10);
 
         const user = await User.create({
-            username: 'admin',
+            employeeId: 'EMP001',
             password: hashedPassword,
             role: 'admin',
-            passcode: hashedPasscode,
+            passcode: '1234', // In a real scenario, this would be encrypted
             status: 'active'
         });
 
         await UserDetail.create({
             userId: user.id,
             name: 'Admin User',
-            employeeId: 'EMP001',
+            email: 'admin@example.com',
             branchId: 1
         });
 

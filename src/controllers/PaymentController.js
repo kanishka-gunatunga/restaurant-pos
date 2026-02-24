@@ -1,5 +1,6 @@
 const Payment = require('../models/Payment');
 const Order = require('../models/Order');
+const Customer = require('../models/Customer');
 const Session = require('../models/Session');
 const SessionTransaction = require('../models/SessionTransaction');
 const sequelize = require('../config/database');
@@ -132,6 +133,46 @@ exports.getPaymentsByOrder = async (req, res) => {
         const { orderId } = req.params;
         const payments = await Payment.findAll({ where: { orderId } });
         res.json(payments);
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
+exports.getAllPaymentDetails = async (req, res) => {
+    try {
+        const orders = await Order.findAll({
+            include: [
+                {
+                    model: Customer,
+                    as: 'customer',
+                    attributes: ['name', 'mobile']
+                },
+                {
+                    model: Payment,
+                    as: 'payments',
+                    attributes: ['paymentMethod', 'status']
+                }
+            ],
+            order: [['createdAt', 'DESC']]
+        });
+
+        const result = orders.map(order => {
+            let method = 'Pending';
+            if (order.payments && order.payments.length > 0) {
+                const validPayment = order.payments.find(p => p.status !== 'refund') || order.payments[0];
+                method = validPayment.paymentMethod;
+            }
+
+            return {
+                id: order.id,
+                orderNo: order.id,
+                customerDetails: order.customer ? `${order.customer.name} (${order.customer.mobile})` : 'Walk-in',
+                dateTime: order.createdAt,
+                method: method
+            };
+        });
+
+        res.json(result);
     } catch (error) {
         res.status(500).json({ message: error.message });
     }

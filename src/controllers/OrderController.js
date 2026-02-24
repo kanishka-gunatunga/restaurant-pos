@@ -110,6 +110,11 @@ exports.getAllOrders = async (req, res) => {
         const orders = await Order.findAll({
             include: [
                 {
+                    model: Customer,
+                    as: 'customer',
+                    attributes: ['id', 'name', 'mobile']
+                },
+                {
                     model: OrderItem,
                     as: 'items',
                     include: [
@@ -136,6 +141,11 @@ exports.getOrderById = async (req, res) => {
         const { id } = req.params;
         const order = await Order.findByPk(id, {
             include: [
+                {
+                    model: Customer,
+                    as: 'customer',
+                    attributes: ['id', 'name', 'mobile']
+                },
                 {
                     model: OrderItem,
                     as: 'items',
@@ -233,6 +243,11 @@ exports.createOrder = async (req, res) => {
         // Fetch the complete order to return
         const fullOrder = await Order.findByPk(order.id, {
             include: [
+                {
+                    model: Customer,
+                    as: 'customer',
+                    attributes: ['id', 'name', 'mobile']
+                },
                 {
                     model: OrderItem,
                     as: 'items',
@@ -381,6 +396,11 @@ exports.updateOrder = async (req, res) => {
         await t.commit();
         const fullOrder = await Order.findByPk(order.id, {
             include: [
+                {
+                    model: Customer,
+                    as: 'customer',
+                    attributes: ['id', 'name', 'mobile']
+                },
                 {
                     model: OrderItem,
                     as: 'items',
