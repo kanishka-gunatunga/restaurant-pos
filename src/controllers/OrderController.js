@@ -8,7 +8,7 @@ const ModificationItem = require('../models/ModificationItem');
 const Customer = require('../models/Customer');
 const User = require('../models/User');
 const sequelize = require('../config/database');
-const bcrypt = require('bcryptjs');
+const { decrypt } = require('../utils/crypto');
 
 const verifyManagerPasscode = async (passcode) => {
     if (!passcode) return false;
@@ -20,7 +20,7 @@ const verifyManagerPasscode = async (passcode) => {
     });
 
     for (const manager of managers) {
-        if (manager.passcode && await bcrypt.compare(passcode, manager.passcode)) {
+        if (manager.passcode && passcode === decrypt(manager.passcode)) {
             return true;
         }
     }

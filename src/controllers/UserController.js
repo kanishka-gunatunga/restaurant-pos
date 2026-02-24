@@ -2,6 +2,7 @@ const User = require('../models/User');
 const UserDetail = require('../models/UserDetail');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const { encrypt, decrypt } = require('../utils/crypto');
 
 exports.register = async (req, res) => {
     try {
@@ -23,7 +24,7 @@ exports.register = async (req, res) => {
 
         const hashedPassword = await bcrypt.hash(password, 10);
         const hashedPasscode = ['admin', 'manager'].includes(role)
-            ? await bcrypt.hash(passcode, 10)
+            ? encrypt(passcode)
             : null;
 
         const user = await User.create({
@@ -114,8 +115,8 @@ exports.verifyPasscode = async (req, res) => {
             return res.status(400).json({ message: 'No passcode set for this user' });
         }
 
-        const isMatch = await bcrypt.compare(passcode, user.passcode);
-        if (!isMatch) return res.status(401).json({ message: 'Invalid passcode' });
+        const decryptedPasscode = decrypt(user.passcode);
+        if (passcode !== decryptedPasscode) return res.status(401).json({ message: 'Invalid passcode' });
 
         res.json({ message: 'Passcode verified', verified: true });
     } catch (error) {
@@ -164,6 +165,28 @@ function formatUserResponse(user) {
     };
 }
 
+exports.getPasscode = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const user = await User.findByPk(id);
+
+        if (!user) return res.status(404).json({ message: 'User not found' });
+
+        if (!['admin', 'manager'].includes(user.role)) {
+            return res.status(400).json({ message: 'Passcode only available for admin and manager' });
+        }
+
+        if (!user.passcode) {
+            return res.status(404).json({ message: 'No passcode set for this user' });
+        }
+
+        const decryptedPasscode = decrypt(user.passcode);
+        res.json({ passcode: decryptedPasscode });
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
 exports.getAllUsers = async (req, res) => {
     try {
         const users = await User.findAll({
@@ -208,7 +231,7 @@ exports.updateUser = async (req, res) => {
         if (role !== undefined) user.role = role;
         if (status !== undefined) user.status = status;
         if (passcode !== undefined && ['admin', 'manager'].includes(user.role)) {
-            user.passcode = await bcrypt.hash(passcode, 10);
+            user.passcode = encrypt(passcode);
         }
         await user.save();
 

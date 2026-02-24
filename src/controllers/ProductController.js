@@ -123,12 +123,12 @@ exports.createProduct = async (req, res) => {
         }
 
         const {
-            name, code, shortDescription, description, sku, categoryId,
+            name, code, shortDescription, description, sku, expireDate, categoryId,
             variations, modifications
         } = productData;
 
         const product = await Product.create({
-            name, code, image: imageUrl, shortDescription, description, sku, categoryId
+            name, code, image: imageUrl, shortDescription, description, sku, expireDate, categoryId
         }, { transaction: t });
 
         // Handle Variations
@@ -228,13 +228,13 @@ exports.updateProduct = async (req, res) => {
         }
 
         const {
-            name, shortDescription, description, sku, categoryId,
+            name, shortDescription, description, sku, expireDate, categoryId,
             variations, modifications
         } = productData;
 
         // 1. Update base product
         await Product.update({
-            name, code, image: imageUrl, shortDescription, description, sku, categoryId
+            name, code, image: imageUrl, shortDescription, description, sku, expireDate, categoryId
         }, { where: { id }, transaction: t });
 
         // 2. Sync Variations
