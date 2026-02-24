@@ -24,7 +24,7 @@ const User = sequelize.define('User', {
     passcode: {
         type: DataTypes.STRING,
         allowNull: true,
-        comment: 'Hashed passcode - only for admin and manager roles',
+        comment: 'AES encrypted passcode - only for admin and manager roles',
     },
     status: {
         type: DataTypes.ENUM('active', 'inactive'),

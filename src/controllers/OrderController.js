@@ -8,7 +8,85 @@ const ModificationItem = require('../models/ModificationItem');
 const Customer = require('../models/Customer');
 const User = require('../models/User');
 const sequelize = require('../config/database');
-const bcrypt = require('bcryptjs');
+const { decrypt } = require('../utils/crypto');
+const { Op } = require('sequelize');
+
+exports.searchOrders = async (req, res) => {
+    try {
+        const { q, orderId, customerName, phone } = req.query;
+        let where = {};
+
+        if (q) {
+            // General search by ID or name or phone
+            where = {
+                [Op.or]: [
+                    { id: { [Op.like]: `%${q}%` } },
+                    { '$customer.name$': { [Op.like]: `%${q}%` } },
+                    { '$customer.mobile$': { [Op.like]: `%${q}%` } }
+                ]
+            };
+        } else {
+            if (orderId) where.id = { [Op.like]: `%${orderId}%` };
+            if (customerName) where['$customer.name$'] = { [Op.like]: `%${customerName}%` };
+            if (phone) where['$customer.mobile$'] = { [Op.like]: `%${phone}%` };
+        }
+
+        const orders = await Order.findAll({
+            where,
+            include: [
+                {
+                    model: Customer,
+                    as: 'customer',
+                    attributes: ['id', 'name', 'mobile']
+                },
+                {
+                    model: OrderItem,
+                    as: 'items',
+                    include: [
+                        { model: Product, as: 'product' },
+                        { model: Variation, as: 'variation' }
+                    ]
+                }
+            ],
+            order: [['createdAt', 'DESC']]
+        });
+        res.json(orders);
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
+exports.filterOrdersByStatus = async (req, res) => {
+    try {
+        const { status } = req.query;
+        if (!status) {
+            return res.status(400).json({ message: 'Status parameter is required' });
+        }
+
+        const orders = await Order.findAll({
+            where: { status },
+            include: [
+                {
+                    model: Customer,
+                    as: 'customer',
+                    attributes: ['id', 'name', 'mobile']
+                },
+                {
+                    model: OrderItem,
+                    as: 'items',
+                    include: [
+                        { model: Product, as: 'product' },
+                        { model: Variation, as: 'variation' }
+                    ]
+                }
+            ],
+            order: [['createdAt', 'DESC']]
+        });
+        res.json(orders);
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
 
 const verifyManagerPasscode = async (passcode) => {
     if (!passcode) return false;
@@ -20,7 +98,7 @@ const verifyManagerPasscode = async (passcode) => {
     });
 
     for (const manager of managers) {
-        if (manager.passcode && await bcrypt.compare(passcode, manager.passcode)) {
+        if (manager.passcode && passcode === decrypt(manager.passcode)) {
             return true;
         }
     }
@@ -31,6 +109,11 @@ exports.getAllOrders = async (req, res) => {
     try {
         const orders = await Order.findAll({
             include: [
+                {
+                    model: Customer,
+                    as: 'customer',
+                    attributes: ['id', 'name', 'mobile']
+                },
                 {
                     model: OrderItem,
                     as: 'items',
@@ -58,6 +141,11 @@ exports.getOrderById = async (req, res) => {
         const { id } = req.params;
         const order = await Order.findByPk(id, {
             include: [
+                {
+                    model: Customer,
+                    as: 'customer',
+                    attributes: ['id', 'name', 'mobile']
+                },
                 {
                     model: OrderItem,
                     as: 'items',
@@ -155,6 +243,11 @@ exports.createOrder = async (req, res) => {
         // Fetch the complete order to return
         const fullOrder = await Order.findByPk(order.id, {
             include: [
+                {
+                    model: Customer,
+                    as: 'customer',
+                    attributes: ['id', 'name', 'mobile']
+                },
                 {
                     model: OrderItem,
                     as: 'items',
@@ -303,6 +396,11 @@ exports.updateOrder = async (req, res) => {
         await t.commit();
         const fullOrder = await Order.findByPk(order.id, {
             include: [
+                {
+                    model: Customer,
+                    as: 'customer',
+                    attributes: ['id', 'name', 'mobile']
+                },
                 {
                     model: OrderItem,
                     as: 'items',

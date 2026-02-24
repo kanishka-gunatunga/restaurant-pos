@@ -2,6 +2,7 @@ const User = require('../models/User');
 const UserDetail = require('../models/UserDetail');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const { encrypt, decrypt } = require('../utils/crypto');
 
 exports.register = async (req, res) => {
     try {
@@ -22,21 +23,20 @@ exports.register = async (req, res) => {
         }
 
         const hashedPassword = await bcrypt.hash(password, 10);
-        const hashedPasscode = ['admin', 'manager'].includes(role)
-            ? await bcrypt.hash(passcode, 10)
+        const encryptedPasscode = ['admin', 'manager'].includes(role)
+            ? encrypt(passcode)
             : null;
 
         const user = await User.create({
             employeeId,
             password: hashedPassword,
             role,
-            passcode: hashedPasscode,
+            passcode: encryptedPasscode,
         });
 
         await UserDetail.create({
             userId: user.id,
             name,
-            employeeId,
             email: email || null,
             branchId: branchId ?? 1,
         });
@@ -45,7 +45,10 @@ exports.register = async (req, res) => {
     } catch (error) {
         if (error.name === 'SequelizeUniqueConstraintError') {
             const field = error.errors?.[0]?.path || error.fields?.[0];
-            const msg = field === 'employee_id' ? 'Employee ID' : 'Unique field';
+            let msg = 'Unique field';
+            if (field === 'employee_id' || field === 'users.employee_id') msg = 'Employee ID';
+            if (field === 'email' || field === 'user_details.email') msg = 'Email';
+
             return res.status(400).json({
                 message: `${msg} already exists. Try a different value.`,
             });
@@ -118,8 +121,8 @@ exports.verifyPasscode = async (req, res) => {
             return res.status(400).json({ message: 'No passcode set for this user' });
         }
 
-        const isMatch = await bcrypt.compare(passcode, user.passcode);
-        if (!isMatch) return res.status(401).json({ message: 'Invalid passcode' });
+        const decryptedPasscode = decrypt(user.passcode);
+        if (passcode !== decryptedPasscode) return res.status(401).json({ message: 'Invalid passcode' });
 
         res.json({ message: 'Passcode verified', verified: true });
     } catch (error) {
@@ -166,6 +169,60 @@ function formatUserResponse(user) {
     };
 }
 
+exports.getPasscode = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const user = await User.findByPk(id);
+
+        if (!user) return res.status(404).json({ message: 'User not found' });
+
+        if (!['admin', 'manager'].includes(user.role)) {
+            return res.status(400).json({ message: 'Passcode only available for admin and manager' });
+        }
+
+        if (!user.passcode) {
+            return res.status(404).json({ message: 'No passcode set for this user' });
+        }
+
+        const decryptedPasscode = decrypt(user.passcode);
+        res.json({ passcode: decryptedPasscode });
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
+exports.searchUsers = async (req, res) => {
+    try {
+        const { name, role } = req.query;
+        const { Op } = require('sequelize');
+
+        const where = {};
+        if (role) {
+            where.role = role;
+        }
+
+        const userDetailWhere = {};
+        if (name) {
+            userDetailWhere.name = { [Op.like]: `%${name}%` };
+        }
+
+        const users = await User.findAll({
+            where,
+            include: [{
+                model: UserDetail,
+                as: 'UserDetail',
+                where: Object.keys(userDetailWhere).length > 0 ? userDetailWhere : undefined
+            }],
+            order: [['id', 'ASC']],
+        });
+
+        const formatted = users.map((u) => formatUserResponse(u));
+        res.json(formatted);
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
 exports.getAllUsers = async (req, res) => {
     try {
         const users = await User.findAll({
@@ -211,7 +268,7 @@ exports.updateUser = async (req, res) => {
         if (status !== undefined) user.status = status;
         if (employeeId !== undefined) user.employeeId = employeeId;
         if (passcode !== undefined && ['admin', 'manager'].includes(user.role)) {
-            user.passcode = await bcrypt.hash(passcode, 10);
+            user.passcode = encrypt(passcode);
         }
         await user.save();
 
@@ -221,7 +278,6 @@ exports.updateUser = async (req, res) => {
             if (name !== undefined) userDetail.name = name;
             if (email !== undefined) userDetail.email = email;
             if (branchId !== undefined) userDetail.branchId = branchId;
-            if (employeeId !== undefined) userDetail.employeeId = employeeId;
             await userDetail.save();
         }
 

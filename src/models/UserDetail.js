@@ -21,14 +21,10 @@ const UserDetail = sequelize.define('UserDetail', {
         type: DataTypes.STRING,
         allowNull: false,
     },
-    employeeId: {
-        type: DataTypes.STRING,
-        allowNull: false,
-        unique: true,
-    },
     email: {
         type: DataTypes.STRING,
         allowNull: true,
+        unique: true,
     },
     branchId: {
         type: DataTypes.INTEGER,
