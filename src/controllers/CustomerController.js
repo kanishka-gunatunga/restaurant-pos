@@ -77,7 +77,8 @@ exports.getAllCustomers = async (req, res) => {
         const customers = await Customer.findAll({
             attributes: {
                 include: [
-                    [fn('COUNT', col('orders.id')), 'orders_count']
+                    [fn('COUNT', col('orders.id')), 'orders_count'],
+                    [fn('MAX', col('orders.created_at')), 'latest_order_date']
                 ]
             },
             include: [
@@ -115,7 +116,8 @@ exports.searchCustomers = async (req, res) => {
             },
             attributes: {
                 include: [
-                    [fn('COUNT', col('orders.id')), 'orders_count']
+                    [fn('COUNT', col('orders.id')), 'orders_count'],
+                    [fn('MAX', col('orders.created_at')), 'latest_order_date']
                 ]
             },
             include: [
