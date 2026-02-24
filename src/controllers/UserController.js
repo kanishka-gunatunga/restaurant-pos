@@ -6,12 +6,12 @@ const { encrypt, decrypt } = require('../utils/crypto');
 
 exports.register = async (req, res) => {
     try {
-        const { username, password, role, name, employeeId, email, branchId, passcode } = req.body;
+        const { password, role, name, employeeId, email, branchId, passcode } = req.body;
 
         // Validate required fields for all users
-        if (!username || !password || !role || !name || !employeeId) {
+        if (!password || !role || !name || !employeeId) {
             return res.status(400).json({
-                message: 'Missing required fields: username, password, role, name, employeeId',
+                message: 'Missing required fields: password, role, name, employeeId',
             });
         }
 
@@ -28,7 +28,7 @@ exports.register = async (req, res) => {
             : null;
 
         const user = await User.create({
-            username,
+            employeeId,
             password: hashedPassword,
             role,
             passcode: hashedPasscode,
@@ -46,7 +46,7 @@ exports.register = async (req, res) => {
     } catch (error) {
         if (error.name === 'SequelizeUniqueConstraintError') {
             const field = error.errors?.[0]?.path || error.fields?.[0];
-            const msg = field === 'username' ? 'Username' : field === 'employee_id' ? 'Employee ID' : 'Username or Employee ID';
+            const msg = field === 'employee_id' ? 'Employee ID' : 'Unique field';
             return res.status(400).json({
                 message: `${msg} already exists. Try a different value.`,
             });
@@ -60,9 +60,14 @@ exports.register = async (req, res) => {
 
 exports.login = async (req, res) => {
     try {
-        const { username, password } = req.body;
+        const { employeeId, password } = req.body;
+
+        if (!employeeId || !password) {
+            return res.status(400).json({ message: 'Employee ID and password are required' });
+        }
+
         const user = await User.findOne({
-            where: { username },
+            where: { employeeId },
             include: [{ model: UserDetail, as: 'UserDetail' }],
         });
 
@@ -81,11 +86,10 @@ exports.login = async (req, res) => {
             token,
             user: {
                 id: user.id,
-                username: user.username,
+                employeeId: user.employeeId,
                 role: user.role,
                 status: user.status,
                 name: userDetail?.name,
-                employeeId: userDetail?.employeeId,
                 email: userDetail?.email,
                 branchId: userDetail?.branchId,
             },
@@ -136,11 +140,10 @@ exports.getMe = async (req, res) => {
         res.json({
             user: {
                 id: user.id,
-                username: user.username,
+                employeeId: user.employeeId,
                 role: user.role,
                 status: user.status,
                 name: userDetail?.name,
-                employeeId: userDetail?.employeeId,
                 email: userDetail?.email,
                 branchId: userDetail?.branchId,
             },
@@ -155,11 +158,10 @@ function formatUserResponse(user) {
     const userDetail = user.UserDetail;
     return {
         id: user.id,
-        username: user.username,
+        employeeId: user.employeeId,
         role: user.role,
         status: user.status,
         name: userDetail?.name,
-        employeeId: userDetail?.employeeId,
         email: userDetail?.email,
         branchId: userDetail?.branchId,
     };
@@ -230,6 +232,7 @@ exports.updateUser = async (req, res) => {
         // Update User table
         if (role !== undefined) user.role = role;
         if (status !== undefined) user.status = status;
+        if (employeeId !== undefined) user.employeeId = employeeId;
         if (passcode !== undefined && ['admin', 'manager'].includes(user.role)) {
             user.passcode = encrypt(passcode);
         }
