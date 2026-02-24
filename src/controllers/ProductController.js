@@ -1,3 +1,4 @@
+const { Op } = require('sequelize');
 const Product = require('../models/Product');
 const Category = require('../models/Category');
 const Variation = require('../models/Variation');
@@ -9,6 +10,62 @@ const ProductModificationItemPrice = require('../models/ProductModificationItemP
 const ModificationItem = require('../models/ModificationItem');
 const sequelize = require('../config/database');
 const { put } = require('@vercel/blob');
+
+exports.searchProducts = async (req, res) => {
+    try {
+        const { query } = req.query;
+        if (!query) {
+            return res.status(400).json({ message: 'Search query is required' });
+        }
+
+        const products = await Product.findAll({
+            where: {
+                [Op.or]: [
+                    { name: { [Op.like]: `%${query}%` } },
+                    { sku: { [Op.like]: `%${query}%` } },
+                    { code: { [Op.like]: `%${query}%` } }
+                ]
+            },
+            include: [
+                { model: Category },
+                {
+                    model: Variation,
+                    as: 'variations',
+                    include: [
+                        { model: VariationPrice, as: 'prices' },
+                        {
+                            model: ProductModification,
+                            as: 'variationModifications',
+                            include: [
+                                { model: Modification },
+                                {
+                                    model: ProductModificationItemPrice,
+                                    as: 'itemPrices',
+                                    include: [{ model: ModificationItem, as: 'item' }]
+                                }
+                            ]
+                        }
+                    ]
+                },
+                {
+                    model: ProductModification,
+                    as: 'productModifications',
+                    include: [
+                        { model: Modification },
+                        {
+                            model: ProductModificationItemPrice,
+                            as: 'itemPrices',
+                            include: [{ model: ModificationItem, as: 'item' }]
+                        }
+                    ]
+                }
+            ]
+        });
+        res.json(products);
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
 
 exports.getAllProducts = async (req, res) => {
     try {

@@ -189,6 +189,38 @@ exports.getPasscode = async (req, res) => {
     }
 };
 
+exports.searchUsers = async (req, res) => {
+    try {
+        const { name, role } = req.query;
+        const { Op } = require('sequelize');
+
+        const where = {};
+        if (role) {
+            where.role = role;
+        }
+
+        const userDetailWhere = {};
+        if (name) {
+            userDetailWhere.name = { [Op.like]: `%${name}%` };
+        }
+
+        const users = await User.findAll({
+            where,
+            include: [{
+                model: UserDetail,
+                as: 'UserDetail',
+                where: Object.keys(userDetailWhere).length > 0 ? userDetailWhere : undefined
+            }],
+            order: [['id', 'ASC']],
+        });
+
+        const formatted = users.map((u) => formatUserResponse(u));
+        res.json(formatted);
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
 exports.getAllUsers = async (req, res) => {
     try {
         const users = await User.findAll({
