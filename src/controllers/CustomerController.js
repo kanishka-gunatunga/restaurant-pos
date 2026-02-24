@@ -1,5 +1,8 @@
 const Customer = require('../models/Customer');
+const Order = require('../models/Order');
 const MobitelSmsService = require('../services/MobitelSmsService');
+const { Op, fn, col } = require('sequelize');
+const sequelize = require('../config/database');
 /**
  * Find customer by mobile, or create if not exists.
  * Used when placing orders - if mobile exists, fetch; if not, add to DB.
@@ -72,8 +75,60 @@ exports.getByMobile = async (req, res) => {
 exports.getAllCustomers = async (req, res) => {
     try {
         const customers = await Customer.findAll({
+            attributes: {
+                include: [
+                    [fn('COUNT', col('orders.id')), 'orders_count']
+                ]
+            },
+            include: [
+                {
+                    model: Order,
+                    as: 'orders',
+                    attributes: []
+                }
+            ],
+            group: ['Customer.id'],
             order: [['id', 'ASC']],
         });
+        res.json(customers);
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
+exports.searchCustomers = async (req, res) => {
+    try {
+        const { query } = req.query;
+
+        if (!query) {
+            return res.status(400).json({ message: 'Search query is required' });
+        }
+
+        const customers = await Customer.findAll({
+            where: {
+                [Op.or]: [
+                    { name: { [Op.like]: `%${query}%` } },
+                    { mobile: { [Op.like]: `%${query}%` } },
+                    { email: { [Op.like]: `%${query}%` } },
+                    { address: { [Op.like]: `%${query}%` } }
+                ]
+            },
+            attributes: {
+                include: [
+                    [fn('COUNT', col('orders.id')), 'orders_count']
+                ]
+            },
+            include: [
+                {
+                    model: Order,
+                    as: 'orders',
+                    attributes: []
+                }
+            ],
+            group: ['Customer.id'],
+            order: [['name', 'ASC']]
+        });
+
         res.json(customers);
     } catch (error) {
         res.status(500).json({ message: error.message });
