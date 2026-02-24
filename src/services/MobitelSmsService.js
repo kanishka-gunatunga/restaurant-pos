@@ -49,7 +49,6 @@ class MobitelSmsService {
             });
 
             const result = await response.text();
-            console.log("Mobitel Response:", result);
             return result;
         } catch (error) {
             console.error("Mobitel SMS Error:", error);
