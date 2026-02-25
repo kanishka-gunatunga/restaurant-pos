@@ -7,6 +7,7 @@ const Modification = require('../models/Modification');
 const ModificationItem = require('../models/ModificationItem');
 const Customer = require('../models/Customer');
 const User = require('../models/User');
+const Payment = require('../models/Payment');
 const sequelize = require('../config/database');
 const { decrypt } = require('../utils/crypto');
 const { Op } = require('sequelize');
@@ -40,36 +41,9 @@ exports.searchOrders = async (req, res) => {
                     attributes: ['id', 'name', 'mobile']
                 },
                 {
-                    model: OrderItem,
-                    as: 'items',
-                    include: [
-                        { model: Product, as: 'product' },
-                        { model: Variation, as: 'variation' }
-                    ]
-                }
-            ],
-            order: [['createdAt', 'DESC']]
-        });
-        res.json(orders);
-    } catch (error) {
-        res.status(500).json({ message: error.message });
-    }
-};
-
-exports.filterOrdersByStatus = async (req, res) => {
-    try {
-        const { status } = req.query;
-        if (!status) {
-            return res.status(400).json({ message: 'Status parameter is required' });
-        }
-
-        const orders = await Order.findAll({
-            where: { status },
-            include: [
-                {
-                    model: Customer,
-                    as: 'customer',
-                    attributes: ['id', 'name', 'mobile']
+                    model: Payment,
+                    as: 'payments',
+                    attributes: ['id', 'status', 'amount', 'paymentMethod', 'createdAt']
                 },
                 {
                     model: OrderItem,
@@ -82,7 +56,78 @@ exports.filterOrdersByStatus = async (req, res) => {
             ],
             order: [['createdAt', 'DESC']]
         });
-        res.json(orders);
+
+        // Add paymentStatus virtual field
+        const processedOrders = orders.map(order => {
+            const orderData = order.toJSON();
+            const latestPayment = orderData.payments && orderData.payments.length > 0
+                ? orderData.payments.reduce((latest, current) =>
+                    new Date(current.createdAt) > new Date(latest.createdAt) ? current : latest
+                )
+                : null;
+
+            orderData.paymentStatus = latestPayment ? latestPayment.status : 'pending';
+            return orderData;
+        });
+
+        res.json(processedOrders);
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
+exports.filterOrdersByStatus = async (req, res) => {
+    try {
+        const { status, paymentStatus } = req.query;
+
+        let where = {};
+        if (status) {
+            where.status = status;
+        }
+
+        const orders = await Order.findAll({
+            where,
+            include: [
+                {
+                    model: Customer,
+                    as: 'customer',
+                    attributes: ['id', 'name', 'mobile']
+                },
+                {
+                    model: Payment,
+                    as: 'payments',
+                    attributes: ['id', 'status', 'amount', 'paymentMethod', 'createdAt']
+                },
+                {
+                    model: OrderItem,
+                    as: 'items',
+                    include: [
+                        { model: Product, as: 'product' },
+                        { model: Variation, as: 'variation' }
+                    ]
+                }
+            ],
+            order: [['createdAt', 'DESC']]
+        });
+
+        // Add paymentStatus virtual field and filter by it if requested
+        let processedOrders = orders.map(order => {
+            const orderData = order.toJSON();
+            const latestPayment = orderData.payments && orderData.payments.length > 0
+                ? orderData.payments.reduce((latest, current) =>
+                    new Date(current.createdAt) > new Date(latest.createdAt) ? current : latest
+                )
+                : null;
+
+            orderData.paymentStatus = latestPayment ? latestPayment.status : 'pending';
+            return orderData;
+        });
+
+        if (paymentStatus) {
+            processedOrders = processedOrders.filter(order => order.paymentStatus === paymentStatus);
+        }
+
+        res.json(processedOrders);
     } catch (error) {
         res.status(500).json({ message: error.message });
     }
@@ -115,6 +160,11 @@ exports.getAllOrders = async (req, res) => {
                     attributes: ['id', 'name', 'mobile']
                 },
                 {
+                    model: Payment,
+                    as: 'payments',
+                    attributes: ['id', 'status', 'amount', 'paymentMethod', 'createdAt']
+                },
+                {
                     model: OrderItem,
                     as: 'items',
                     include: [
@@ -130,7 +180,20 @@ exports.getAllOrders = async (req, res) => {
             ],
             order: [['createdAt', 'DESC']]
         });
-        res.json(orders);
+
+        const processedOrders = orders.map(order => {
+            const orderData = order.toJSON();
+            const latestPayment = orderData.payments && orderData.payments.length > 0
+                ? orderData.payments.reduce((latest, current) =>
+                    new Date(current.createdAt) > new Date(latest.createdAt) ? current : latest
+                )
+                : null;
+
+            orderData.paymentStatus = latestPayment ? latestPayment.status : 'pending';
+            return orderData;
+        });
+
+        res.json(processedOrders);
     } catch (error) {
         res.status(500).json({ message: error.message });
     }
@@ -145,6 +208,11 @@ exports.getOrderById = async (req, res) => {
                     model: Customer,
                     as: 'customer',
                     attributes: ['id', 'name', 'mobile']
+                },
+                {
+                    model: Payment,
+                    as: 'payments',
+                    attributes: ['id', 'status', 'amount', 'paymentMethod', 'createdAt']
                 },
                 {
                     model: OrderItem,
@@ -164,7 +232,17 @@ exports.getOrderById = async (req, res) => {
         if (!order) {
             return res.status(404).json({ message: 'Order not found' });
         }
-        res.json(order);
+
+        const orderData = order.toJSON();
+        const latestPayment = orderData.payments && orderData.payments.length > 0
+            ? orderData.payments.reduce((latest, current) =>
+                new Date(current.createdAt) > new Date(latest.createdAt) ? current : latest
+            )
+            : null;
+
+        orderData.paymentStatus = latestPayment ? latestPayment.status : 'pending';
+
+        res.json(orderData);
     } catch (error) {
         res.status(500).json({ message: error.message });
     }

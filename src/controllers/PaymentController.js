@@ -4,6 +4,7 @@ const Customer = require('../models/Customer');
 const Session = require('../models/Session');
 const SessionTransaction = require('../models/SessionTransaction');
 const sequelize = require('../config/database');
+const { Op } = require('sequelize');
 
 exports.createPayment = async (req, res) => {
     const t = await sequelize.transaction();
@@ -157,22 +158,128 @@ exports.getAllPaymentDetails = async (req, res) => {
         });
 
         const result = orders.map(order => {
-            let method = 'Pending';
-            if (order.payments && order.payments.length > 0) {
-                const validPayment = order.payments.find(p => p.status !== 'refund') || order.payments[0];
-                method = validPayment.paymentMethod;
-            }
+            const validPayment = order.payments && order.payments.length > 0
+                ? (order.payments.find(p => p.status !== 'refund') || order.payments[0])
+                : null;
 
             return {
                 id: order.id,
                 orderNo: order.id,
-                customerDetails: order.customer ? `${order.customer.name} (${order.customer.mobile})` : 'Walk-in',
+                customerName: order.customer ? order.customer.name : 'Walk-in',
+                customerMobile: order.customer ? order.customer.mobile : '-',
                 dateTime: order.createdAt,
-                method: method
+                method: validPayment ? validPayment.paymentMethod : null,
+                paymentStatus: validPayment ? validPayment.status : 'Pending',
+                amount: order.totalAmount
             };
         });
 
         res.json(result);
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+exports.searchPaymentDetails = async (req, res) => {
+    try {
+        const { query } = req.query;
+        let where = {};
+
+        if (query) {
+            where = {
+                [Op.or]: [
+                    { id: { [Op.like]: `%${query}%` } },
+                    { '$customer.name$': { [Op.like]: `%${query}%` } },
+                    { '$customer.mobile$': { [Op.like]: `%${query}%` } }
+                ]
+            };
+        }
+
+        const orders = await Order.findAll({
+            where,
+            include: [
+                {
+                    model: Customer,
+                    as: 'customer',
+                    attributes: ['name', 'mobile']
+                },
+                {
+                    model: Payment,
+                    as: 'payments',
+                    attributes: ['paymentMethod', 'status']
+                }
+            ],
+            order: [['createdAt', 'DESC']]
+        });
+
+        const result = orders.map(order => {
+            const validPayment = order.payments && order.payments.length > 0
+                ? (order.payments.find(p => p.status !== 'refund') || order.payments[0])
+                : null;
+
+            return {
+                id: order.id,
+                orderNo: order.id,
+                customerName: order.customer ? order.customer.name : 'Walk-in',
+                customerMobile: order.customer ? order.customer.mobile : '-',
+                dateTime: order.createdAt,
+                method: validPayment ? validPayment.paymentMethod : null,
+                paymentStatus: validPayment ? validPayment.status : 'Pending',
+                amount: order.totalAmount
+            };
+        });
+
+        res.json(result);
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
+exports.filterPaymentsByStatus = async (req, res) => {
+    try {
+        const { status } = req.query;
+
+        const orders = await Order.findAll({
+            include: [
+                {
+                    model: Customer,
+                    as: 'customer',
+                    attributes: ['name', 'mobile']
+                },
+                {
+                    model: Payment,
+                    as: 'payments',
+                    attributes: ['paymentMethod', 'status']
+                }
+            ],
+            order: [['createdAt', 'DESC']]
+        });
+
+        const result = orders.map(order => {
+            const validPayment = order.payments && order.payments.length > 0
+                ? (order.payments.find(p => p.status !== 'refund') || order.payments[0])
+                : null;
+
+            return {
+                id: order.id,
+                orderNo: order.id,
+                customerName: order.customer ? order.customer.name : 'Walk-in',
+                customerMobile: order.customer ? order.customer.mobile : '-',
+                dateTime: order.createdAt,
+                method: validPayment ? validPayment.paymentMethod : null,
+                paymentStatus: validPayment ? validPayment.status : 'Pending',
+                amount: order.totalAmount
+            };
+        });
+
+        // Filter by status if provided
+        let filteredResult = result;
+        if (status) {
+            filteredResult = result.filter(item =>
+                item.paymentStatus.toLowerCase() === status.toLowerCase()
+            );
+        }
+
+        res.json(filteredResult);
     } catch (error) {
         res.status(500).json({ message: error.message });
     }
