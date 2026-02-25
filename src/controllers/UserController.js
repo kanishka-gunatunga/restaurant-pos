@@ -193,10 +193,17 @@ exports.getPasscode = async (req, res) => {
 
 exports.searchUsers = async (req, res) => {
     try {
-        const { name, role } = req.query;
+        const { name, role, status } = req.query;
         const { Op } = require('sequelize');
 
-        const where = {};
+        let statusFilter = { status: 'active' };
+        if (status === 'inactive') {
+            statusFilter = { status: 'inactive' };
+        } else if (status === 'all') {
+            statusFilter = {};
+        }
+
+        const where = { ...statusFilter };
         if (role) {
             where.role = role;
         }
@@ -225,7 +232,17 @@ exports.searchUsers = async (req, res) => {
 
 exports.getAllUsers = async (req, res) => {
     try {
+        const { status } = req.query;
+        let statusFilter = { status: 'active' };
+
+        if (status === 'inactive') {
+            statusFilter = { status: 'inactive' };
+        } else if (status === 'all') {
+            statusFilter = {};
+        }
+
         const users = await User.findAll({
+            where: statusFilter,
             include: [{ model: UserDetail, as: 'UserDetail' }],
             order: [['id', 'ASC']],
         });
@@ -306,6 +323,22 @@ exports.deactivateUser = async (req, res) => {
         await user.save();
 
         res.json({ message: 'User deactivated successfully' });
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
+exports.activateUser = async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        const user = await User.findByPk(id);
+        if (!user) return res.status(404).json({ message: 'User not found' });
+
+        user.status = 'active';
+        await user.save();
+
+        res.json({ message: 'User activated successfully' });
     } catch (error) {
         res.status(500).json({ message: error.message });
     }

@@ -19,6 +19,10 @@ const Category = sequelize.define('Category', {
             key: 'id',
         },
     },
+    status: {
+        type: DataTypes.ENUM('active', 'inactive'),
+        defaultValue: 'active',
+    },
 });
 
 // Self-association for subcategories

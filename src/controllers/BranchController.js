@@ -2,7 +2,16 @@ const Branch = require('../models/Branch');
 
 exports.getAllBranches = async (req, res) => {
     try {
-        const branches = await Branch.findAll();
+        const { status } = req.query;
+        let where = { status: 'active' };
+
+        if (status === 'inactive') {
+            where = { status: 'inactive' };
+        } else if (status === 'all') {
+            where = {};
+        }
+
+        const branches = await Branch.findAll({ where });
         res.json(branches);
     } catch (error) {
         res.status(500).json({ message: error.message });
@@ -47,12 +56,25 @@ exports.updateBranch = async (req, res) => {
     }
 };
 
-exports.deleteBranch = async (req, res) => {
+exports.deactivateBranch = async (req, res) => {
     try {
         const { id } = req.params;
-        const deleted = await Branch.destroy({ where: { id } });
-        if (deleted) {
-            return res.json({ message: 'Branch deleted' });
+        const [updated] = await Branch.update({ status: 'inactive' }, { where: { id } });
+        if (updated) {
+            return res.json({ message: 'Branch deactivated' });
+        }
+        throw new Error('Branch not found');
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
+exports.activateBranch = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const [updated] = await Branch.update({ status: 'active' }, { where: { id } });
+        if (updated) {
+            return res.json({ message: 'Branch activated' });
         }
         throw new Error('Branch not found');
     } catch (error) {

@@ -9,6 +9,7 @@ router.get('/', authenticate, requireRole('admin', 'manager'), UserController.ge
 router.get('/:id', authenticate, requireRole('admin', 'manager'), UserController.getUserById);
 router.put('/:id', authenticate, requireRole('admin', 'manager'), UserController.updateUser);
 router.get('/:id/passcode', authenticate, requireRole('admin', 'manager'), UserController.getPasscode);
-router.patch('/:id/deactivate', authenticate, requireRole('admin', 'manager'), UserController.deactivateUser);
+router.post('/:id/activate', authenticate, requireRole('admin', 'manager'), UserController.activateUser);
+router.post('/:id/deactivate', authenticate, requireRole('admin', 'manager'), UserController.deactivateUser);
 
 module.exports = router;

@@ -2,10 +2,26 @@ const Category = require('../models/Category');
 
 exports.getAllCategories = async (req, res) => {
     try {
+        const { status } = req.query;
+        let statusFilter = { status: 'active' };
+
+        if (status === 'inactive') {
+            statusFilter = { status: 'inactive' };
+        } else if (status === 'all') {
+            statusFilter = {};
+        }
+
         const categories = await Category.findAll({
-            include: [{ model: Category, as: 'subcategories' }],
-            where: { parentId: null }, // Fetch only top-level categories by default or all? 
-            // Let's fetch top-level and include subcategories.
+            include: [{
+                model: Category,
+                as: 'subcategories',
+                where: statusFilter,
+                required: false
+            }],
+            where: {
+                parentId: null,
+                ...statusFilter
+            },
         });
         res.json(categories);
     } catch (error) {
@@ -36,11 +52,21 @@ exports.updateCategory = async (req, res) => {
     }
 };
 
-exports.deleteCategory = async (req, res) => {
+exports.deactivateCategory = async (req, res) => {
     try {
         const { id } = req.params;
-        await Category.destroy({ where: { id } });
-        res.json({ message: 'Category deleted' });
+        await Category.update({ status: 'inactive' }, { where: { id } });
+        res.json({ message: 'Category deactivated' });
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
+exports.activateCategory = async (req, res) => {
+    try {
+        const { id } = req.params;
+        await Category.update({ status: 'active' }, { where: { id } });
+        res.json({ message: 'Category activated' });
     } catch (error) {
         res.status(500).json({ message: error.message });
     }
@@ -48,9 +74,20 @@ exports.deleteCategory = async (req, res) => {
 
 exports.getParentCategories = async (req, res) => {
     try {
-        const categories = await Category.findAll({
-            where: { parentId: null }
-        });
+        const { status } = req.query;
+        let statusFilter = { status: 'active' };
+
+        if (status === 'inactive') {
+            statusFilter = { status: 'inactive' };
+        } else if (status === 'all') {
+            statusFilter = {};
+        }
+
+        const where = {
+            parentId: null,
+            ...statusFilter
+        };
+        const categories = await Category.findAll({ where });
         res.json(categories);
     } catch (error) {
         res.status(500).json({ message: error.message });
@@ -60,9 +97,20 @@ exports.getParentCategories = async (req, res) => {
 exports.getSubCategories = async (req, res) => {
     try {
         const { parentId } = req.params;
-        const categories = await Category.findAll({
-            where: { parentId }
-        });
+        const { status } = req.query;
+        let statusFilter = { status: 'active' };
+
+        if (status === 'inactive') {
+            statusFilter = { status: 'inactive' };
+        } else if (status === 'all') {
+            statusFilter = {};
+        }
+
+        const where = {
+            parentId,
+            ...statusFilter
+        };
+        const categories = await Category.findAll({ where });
         res.json(categories);
     } catch (error) {
         res.status(500).json({ message: error.message });
@@ -72,9 +120,14 @@ exports.getSubCategories = async (req, res) => {
 exports.getCategoryById = async (req, res) => {
     try {
         const { id } = req.params;
+
         const category = await Category.findByPk(id, {
             include: [
-                { model: Category, as: 'subcategories' },
+                {
+                    model: Category,
+                    as: 'subcategories',
+                    required: false
+                },
                 { model: Category, as: 'parent' }
             ]
         });

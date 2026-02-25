@@ -13,9 +13,16 @@ const { put } = require('@vercel/blob');
 
 exports.searchProducts = async (req, res) => {
     try {
-        const { query } = req.query;
+        const { query, status } = req.query;
         if (!query) {
             return res.status(400).json({ message: 'Search query is required' });
+        }
+
+        let statusFilter = { status: 'active' };
+        if (status === 'inactive') {
+            statusFilter = { status: 'inactive' };
+        } else if (status === 'all') {
+            statusFilter = {};
         }
 
         const products = await Product.findAll({
@@ -24,20 +31,23 @@ exports.searchProducts = async (req, res) => {
                     { name: { [Op.like]: `%${query}%` } },
                     { sku: { [Op.like]: `%${query}%` } },
                     { code: { [Op.like]: `%${query}%` } }
-                ]
+                ],
+                ...statusFilter
             },
             include: [
-                { model: Category },
+                { model: Category, where: statusFilter, required: false },
                 {
                     model: Variation,
                     as: 'variations',
+                    where: statusFilter,
+                    required: false,
                     include: [
                         { model: VariationPrice, as: 'prices' },
                         {
                             model: ProductModification,
                             as: 'variationModifications',
                             include: [
-                                { model: Modification },
+                                { model: Modification, where: statusFilter, required: false },
                                 {
                                     model: ProductModificationItemPrice,
                                     as: 'itemPrices',
@@ -51,7 +61,7 @@ exports.searchProducts = async (req, res) => {
                     model: ProductModification,
                     as: 'productModifications',
                     include: [
-                        { model: Modification },
+                        { model: Modification, where: statusFilter, required: false },
                         {
                             model: ProductModificationItemPrice,
                             as: 'itemPrices',
@@ -69,22 +79,34 @@ exports.searchProducts = async (req, res) => {
 
 exports.getAllProducts = async (req, res) => {
     try {
-        const { categoryId } = req.query;
-        const where = categoryId ? { categoryId } : {};
+        const { categoryId, status } = req.query;
+
+        let statusFilter = { status: 'active' };
+        if (status === 'inactive') {
+            statusFilter = { status: 'inactive' };
+        } else if (status === 'all') {
+            statusFilter = {};
+        }
+
+        const where = { ...statusFilter };
+        if (categoryId) where.categoryId = categoryId;
+
         const products = await Product.findAll({
             where,
             include: [
-                { model: Category },
+                { model: Category, where: statusFilter, required: false },
                 {
                     model: Variation,
                     as: 'variations',
+                    where: statusFilter,
+                    required: false,
                     include: [
                         { model: VariationPrice, as: 'prices' },
                         {
                             model: ProductModification,
                             as: 'variationModifications',
                             include: [
-                                { model: Modification },
+                                { model: Modification, where: statusFilter, required: false },
                                 {
                                     model: ProductModificationItemPrice,
                                     as: 'itemPrices',
@@ -98,7 +120,7 @@ exports.getAllProducts = async (req, res) => {
                     model: ProductModification,
                     as: 'productModifications',
                     include: [
-                        { model: Modification },
+                        { model: Modification, where: statusFilter, required: false },
                         {
                             model: ProductModificationItemPrice,
                             as: 'itemPrices',
@@ -117,19 +139,24 @@ exports.getAllProducts = async (req, res) => {
 exports.getProductById = async (req, res) => {
     try {
         const { id } = req.params;
+
         const product = await Product.findByPk(id, {
             include: [
-                { model: Category },
+                {
+                    model: Category,
+                    required: false
+                },
                 {
                     model: Variation,
                     as: 'variations',
+                    required: false,
                     include: [
                         { model: VariationPrice, as: 'prices' },
                         {
                             model: ProductModification,
                             as: 'variationModifications',
                             include: [
-                                { model: Modification },
+                                { model: Modification, required: false },
                                 {
                                     model: ProductModificationItemPrice,
                                     as: 'itemPrices',
@@ -143,7 +170,7 @@ exports.getProductById = async (req, res) => {
                     model: ProductModification,
                     as: 'productModifications',
                     include: [
-                        { model: Modification },
+                        { model: Modification, required: false },
                         {
                             model: ProductModificationItemPrice,
                             as: 'itemPrices',
@@ -153,10 +180,12 @@ exports.getProductById = async (req, res) => {
                 }
             ]
         });
-        if (!product) {
-            return res.status(404).json({ message: 'Product not found' });
+
+        if (product) {
+            res.json(product);
+        } else {
+            res.status(404).json({ message: 'Product not found' });
         }
-        res.json(product);
     } catch (error) {
         res.status(500).json({ message: error.message });
     }
@@ -165,16 +194,13 @@ exports.getProductById = async (req, res) => {
 exports.createProduct = async (req, res) => {
     const t = await sequelize.transaction();
     try {
-        let productData = req.body;
-        if (req.body.data) {
-            productData = JSON.parse(req.body.data);
-        }
+        const productData = req.body;
+        let imageUrl = null;
 
-        let imageUrl = productData.image;
         if (req.file) {
             const blob = await put(`products/${Date.now()}-${req.file.originalname}`, req.file.buffer, {
                 access: 'public',
-                token: process.env.BLOB_READ_WRITE_TOKEN,
+                token: process.env.BLOB_READ_WRITE_TOKEN
             });
             imageUrl = blob.url;
         }
@@ -184,16 +210,18 @@ exports.createProduct = async (req, res) => {
             variations, modifications
         } = productData;
 
+        // 1. Create base product
         const product = await Product.create({
-            name, code, image: imageUrl, shortDescription, description, sku, expireDate, categoryId
+            name, code, image: imageUrl, shortDescription, description, sku, expireDate, categoryId, status: 'active'
         }, { transaction: t });
 
-        // Handle Variations
+        // 2. Create variations and their prices
         if (variations && variations.length > 0) {
             for (const v of variations) {
                 const variation = await Variation.create({
                     productId: product.id,
-                    name: v.name
+                    name: v.name,
+                    status: 'active'
                 }, { transaction: t });
 
                 if (v.prices && v.prices.length > 0) {
@@ -211,7 +239,6 @@ exports.createProduct = async (req, res) => {
                 if (v.modifications && v.modifications.length > 0) {
                     for (const m of v.modifications) {
                         const variationMod = await ProductModification.create({
-                            productId: productData.id || product.id,
                             variationId: variation.id,
                             modificationId: m.modificationId
                         }, { transaction: t });
@@ -231,7 +258,7 @@ exports.createProduct = async (req, res) => {
             }
         }
 
-        // Handle Modifications
+        // 3. Create modifications for product level if any
         if (modifications && modifications.length > 0) {
             for (const m of modifications) {
                 const productMod = await ProductModification.create({
@@ -270,22 +297,19 @@ exports.updateProduct = async (req, res) => {
     const t = await sequelize.transaction();
     try {
         const { id } = req.params;
-        let productData = req.body;
-        if (req.body.data) {
-            productData = JSON.parse(req.body.data);
-        }
-
+        const productData = req.body;
         let imageUrl = productData.image;
+
         if (req.file) {
             const blob = await put(`products/${Date.now()}-${req.file.originalname}`, req.file.buffer, {
                 access: 'public',
-                token: process.env.BLOB_READ_WRITE_TOKEN,
+                token: process.env.BLOB_READ_WRITE_TOKEN
             });
             imageUrl = blob.url;
         }
 
         const {
-            name, shortDescription, description, sku, expireDate, categoryId,
+            name, code, shortDescription, description, sku, expireDate, categoryId,
             variations, modifications
         } = productData;
 
@@ -296,18 +320,17 @@ exports.updateProduct = async (req, res) => {
 
         // 2. Sync Variations
         if (variations) {
-            // Delete existing variation prices first (cascading cleanup)
             const oldVariations = await Variation.findAll({ where: { productId: id } });
             for (const v of oldVariations) {
                 await VariationPrice.destroy({ where: { variationId: v.id }, transaction: t });
             }
             await Variation.destroy({ where: { productId: id }, transaction: t });
 
-            // Re-create new variations and prices
             for (const v of variations) {
                 const variation = await Variation.create({
                     productId: id,
-                    name: v.name
+                    name: v.name,
+                    status: 'active'
                 }, { transaction: t });
 
                 if (v.prices && v.prices.length > 0) {
@@ -346,14 +369,12 @@ exports.updateProduct = async (req, res) => {
 
         // 3. Sync Modifications (Product level)
         if (modifications) {
-            // Delete existing product-modification prices and associations
             const oldProductMods = await ProductModification.findAll({ where: { productId: id, variationId: null } });
             for (const pm of oldProductMods) {
                 await ProductModificationItemPrice.destroy({ where: { productModificationId: pm.id }, transaction: t });
             }
             await ProductModification.destroy({ where: { productId: id, variationId: null }, transaction: t });
 
-            // Re-create new modification associations and prices
             for (const m of modifications) {
                 const productMod = await ProductModification.create({
                     productId: id,
@@ -390,20 +411,34 @@ exports.updateProduct = async (req, res) => {
 exports.getProductsByCategory = async (req, res) => {
     try {
         const { categoryId } = req.params;
+        const { status } = req.query;
+
+        let statusFilter = { status: 'active' };
+        if (status === 'inactive') {
+            statusFilter = { status: 'inactive' };
+        } else if (status === 'all') {
+            statusFilter = {};
+        }
+
         const products = await Product.findAll({
-            where: { categoryId },
+            where: {
+                categoryId,
+                ...statusFilter
+            },
             include: [
-                { model: Category },
+                { model: Category, as: 'category' },
                 {
                     model: Variation,
                     as: 'variations',
+                    where: statusFilter,
+                    required: false,
                     include: [
                         { model: VariationPrice, as: 'prices' },
                         {
                             model: ProductModification,
                             as: 'variationModifications',
                             include: [
-                                { model: Modification },
+                                { model: Modification, where: statusFilter, required: false },
                                 {
                                     model: ProductModificationItemPrice,
                                     as: 'itemPrices',
@@ -417,7 +452,7 @@ exports.getProductsByCategory = async (req, res) => {
                     model: ProductModification,
                     as: 'productModifications',
                     include: [
-                        { model: Modification },
+                        { model: Modification, where: statusFilter, required: false },
                         {
                             model: ProductModificationItemPrice,
                             as: 'itemPrices',
@@ -433,21 +468,32 @@ exports.getProductsByCategory = async (req, res) => {
     }
 };
 
-exports.deleteProduct = async (req, res) => {
-    const t = await sequelize.transaction();
+exports.deactivateProduct = async (req, res) => {
     try {
         const { id } = req.params;
-        const deleted = await Product.destroy({ where: { id }, transaction: t });
+        const [updated] = await Product.update({ status: 'inactive' }, { where: { id } });
 
-        if (deleted) {
-            await t.commit();
-            return res.json({ message: 'Product and all related details deleted successfully' });
+        if (updated) {
+            return res.json({ message: 'Product deactivated successfully' });
         }
 
-        await t.rollback();
         res.status(404).json({ message: 'Product not found' });
     } catch (error) {
-        await t.rollback();
+        res.status(500).json({ message: error.message });
+    }
+};
+
+exports.activateProduct = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const [updated] = await Product.update({ status: 'active' }, { where: { id } });
+
+        if (updated) {
+            return res.json({ message: 'Product activated successfully' });
+        }
+
+        res.status(404).json({ message: 'Product not found' });
+    } catch (error) {
         res.status(500).json({ message: error.message });
     }
 };

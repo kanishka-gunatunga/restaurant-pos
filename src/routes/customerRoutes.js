@@ -13,6 +13,9 @@ router.put('/:id', authenticate, CustomerController.updateCustomer);
 router.put('/:id/promotions', authenticate, CustomerController.updatePromotionPreference);
 router.post('/send-promotions', authenticate, CustomerController.sendBulkPromotions);
 
+router.post('/:id/activate', authenticate, CustomerController.activateCustomer);
+router.post('/:id/deactivate', authenticate, CustomerController.deactivateCustomer);
+
 
 
 module.exports = router;

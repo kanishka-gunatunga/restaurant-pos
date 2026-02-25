@@ -4,10 +4,17 @@ const sequelize = require('../config/database');
 
 exports.getAllModifications = async (req, res) => {
     try {
-        const modifications = await Modification.findAll({
-            include: [{ model: ModificationItem, as: 'items' }]
-        });
-        res.json(modifications);
+        const { status } = req.query;
+        let where = { status: 'active' };
+
+        if (status === 'inactive') {
+            where = { status: 'inactive' };
+        } else if (status === 'all') {
+            where = {};
+        }
+
+        const modifications = await Modification.findAll({ where });
+        res.status(200).json(modifications);
     } catch (error) {
         res.status(500).json({ message: error.message });
     }
@@ -89,13 +96,25 @@ exports.updateModification = async (req, res) => {
     }
 };
 
-exports.deleteModification = async (req, res) => {
+exports.deactivateModification = async (req, res) => {
     try {
         const { id } = req.params;
-        // Cascading delete is handled by the association in app.js
-        const deleted = await Modification.destroy({ where: { id } });
-        if (deleted) {
-            return res.status(200).json({ message: 'Modification deleted' });
+        const [updated] = await Modification.update({ status: 'inactive' }, { where: { id } });
+        if (updated) {
+            return res.status(200).json({ message: 'Modification deactivated' });
+        }
+        res.status(404).json({ message: 'Modification not found' });
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
+exports.activateModification = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const [updated] = await Modification.update({ status: 'active' }, { where: { id } });
+        if (updated) {
+            return res.status(200).json({ message: 'Modification activated' });
         }
         res.status(404).json({ message: 'Modification not found' });
     } catch (error) {
