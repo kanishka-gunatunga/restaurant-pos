@@ -51,6 +51,22 @@ const Order = sequelize.define('Order', {
         type: DataTypes.TEXT,
         allowNull: true,
     },
+    deliveryAddress: {
+        type: DataTypes.TEXT,
+        allowNull: true,
+    },
+    landmark: {
+        type: DataTypes.STRING,
+        allowNull: true,
+    },
+    zipcode: {
+        type: DataTypes.STRING,
+        allowNull: true,
+    },
+    deliveryInstructions: {
+        type: DataTypes.TEXT,
+        allowNull: true,
+    },
     userId: {
         type: DataTypes.INTEGER,
         allowNull: true, // Allow null for now, but should be populated via controller

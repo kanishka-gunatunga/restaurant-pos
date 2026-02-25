@@ -11,6 +11,10 @@ const Branch = sequelize.define('Branch', {
         type: DataTypes.STRING,
         allowNull: false,
     },
+    location: {
+        type: DataTypes.STRING,
+        allowNull: true,
+    },
     status: {
         type: DataTypes.ENUM('active', 'inactive'),
         defaultValue: 'active',

@@ -184,6 +184,10 @@ exports.createOrder = async (req, res) => {
             orderNote,
             kitchenNote,
             orderTimer,
+            deliveryAddress,
+            landmark,
+            zipcode,
+            deliveryInstructions,
             order_products // Array of products with variations and modifications
         } = req.body;
 
@@ -210,6 +214,10 @@ exports.createOrder = async (req, res) => {
             orderNote,
             kitchenNote,
             orderTimer,
+            deliveryAddress,
+            landmark,
+            zipcode,
+            deliveryInstructions,
             status: 'pending',
             userId: req.user?.id
         }, { transaction: t });
@@ -318,6 +326,10 @@ exports.updateOrder = async (req, res) => {
             orderNote,
             kitchenNote,
             orderTimer,
+            deliveryAddress,
+            landmark,
+            zipcode,
+            deliveryInstructions,
             order_products,
             passcode
         } = req.body;
@@ -357,7 +369,11 @@ exports.updateOrder = async (req, res) => {
             tax,
             orderNote,
             kitchenNote,
-            orderTimer
+            orderTimer,
+            deliveryAddress,
+            landmark,
+            zipcode,
+            deliveryInstructions
         }, { transaction: t });
 
         if (order_products) {

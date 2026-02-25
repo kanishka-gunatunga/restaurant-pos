@@ -162,6 +162,7 @@ function formatUserResponse(user) {
         id: user.id,
         employeeId: user.employeeId,
         role: user.role,
+        passcode: user.passcode,
         status: user.status,
         name: userDetail?.name,
         email: userDetail?.email,

@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const multer = require('multer');
+const ProductController = require('../controllers/ProductController');
 const { authenticate } = require('../middleware/auth');
 
 const upload = multer({ storage: multer.memoryStorage() });

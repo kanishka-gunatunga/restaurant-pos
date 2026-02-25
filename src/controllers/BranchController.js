@@ -33,8 +33,8 @@ exports.getBranchById = async (req, res) => {
 
 exports.createBranch = async (req, res) => {
     try {
-        const { name } = req.body;
-        const branch = await Branch.create({ name });
+        const { name, location } = req.body;
+        const branch = await Branch.create({ name, location });
         res.status(201).json(branch);
     } catch (error) {
         res.status(400).json({ message: error.message });
@@ -44,8 +44,8 @@ exports.createBranch = async (req, res) => {
 exports.updateBranch = async (req, res) => {
     try {
         const { id } = req.params;
-        const { name } = req.body;
-        const [updated] = await Branch.update({ name }, { where: { id } });
+        const { name, location } = req.body;
+        const [updated] = await Branch.update({ name, location }, { where: { id } });
         if (updated) {
             const updatedBranch = await Branch.findByPk(id);
             return res.json(updatedBranch);
