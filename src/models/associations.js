@@ -9,7 +9,9 @@ const Customer = require('./Customer');
 const OrderItem = require('./OrderItem');
 const OrderItemModification = require('./OrderItemModification');
 const Product = require('./Product');
+const ProductBranch = require('./ProductBranch');
 const Variation = require('./Variation');
+const VariationOption = require('./VariationOption');
 const ModificationItem = require('./ModificationItem');
 const Category = require('./Category');
 const VariationPrice = require('./VariationPrice');
@@ -74,17 +76,30 @@ OrderItemModification.belongsTo(ModificationItem, { foreignKey: 'modificationId'
 Order.hasMany(Payment, { foreignKey: 'orderId', as: 'payments', onDelete: 'CASCADE', hooks: true });
 Payment.belongsTo(Order, { foreignKey: 'orderId' });
 
-// Product - Category Association
-Category.hasMany(Product, { foreignKey: 'categoryId' });
-Product.belongsTo(Category, { foreignKey: 'categoryId' });
+// Product - Category Association (parentCategory)
+Category.hasMany(Product, { foreignKey: 'categoryId', as: 'products' });
+Product.belongsTo(Category, { foreignKey: 'categoryId', as: 'category' });
+
+// Product - SubCategory Association
+Category.hasMany(Product, { foreignKey: 'subCategoryId', as: 'subCategoryProducts' });
+Product.belongsTo(Category, { foreignKey: 'subCategoryId', as: 'subCategory' });
+
+// Product - Branch Availability
+Product.hasMany(ProductBranch, { foreignKey: 'productId', as: 'branches', onDelete: 'CASCADE', hooks: true });
+ProductBranch.belongsTo(Product, { foreignKey: 'productId' });
+ProductBranch.belongsTo(Branch, { foreignKey: 'branchId', as: 'branch' });
 
 // Product - Variation Association
 Product.hasMany(Variation, { foreignKey: 'productId', as: 'variations', onDelete: 'CASCADE', hooks: true });
 Variation.belongsTo(Product, { foreignKey: 'productId' });
 
-// Variation - VariationPrice Association
-Variation.hasMany(VariationPrice, { foreignKey: 'variationId', as: 'prices', onDelete: 'CASCADE', hooks: true });
-VariationPrice.belongsTo(Variation, { foreignKey: 'variationId' });
+// Variation - VariationOption Association
+Variation.hasMany(VariationOption, { foreignKey: 'variationId', as: 'options', onDelete: 'CASCADE', hooks: true });
+VariationOption.belongsTo(Variation, { foreignKey: 'variationId' });
+
+// VariationOption - VariationPrice Association
+VariationOption.hasMany(VariationPrice, { foreignKey: 'variationOptionId', as: 'prices', onDelete: 'CASCADE', hooks: true });
+VariationPrice.belongsTo(VariationOption, { foreignKey: 'variationOptionId' });
 VariationPrice.belongsTo(Branch, { foreignKey: 'branchId' });
 
 // Product - Modification Many-to-Many

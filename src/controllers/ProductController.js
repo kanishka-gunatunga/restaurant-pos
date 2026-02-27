@@ -8,6 +8,8 @@ const ProductModification = require('../models/ProductModification');
 const ProductModificationPrice = require('../models/ProductModificationPrice');
 const ProductModificationItemPrice = require('../models/ProductModificationItemPrice');
 const ModificationItem = require('../models/ModificationItem');
+const ProductBranch = require('../models/ProductBranch');
+const VariationOption = require('../models/VariationOption');
 const sequelize = require('../config/database');
 const { put } = require('@vercel/blob');
 
@@ -35,24 +37,29 @@ exports.searchProducts = async (req, res) => {
                 ...statusFilter
             },
             include: [
-                { model: Category, where: statusFilter, required: false },
+                { model: Category, as: 'category', where: statusFilter, required: false },
+                { model: Category, as: 'subCategory', required: false },
+                { model: ProductBranch, as: 'branches', required: false },
                 {
                     model: Variation,
                     as: 'variations',
                     where: statusFilter,
                     required: false,
                     include: [
-                        { model: VariationPrice, as: 'prices' },
+                        {
+                            model: VariationOption,
+                            as: 'options',
+                            where: statusFilter,
+                            required: false,
+                            include: [
+                                { model: VariationPrice, as: 'prices' }
+                            ]
+                        },
                         {
                             model: ProductModification,
                             as: 'variationModifications',
                             include: [
-                                { model: Modification, where: statusFilter, required: false },
-                                {
-                                    model: ProductModificationItemPrice,
-                                    as: 'itemPrices',
-                                    include: [{ model: ModificationItem, as: 'item' }]
-                                }
+                                { model: Modification, where: statusFilter, required: false }
                             ]
                         }
                     ]
@@ -61,12 +68,7 @@ exports.searchProducts = async (req, res) => {
                     model: ProductModification,
                     as: 'productModifications',
                     include: [
-                        { model: Modification, where: statusFilter, required: false },
-                        {
-                            model: ProductModificationItemPrice,
-                            as: 'itemPrices',
-                            include: [{ model: ModificationItem, as: 'item' }]
-                        }
+                        { model: Modification, where: statusFilter, required: false }
                     ]
                 }
             ]
@@ -79,7 +81,7 @@ exports.searchProducts = async (req, res) => {
 
 exports.getAllProducts = async (req, res) => {
     try {
-        const { categoryId, status } = req.query;
+        const { categoryId, subCategoryId, status } = req.query;
 
         let statusFilter = { status: 'active' };
         if (status === 'inactive') {
@@ -90,28 +92,34 @@ exports.getAllProducts = async (req, res) => {
 
         const where = { ...statusFilter };
         if (categoryId) where.categoryId = categoryId;
+        if (subCategoryId) where.subCategoryId = subCategoryId;
 
         const products = await Product.findAll({
             where,
             include: [
-                { model: Category, where: statusFilter, required: false },
+                { model: Category, as: 'category', where: statusFilter, required: false },
+                { model: Category, as: 'subCategory', required: false },
+                { model: ProductBranch, as: 'branches', required: false },
                 {
                     model: Variation,
                     as: 'variations',
                     where: statusFilter,
                     required: false,
                     include: [
-                        { model: VariationPrice, as: 'prices' },
+                        {
+                            model: VariationOption,
+                            as: 'options',
+                            where: statusFilter,
+                            required: false,
+                            include: [
+                                { model: VariationPrice, as: 'prices' }
+                            ]
+                        },
                         {
                             model: ProductModification,
                             as: 'variationModifications',
                             include: [
-                                { model: Modification, where: statusFilter, required: false },
-                                {
-                                    model: ProductModificationItemPrice,
-                                    as: 'itemPrices',
-                                    include: [{ model: ModificationItem, as: 'item' }]
-                                }
+                                { model: Modification, where: statusFilter, required: false }
                             ]
                         }
                     ]
@@ -120,12 +128,7 @@ exports.getAllProducts = async (req, res) => {
                     model: ProductModification,
                     as: 'productModifications',
                     include: [
-                        { model: Modification, where: statusFilter, required: false },
-                        {
-                            model: ProductModificationItemPrice,
-                            as: 'itemPrices',
-                            include: [{ model: ModificationItem, as: 'item' }]
-                        }
+                        { model: Modification, where: statusFilter, required: false }
                     ]
                 }
             ]
@@ -142,26 +145,27 @@ exports.getProductById = async (req, res) => {
 
         const product = await Product.findByPk(id, {
             include: [
-                {
-                    model: Category,
-                    required: false
-                },
+                { model: Category, as: 'category', required: false },
+                { model: Category, as: 'subCategory', required: false },
+                { model: ProductBranch, as: 'branches', required: false },
                 {
                     model: Variation,
                     as: 'variations',
                     required: false,
                     include: [
-                        { model: VariationPrice, as: 'prices' },
+                        {
+                            model: VariationOption,
+                            as: 'options',
+                            required: false,
+                            include: [
+                                { model: VariationPrice, as: 'prices' }
+                            ]
+                        },
                         {
                             model: ProductModification,
                             as: 'variationModifications',
                             include: [
-                                { model: Modification, required: false },
-                                {
-                                    model: ProductModificationItemPrice,
-                                    as: 'itemPrices',
-                                    include: [{ model: ModificationItem, as: 'item' }]
-                                }
+                                { model: Modification, required: false }
                             ]
                         }
                     ]
@@ -170,12 +174,7 @@ exports.getProductById = async (req, res) => {
                     model: ProductModification,
                     as: 'productModifications',
                     include: [
-                        { model: Modification, required: false },
-                        {
-                            model: ProductModificationItemPrice,
-                            as: 'itemPrices',
-                            include: [{ model: ModificationItem, as: 'item' }]
-                        }
+                        { model: Modification, required: false }
                     ]
                 }
             ]
@@ -206,16 +205,26 @@ exports.createProduct = async (req, res) => {
         }
 
         const {
-            name, code, shortDescription, description, sku, expireDate, categoryId,
-            variations, modifications
+            name, code, shortDescription, description, sku, categoryId, subCategoryId,
+            variations, modifications, branches
         } = productData;
 
         // 1. Create base product
         const product = await Product.create({
-            name, code, image: imageUrl, shortDescription, description, sku, expireDate, categoryId, status: 'active'
+            name, code, image: imageUrl, shortDescription, description, sku, categoryId, subCategoryId, status: 'active'
         }, { transaction: t });
 
-        // 2. Create variations and their prices
+        // 1.5. Create Product Branches
+        if (branches && branches.length > 0) {
+            for (const branchId of branches) {
+                await ProductBranch.create({
+                    productId: product.id,
+                    branchId
+                }, { transaction: t });
+            }
+        }
+
+        // 2. Create variations, options, and prices
         if (variations && variations.length > 0) {
             for (const v of variations) {
                 const variation = await Variation.create({
@@ -224,58 +233,51 @@ exports.createProduct = async (req, res) => {
                     status: 'active'
                 }, { transaction: t });
 
-                if (v.prices && v.prices.length > 0) {
-                    for (const p of v.prices) {
-                        await VariationPrice.create({
+                // Create options
+                if (v.options && v.options.length > 0) {
+                    for (const o of v.options) {
+                        const option = await VariationOption.create({
                             variationId: variation.id,
-                            branchId: p.branchId,
-                            price: p.price,
-                            discountPrice: p.discountPrice,
-                            stockQuantity: p.stockQuantity || 0
-                        }, { transaction: t });
-                    }
-                }
-
-                if (v.modifications && v.modifications.length > 0) {
-                    for (const m of v.modifications) {
-                        const variationMod = await ProductModification.create({
-                            variationId: variation.id,
-                            modificationId: m.modificationId
+                            name: o.name,
+                            status: 'active'
                         }, { transaction: t });
 
-                        if (m.itemPrices && m.itemPrices.length > 0) {
-                            for (const ip of m.itemPrices) {
-                                await ProductModificationItemPrice.create({
-                                    productModificationId: variationMod.id,
-                                    modificationItemId: ip.modificationItemId,
-                                    branchId: ip.branchId,
-                                    price: ip.price
+                        if (o.prices && o.prices.length > 0) {
+                            for (const p of o.prices) {
+                                await VariationPrice.create({
+                                    variationOptionId: option.id,
+                                    branchId: p.branchId,
+                                    price: p.price,
+                                    discountPrice: p.discountPrice,
+                                    quantity: p.quantity || 0,
+                                    expireDate: p.expireDate || null,
+                                    batchNo: p.batchNo || null
                                 }, { transaction: t });
                             }
                         }
                     }
                 }
-            }
-        }
 
-        // 3. Create modifications for product level if any
-        if (modifications && modifications.length > 0) {
-            for (const m of modifications) {
-                const productMod = await ProductModification.create({
-                    productId: product.id,
-                    modificationId: m.modificationId
-                }, { transaction: t });
-
-                if (m.itemPrices && m.itemPrices.length > 0) {
-                    for (const ip of m.itemPrices) {
-                        await ProductModificationItemPrice.create({
-                            productModificationId: productMod.id,
-                            modificationItemId: ip.modificationItemId,
-                            branchId: ip.branchId,
-                            price: ip.price
+                // Create modifications associated with this variation
+                if (v.modifications && v.modifications.length > 0) {
+                    for (const m of v.modifications) {
+                        await ProductModification.create({
+                            productId: product.id,
+                            variationId: variation.id,
+                            modificationId: m.modificationId
                         }, { transaction: t });
                     }
                 }
+            }
+        }
+
+        // 3. Create modifications for product level if any (without variations)
+        if (modifications && modifications.length > 0) {
+            for (const m of modifications) {
+                await ProductModification.create({
+                    productId: product.id,
+                    modificationId: m.modificationId
+                }, { transaction: t });
             }
         }
 
@@ -309,21 +311,39 @@ exports.updateProduct = async (req, res) => {
         }
 
         const {
-            name, code, shortDescription, description, sku, expireDate, categoryId,
-            variations, modifications
+            name, code, shortDescription, description, sku, categoryId, subCategoryId,
+            variations, modifications, branches
         } = productData;
 
         // 1. Update base product
         await Product.update({
-            name, code, image: imageUrl, shortDescription, description, sku, expireDate, categoryId
+            name, code, image: imageUrl, shortDescription, description, sku, categoryId, subCategoryId
         }, { where: { id }, transaction: t });
+
+        // 1.5. Sync Branches
+        if (branches) {
+            await ProductBranch.destroy({ where: { productId: id }, transaction: t });
+            for (const branchId of branches) {
+                await ProductBranch.create({
+                    productId: id,
+                    branchId
+                }, { transaction: t });
+            }
+        }
 
         // 2. Sync Variations
         if (variations) {
             const oldVariations = await Variation.findAll({ where: { productId: id } });
             for (const v of oldVariations) {
-                await VariationPrice.destroy({ where: { variationId: v.id }, transaction: t });
+                const oldOptions = await VariationOption.findAll({ where: { variationId: v.id } });
+                for (const o of oldOptions) {
+                    await VariationPrice.destroy({ where: { variationOptionId: o.id }, transaction: t });
+                }
+                await VariationOption.destroy({ where: { variationId: v.id }, transaction: t });
             }
+
+            // Explicitly delete variation modifications first before deleting variations to be safe
+            await ProductModification.destroy({ where: { productId: id, variationId: { [Op.not]: null } }, transaction: t });
             await Variation.destroy({ where: { productId: id }, transaction: t });
 
             for (const v of variations) {
@@ -333,35 +353,37 @@ exports.updateProduct = async (req, res) => {
                     status: 'active'
                 }, { transaction: t });
 
-                if (v.prices && v.prices.length > 0) {
-                    for (const p of v.prices) {
-                        await VariationPrice.create({
+                if (v.options && v.options.length > 0) {
+                    for (const o of v.options) {
+                        const option = await VariationOption.create({
                             variationId: variation.id,
-                            branchId: p.branchId,
-                            price: p.price,
-                            discountPrice: p.discountPrice,
-                            stockQuantity: p.stockQuantity || 0
+                            name: o.name,
+                            status: 'active'
                         }, { transaction: t });
+
+                        if (o.prices && o.prices.length > 0) {
+                            for (const p of o.prices) {
+                                await VariationPrice.create({
+                                    variationOptionId: option.id,
+                                    branchId: p.branchId,
+                                    price: p.price,
+                                    discountPrice: p.discountPrice,
+                                    quantity: p.quantity || 0,
+                                    expireDate: p.expireDate || null,
+                                    batchNo: p.batchNo || null
+                                }, { transaction: t });
+                            }
+                        }
                     }
                 }
 
                 if (v.modifications && v.modifications.length > 0) {
                     for (const m of v.modifications) {
-                        const variationMod = await ProductModification.create({
+                        await ProductModification.create({
+                            productId: id,
                             variationId: variation.id,
                             modificationId: m.modificationId
                         }, { transaction: t });
-
-                        if (m.itemPrices && m.itemPrices.length > 0) {
-                            for (const ip of m.itemPrices) {
-                                await ProductModificationItemPrice.create({
-                                    productModificationId: variationMod.id,
-                                    modificationItemId: ip.modificationItemId,
-                                    branchId: ip.branchId,
-                                    price: ip.price
-                                }, { transaction: t });
-                            }
-                        }
                     }
                 }
             }
@@ -369,28 +391,13 @@ exports.updateProduct = async (req, res) => {
 
         // 3. Sync Modifications (Product level)
         if (modifications) {
-            const oldProductMods = await ProductModification.findAll({ where: { productId: id, variationId: null } });
-            for (const pm of oldProductMods) {
-                await ProductModificationItemPrice.destroy({ where: { productModificationId: pm.id }, transaction: t });
-            }
             await ProductModification.destroy({ where: { productId: id, variationId: null }, transaction: t });
 
             for (const m of modifications) {
-                const productMod = await ProductModification.create({
+                await ProductModification.create({
                     productId: id,
                     modificationId: m.modificationId
                 }, { transaction: t });
-
-                if (m.itemPrices && m.itemPrices.length > 0) {
-                    for (const ip of m.itemPrices) {
-                        await ProductModificationItemPrice.create({
-                            productModificationId: productMod.id,
-                            modificationItemId: ip.modificationItemId,
-                            branchId: ip.branchId,
-                            price: ip.price
-                        }, { transaction: t });
-                    }
-                }
             }
         }
 
@@ -427,23 +434,28 @@ exports.getProductsByCategory = async (req, res) => {
             },
             include: [
                 { model: Category, as: 'category' },
+                { model: Category, as: 'subCategory', required: false },
+                { model: ProductBranch, as: 'branches', required: false },
                 {
                     model: Variation,
                     as: 'variations',
                     where: statusFilter,
                     required: false,
                     include: [
-                        { model: VariationPrice, as: 'prices' },
+                        {
+                            model: VariationOption,
+                            as: 'options',
+                            where: statusFilter,
+                            required: false,
+                            include: [
+                                { model: VariationPrice, as: 'prices' }
+                            ]
+                        },
                         {
                             model: ProductModification,
                             as: 'variationModifications',
                             include: [
-                                { model: Modification, where: statusFilter, required: false },
-                                {
-                                    model: ProductModificationItemPrice,
-                                    as: 'itemPrices',
-                                    include: [{ model: ModificationItem, as: 'item' }]
-                                }
+                                { model: Modification, where: statusFilter, required: false }
                             ]
                         }
                     ]
@@ -452,12 +464,7 @@ exports.getProductsByCategory = async (req, res) => {
                     model: ProductModification,
                     as: 'productModifications',
                     include: [
-                        { model: Modification, where: statusFilter, required: false },
-                        {
-                            model: ProductModificationItemPrice,
-                            as: 'itemPrices',
-                            include: [{ model: ModificationItem, as: 'item' }]
-                        }
+                        { model: Modification, where: statusFilter, required: false }
                     ]
                 }
             ]

@@ -7,7 +7,7 @@ const VariationPrice = sequelize.define('VariationPrice', {
         autoIncrement: true,
         primaryKey: true,
     },
-    variationId: {
+    variationOptionId: {
         type: DataTypes.INTEGER,
         allowNull: false,
     },
@@ -24,8 +24,17 @@ const VariationPrice = sequelize.define('VariationPrice', {
         type: DataTypes.DECIMAL(10, 2),
         allowNull: true,
     },
-    stockQuantity: {
+    quantity: {
         type: DataTypes.INTEGER,
+        allowNull: true,
+        defaultValue: 0,
+    },
+    expireDate: {
+        type: DataTypes.DATE,
+        allowNull: true,
+    },
+    batchNo: {
+        type: DataTypes.STRING,
         allowNull: true,
     }
 });

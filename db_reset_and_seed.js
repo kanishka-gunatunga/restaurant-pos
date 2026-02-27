@@ -6,12 +6,13 @@ const UserDetail = require('./src/models/UserDetail');
 const Branch = require('./src/models/Branch');
 const Category = require('./src/models/Category');
 const Product = require('./src/models/Product');
+const ProductBranch = require('./src/models/ProductBranch');
 const Variation = require('./src/models/Variation');
+const VariationOption = require('./src/models/VariationOption');
 const VariationPrice = require('./src/models/VariationPrice');
 const Modification = require('./src/models/Modification');
 const ModificationItem = require('./src/models/ModificationItem');
 const ProductModification = require('./src/models/ProductModification');
-const ProductModificationItemPrice = require('./src/models/ProductModificationItemPrice');
 const Customer = require('./src/models/Customer');
 const Session = require('./src/models/Session');
 const Order = require('./src/models/Order');
@@ -64,14 +65,25 @@ async function resetAndSeed() {
             status: 'active'
         });
 
+        // Branch availability
+        await ProductBranch.create({
+            productId: burger.id,
+            branchId: branch.id
+        });
+
         const burgerVariation = await Variation.create({
             productId: burger.id,
             name: 'Regular',
             sku: 'CH-BRG-REG'
         });
 
-        await VariationPrice.create({
+        const burgerOption = await VariationOption.create({
             variationId: burgerVariation.id,
+            name: 'Default'
+        });
+
+        await VariationPrice.create({
+            variationOptionId: burgerOption.id,
             branchId: branch.id,
             price: 550.00
         });
@@ -84,14 +96,24 @@ async function resetAndSeed() {
             status: 'active'
         });
 
+        await ProductBranch.create({
+            productId: coke.id,
+            branchId: branch.id
+        });
+
         const cokeVariation = await Variation.create({
             productId: coke.id,
             name: '500ml',
             sku: 'COKE-500-ML'
         });
 
-        await VariationPrice.create({
+        const cokeOption = await VariationOption.create({
             variationId: cokeVariation.id,
+            name: 'Bottle'
+        });
+
+        await VariationPrice.create({
+            variationOptionId: cokeOption.id,
             branchId: branch.id,
             price: 150.00
         });
@@ -111,13 +133,6 @@ async function resetAndSeed() {
         const prodMod = await ProductModification.create({
             productId: burger.id,
             modificationId: cheeseMod.id
-        });
-
-        await ProductModificationItemPrice.create({
-            productModificationId: prodMod.id,
-            modificationItemId: cheeseItem.id,
-            branchId: branch.id,
-            price: 50.00
         });
         console.log('Created Modifications.');
 

@@ -28,11 +28,17 @@ const Product = sequelize.define('Product', {
         type: DataTypes.STRING,
         unique: true,
     },
-    expireDate: {
-        type: DataTypes.DATE,
-    },
     categoryId: {
         type: DataTypes.INTEGER,
+        allowNull: true,
+        references: {
+            model: 'Categories',
+            key: 'id',
+        },
+    },
+    subCategoryId: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
         references: {
             model: 'Categories',
             key: 'id',
