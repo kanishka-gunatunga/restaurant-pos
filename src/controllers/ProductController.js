@@ -10,6 +10,8 @@ const ProductModificationItemPrice = require('../models/ProductModificationItemP
 const ModificationItem = require('../models/ModificationItem');
 const ProductBranch = require('../models/ProductBranch');
 const VariationOption = require('../models/VariationOption');
+const DiscountItem = require('../models/DiscountItem');
+const Discount = require('../models/Discount');
 const sequelize = require('../config/database');
 const { put } = require('@vercel/blob');
 
@@ -52,7 +54,15 @@ exports.searchProducts = async (req, res) => {
                             where: statusFilter,
                             required: false,
                             include: [
-                                { model: VariationPrice, as: 'prices' }
+                                { model: VariationPrice, as: 'prices' },
+                                {
+                                    model: DiscountItem,
+                                    as: 'discountItems',
+                                    required: false,
+                                    include: [
+                                        { model: Discount, required: true, where: { status: 'active' } }
+                                    ]
+                                }
                             ]
                         },
                         {
@@ -69,6 +79,14 @@ exports.searchProducts = async (req, res) => {
                     as: 'productModifications',
                     include: [
                         { model: Modification, where: statusFilter, required: false }
+                    ]
+                },
+                {
+                    model: DiscountItem,
+                    as: 'discountItems',
+                    required: false,
+                    include: [
+                        { model: Discount, required: true, where: { status: 'active' } }
                     ]
                 }
             ]
@@ -112,7 +130,15 @@ exports.getAllProducts = async (req, res) => {
                             where: statusFilter,
                             required: false,
                             include: [
-                                { model: VariationPrice, as: 'prices' }
+                                { model: VariationPrice, as: 'prices' },
+                                {
+                                    model: DiscountItem,
+                                    as: 'discountItems',
+                                    required: false,
+                                    include: [
+                                        { model: Discount, required: true, where: { status: 'active' } }
+                                    ]
+                                }
                             ]
                         },
                         {
@@ -129,6 +155,14 @@ exports.getAllProducts = async (req, res) => {
                     as: 'productModifications',
                     include: [
                         { model: Modification, where: statusFilter, required: false }
+                    ]
+                },
+                {
+                    model: DiscountItem,
+                    as: 'discountItems',
+                    required: false,
+                    include: [
+                        { model: Discount, required: true, where: { status: 'active' } }
                     ]
                 }
             ]
@@ -158,7 +192,15 @@ exports.getProductById = async (req, res) => {
                             as: 'options',
                             required: false,
                             include: [
-                                { model: VariationPrice, as: 'prices' }
+                                { model: VariationPrice, as: 'prices' },
+                                {
+                                    model: DiscountItem,
+                                    as: 'discountItems',
+                                    required: false,
+                                    include: [
+                                        { model: Discount, required: true, where: { status: 'active' } }
+                                    ]
+                                }
                             ]
                         },
                         {
@@ -175,6 +217,14 @@ exports.getProductById = async (req, res) => {
                     as: 'productModifications',
                     include: [
                         { model: Modification, required: false }
+                    ]
+                },
+                {
+                    model: DiscountItem,
+                    as: 'discountItems',
+                    required: false,
+                    include: [
+                        { model: Discount, required: true, where: { status: 'active' } }
                     ]
                 }
             ]
@@ -448,7 +498,15 @@ exports.getProductsByCategory = async (req, res) => {
                             where: statusFilter,
                             required: false,
                             include: [
-                                { model: VariationPrice, as: 'prices' }
+                                { model: VariationPrice, as: 'prices' },
+                                {
+                                    model: DiscountItem,
+                                    as: 'discountItems',
+                                    required: false,
+                                    include: [
+                                        { model: Discount, required: true, where: { status: 'active' } }
+                                    ]
+                                }
                             ]
                         },
                         {
@@ -465,6 +523,14 @@ exports.getProductsByCategory = async (req, res) => {
                     as: 'productModifications',
                     include: [
                         { model: Modification, where: statusFilter, required: false }
+                    ]
+                },
+                {
+                    model: DiscountItem,
+                    as: 'discountItems',
+                    required: false,
+                    include: [
+                        { model: Discount, required: true, where: { status: 'active' } }
                     ]
                 }
             ]

@@ -19,6 +19,8 @@ const Modification = require('./Modification');
 const ProductModification = require('./ProductModification');
 const ProductModificationPrice = require('./ProductModificationPrice');
 const ProductModificationItemPrice = require('./ProductModificationItemPrice');
+const Discount = require('./Discount');
+const DiscountItem = require('./DiscountItem');
 
 // User <-> UserDetail: One-to-One
 User.hasOne(UserDetail, { foreignKey: 'userId', as: 'UserDetail' });
@@ -130,3 +132,15 @@ ProductModification.hasMany(ProductModificationItemPrice, { foreignKey: 'product
 ProductModificationItemPrice.belongsTo(ProductModification, { foreignKey: 'productModificationId' });
 ProductModificationItemPrice.belongsTo(ModificationItem, { foreignKey: 'modificationItemId', as: 'item' });
 ProductModificationItemPrice.belongsTo(Branch, { foreignKey: 'branchId' });
+
+// Discount - DiscountItem Association
+Discount.hasMany(DiscountItem, { foreignKey: 'discountId', as: 'items', onDelete: 'CASCADE', hooks: true });
+DiscountItem.belongsTo(Discount, { foreignKey: 'discountId' });
+
+// DiscountItem - Product Association
+DiscountItem.belongsTo(Product, { foreignKey: 'productId', as: 'product' });
+Product.hasMany(DiscountItem, { foreignKey: 'productId', as: 'discountItems' });
+
+// DiscountItem - VariationOption Association
+DiscountItem.belongsTo(VariationOption, { foreignKey: 'variationOptionId', as: 'variationOption' });
+VariationOption.hasMany(DiscountItem, { foreignKey: 'variationOptionId', as: 'discountItems' });

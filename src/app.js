@@ -19,6 +19,7 @@ const paymentRoutes = require('./routes/paymentRoutes');
 const reportRoutes = require('./routes/reportRoutes');
 const sessionRoutes = require('./routes/sessionRoutes');
 const branchRoutes = require('./routes/branchRoutes');
+const discountRoutes = require('./routes/discountRoutes');
 
 const app = express();
 
@@ -41,6 +42,7 @@ app.use('/api/payments', paymentRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/sessions', sessionRoutes);
 app.use('/api/branches', branchRoutes);
+app.use('/api/discounts', discountRoutes);
 
 // Database Sync
 sequelize.sync().then(() => {

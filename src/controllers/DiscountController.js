@@ -1,0 +1,296 @@
+const { Op } = require('sequelize');
+const sequelize = require('../config/database');
+const Discount = require('../models/Discount');
+const DiscountItem = require('../models/DiscountItem');
+const Product = require('../models/Product');
+const VariationOption = require('../models/VariationOption');
+const Variation = require('../models/Variation');
+const VariationPrice = require('../models/VariationPrice');
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+const DISCOUNT_INCLUDE = [
+    {
+        model: DiscountItem,
+        as: 'items',
+        include: [
+            {
+                model: Product,
+                as: 'product',
+                attributes: ['id', 'name', 'code', 'image'],
+                required: false,
+            },
+            {
+                model: VariationOption,
+                as: 'variationOption',
+                attributes: ['id', 'name'],
+                required: false,
+                include: [
+                    {
+                        model: Variation,
+                        attributes: ['id', 'name'],
+                        include: [
+                            {
+                                model: Product,
+                                attributes: ['id', 'name', 'code', 'image'],
+                            },
+                        ],
+                    },
+                    {
+                        model: VariationPrice,
+                        as: 'prices',
+                        required: false,
+                    },
+                ],
+            },
+        ],
+    },
+];
+
+// ─── Controllers ─────────────────────────────────────────────────────────────
+
+/**
+ * POST /api/discounts
+ * Body: { name, expiryDate?, items: [{ productId?, variationOptionId?, discountType, discountValue }] }
+ */
+exports.createDiscount = async (req, res) => {
+    const t = await sequelize.transaction();
+    try {
+        const { name, expiryDate, items } = req.body;
+
+        if (!name) {
+            await t.rollback();
+            return res.status(400).json({ message: 'Discount name is required' });
+        }
+
+        if (!items || items.length === 0) {
+            await t.rollback();
+            return res.status(400).json({ message: 'At least one discount item is required' });
+        }
+
+        // Validate items
+        for (const item of items) {
+            if (!item.productId && !item.variationOptionId) {
+                await t.rollback();
+                return res.status(400).json({ message: 'Each discount item must have either a productId or a variationOptionId' });
+            }
+            if (!item.discountType || !['percentage', 'fixed'].includes(item.discountType)) {
+                await t.rollback();
+                return res.status(400).json({ message: 'discountType must be either "percentage" or "fixed"' });
+            }
+            if (item.discountValue === undefined || item.discountValue === null || Number(item.discountValue) < 0) {
+                await t.rollback();
+                return res.status(400).json({ message: 'discountValue must be a non-negative number' });
+            }
+        }
+
+        // Create discount
+        const discount = await Discount.create(
+            { name, expiryDate: expiryDate || null, status: 'active' },
+            { transaction: t }
+        );
+
+        // Create discount items
+        for (const item of items) {
+            await DiscountItem.create(
+                {
+                    discountId: discount.id,
+                    productId: item.productId || null,
+                    variationOptionId: item.variationOptionId || null,
+                    discountType: item.discountType,
+                    discountValue: item.discountValue,
+                },
+                { transaction: t }
+            );
+        }
+
+        await t.commit();
+
+        // Return with associations
+        const created = await Discount.findByPk(discount.id, { include: DISCOUNT_INCLUDE });
+        return res.status(201).json(created);
+    } catch (error) {
+        await t.rollback();
+        return res.status(500).json({ message: error.message });
+    }
+};
+
+/**
+ * GET /api/discounts
+ * Query: status (active|inactive|all), search (name)
+ */
+exports.getAllDiscounts = async (req, res) => {
+    try {
+        const { status, search } = req.query;
+
+        const where = {};
+        if (status === 'inactive') {
+            where.status = 'inactive';
+        } else if (status === 'all') {
+            // no filter
+        } else {
+            where.status = 'active';
+        }
+
+        if (search) {
+            where.name = { [Op.like]: `%${search}%` };
+        }
+
+        const discounts = await Discount.findAll({ where, include: DISCOUNT_INCLUDE, order: [['createdAt', 'DESC']] });
+        return res.json(discounts);
+    } catch (error) {
+        return res.status(500).json({ message: error.message });
+    }
+};
+
+/**
+ * GET /api/discounts/:id
+ */
+exports.getDiscountById = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const discount = await Discount.findByPk(id, { include: DISCOUNT_INCLUDE });
+
+        if (!discount) {
+            return res.status(404).json({ message: 'Discount not found' });
+        }
+
+        return res.json(discount);
+    } catch (error) {
+        return res.status(500).json({ message: error.message });
+    }
+};
+
+/**
+ * PUT /api/discounts/:id
+ * Body: { name?, expiryDate?, items? }
+ * If items is provided, the existing items are replaced.
+ */
+exports.updateDiscount = async (req, res) => {
+    const t = await sequelize.transaction();
+    try {
+        const { id } = req.params;
+        const { name, expiryDate, items } = req.body;
+
+        const discount = await Discount.findByPk(id);
+        if (!discount) {
+            await t.rollback();
+            return res.status(404).json({ message: 'Discount not found' });
+        }
+
+        // Update header fields
+        await discount.update(
+            {
+                name: name !== undefined ? name : discount.name,
+                expiryDate: expiryDate !== undefined ? (expiryDate || null) : discount.expiryDate,
+            },
+            { transaction: t }
+        );
+
+        // Sync items if provided
+        if (items !== undefined) {
+            if (items.length === 0) {
+                await t.rollback();
+                return res.status(400).json({ message: 'At least one discount item is required' });
+            }
+
+            for (const item of items) {
+                if (!item.productId && !item.variationOptionId) {
+                    await t.rollback();
+                    return res.status(400).json({ message: 'Each discount item must have either a productId or a variationOptionId' });
+                }
+                if (!item.discountType || !['percentage', 'fixed'].includes(item.discountType)) {
+                    await t.rollback();
+                    return res.status(400).json({ message: 'discountType must be either "percentage" or "fixed"' });
+                }
+                if (item.discountValue === undefined || item.discountValue === null || Number(item.discountValue) < 0) {
+                    await t.rollback();
+                    return res.status(400).json({ message: 'discountValue must be a non-negative number' });
+                }
+            }
+
+            // Delete existing items and recreate
+            await DiscountItem.destroy({ where: { discountId: id }, transaction: t });
+
+            for (const item of items) {
+                await DiscountItem.create(
+                    {
+                        discountId: id,
+                        productId: item.productId || null,
+                        variationOptionId: item.variationOptionId || null,
+                        discountType: item.discountType,
+                        discountValue: item.discountValue,
+                    },
+                    { transaction: t }
+                );
+            }
+        }
+
+        await t.commit();
+
+        const updated = await Discount.findByPk(id, { include: DISCOUNT_INCLUDE });
+        return res.json(updated);
+    } catch (error) {
+        await t.rollback();
+        return res.status(500).json({ message: error.message });
+    }
+};
+
+/**
+ * DELETE /api/discounts/:id
+ */
+exports.deleteDiscount = async (req, res) => {
+    const t = await sequelize.transaction();
+    try {
+        const { id } = req.params;
+        const discount = await Discount.findByPk(id);
+
+        if (!discount) {
+            await t.rollback();
+            return res.status(404).json({ message: 'Discount not found' });
+        }
+
+        await DiscountItem.destroy({ where: { discountId: id }, transaction: t });
+        await discount.destroy({ transaction: t });
+
+        await t.commit();
+        return res.json({ message: 'Discount deleted successfully' });
+    } catch (error) {
+        await t.rollback();
+        return res.status(500).json({ message: error.message });
+    }
+};
+
+/**
+ * POST /api/discounts/:id/activate
+ */
+exports.activateDiscount = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const [updated] = await Discount.update({ status: 'active' }, { where: { id } });
+
+        if (!updated) {
+            return res.status(404).json({ message: 'Discount not found' });
+        }
+        return res.json({ message: 'Discount activated successfully' });
+    } catch (error) {
+        return res.status(500).json({ message: error.message });
+    }
+};
+
+/**
+ * POST /api/discounts/:id/deactivate
+ */
+exports.deactivateDiscount = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const [updated] = await Discount.update({ status: 'inactive' }, { where: { id } });
+
+        if (!updated) {
+            return res.status(404).json({ message: 'Discount not found' });
+        }
+        return res.json({ message: 'Discount deactivated successfully' });
+    } catch (error) {
+        return res.status(500).json({ message: error.message });
+    }
+};
