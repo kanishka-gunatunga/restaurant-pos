@@ -28,7 +28,16 @@ const verifyManagerPasscode = async (passcode) => {
 exports.startSession = async (req, res) => {
     try {
         const userId = req.user.id;
-        let { startBalance, branchId } = req.body;
+        let { startBalance, branchId, passcode } = req.body;
+
+        if (!passcode) {
+            return res.status(400).json({ message: 'Manager passcode is required to start session' });
+        }
+
+        const manager = await verifyManagerPasscode(passcode);
+        if (!manager) {
+            return res.status(401).json({ message: 'Invalid manager passcode' });
+        }
 
         // Automatically fetch branchId from user profile if not provided
         if (!branchId) {
@@ -95,7 +104,16 @@ exports.cashAction = async (req, res) => {
     const t = await sequelize.transaction();
     try {
         const userId = req.user.id;
-        const { type, amount, description } = req.body; // type: 'add' or 'remove'
+        const { type, amount, description, passcode } = req.body; // type: 'add' or 'remove'
+
+        if (!passcode) {
+            return res.status(400).json({ message: 'Manager passcode is required for cash actions' });
+        }
+
+        const manager = await verifyManagerPasscode(passcode);
+        if (!manager) {
+            return res.status(401).json({ message: 'Invalid manager passcode' });
+        }
 
         if (!['add', 'remove'].includes(type)) {
             return res.status(400).json({ message: 'Invalid action type. Must be add or remove.' });
