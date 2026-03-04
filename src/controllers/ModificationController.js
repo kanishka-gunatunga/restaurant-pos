@@ -13,7 +13,10 @@ exports.getAllModifications = async (req, res) => {
             where = {};
         }
 
-        const modifications = await Modification.findAll({ where });
+        const modifications = await Modification.findAll({
+            where,
+            include: [{ model: ModificationItem, as: 'items' }]
+        });
         res.status(200).json(modifications);
     } catch (error) {
         res.status(500).json({ message: error.message });
