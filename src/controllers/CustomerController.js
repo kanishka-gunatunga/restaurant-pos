@@ -2,7 +2,6 @@ const Customer = require('../models/Customer');
 const Order = require('../models/Order');
 const MobitelSmsService = require('../services/MobitelSmsService');
 const { Op, fn, col } = require('sequelize');
-const sequelize = require('../config/database');
 
 exports.findOrCreate = async (req, res) => {
     try {
@@ -17,7 +16,8 @@ exports.findOrCreate = async (req, res) => {
         customer = await Customer.create({ mobile, name, address, email, status: 'active' });
         res.status(201).json(customer);
     } catch (error) {
-        res.status(500).json({ message: error.message });
+        console.error('Customers:', error);
+        res.status(500).json({ message: error.message || 'Internal server error' });
     }
 };
 
@@ -41,7 +41,8 @@ exports.createCustomer = async (req, res) => {
         });
         res.status(201).json(customer);
     } catch (error) {
-        res.status(500).json({ message: error.message });
+        console.error('Customers:', error);
+        res.status(500).json({ message: error.message || 'Internal server error' });
     }
 };
 
@@ -54,7 +55,8 @@ exports.getByMobile = async (req, res) => {
         }
         res.json(customer);
     } catch (error) {
-        res.status(500).json({ message: error.message });
+        console.error('Customers:', error);
+        res.status(500).json({ message: error.message || 'Internal server error' });
     }
 };
 
@@ -89,7 +91,8 @@ exports.getAllCustomers = async (req, res) => {
         });
         res.json(customers);
     } catch (error) {
-        res.status(500).json({ message: error.message });
+        console.error('[GET /api/customers]', error);
+        res.status(500).json({ message: error.message || 'Internal server error' });
     }
 };
 
@@ -135,7 +138,8 @@ exports.searchCustomers = async (req, res) => {
         });
         res.json(customers);
     } catch (error) {
-        res.status(500).json({ message: error.message });
+        console.error('Customers:', error);
+        res.status(500).json({ message: error.message || 'Internal server error' });
     }
 };
 
@@ -148,7 +152,8 @@ exports.getCustomerById = async (req, res) => {
         }
         res.json(customer);
     } catch (error) {
-        res.status(500).json({ message: error.message });
+        console.error('Customers:', error);
+        res.status(500).json({ message: error.message || 'Internal server error' });
     }
 };
 
@@ -167,6 +172,7 @@ exports.updateCustomer = async (req, res) => {
         await customer.save();
         res.json(customer);
     } catch (error) {
+        console.error('[PUT /api/customers/:id]', error);
         res.status(400).json({ message: error.message });
     }
 };
@@ -189,7 +195,8 @@ exports.updatePromotionPreference = async (req, res) => {
             customer
         });
     } catch (error) {
-        res.status(500).json({ message: error.message });
+        console.error('Customers:', error);
+        res.status(500).json({ message: error.message || 'Internal server error' });
     }
 };
 
@@ -220,7 +227,8 @@ exports.sendBulkPromotions = async (req, res) => {
             mobitel_response: smsResponse
         });
     } catch (error) {
-        res.status(500).json({ message: error.message });
+        console.error('Customers:', error);
+        res.status(500).json({ message: error.message || 'Internal server error' });
     }
 };
 
@@ -233,7 +241,8 @@ exports.deactivateCustomer = async (req, res) => {
         }
         res.status(404).json({ message: 'Customer not found' });
     } catch (error) {
-        res.status(500).json({ message: error.message });
+        console.error('Customers:', error);
+        res.status(500).json({ message: error.message || 'Internal server error' });
     }
 };
 
@@ -246,6 +255,7 @@ exports.activateCustomer = async (req, res) => {
         }
         res.status(404).json({ message: 'Customer not found' });
     } catch (error) {
-        res.status(500).json({ message: error.message });
+        console.error('Customers:', error);
+        res.status(500).json({ message: error.message || 'Internal server error' });
     }
 };
