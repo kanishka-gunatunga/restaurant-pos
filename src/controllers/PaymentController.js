@@ -299,3 +299,38 @@ exports.filterPaymentsByStatus = async (req, res) => {
         res.status(500).json({ message: error.message });
     }
 };
+
+exports.getPaymentStats = async (req, res) => {
+    try {
+        const payments = await Payment.findAll();
+
+        let totalCollectedAmount = 0;
+        let pendingPaymentAmount = 0;
+        let totalRefundAmount = 0;
+
+        payments.forEach(payment => {
+            const amount = parseFloat(payment.amount) || 0;
+            const refundedAmount = parseFloat(payment.refundedAmount) || 0;
+
+            if (payment.status === 'pending') {
+                pendingPaymentAmount += amount;
+            } else if (['paid', 'partial_refund', 'refund'].includes(payment.status)) {
+                totalCollectedAmount += amount;
+                totalRefundAmount += refundedAmount;
+            }
+        });
+
+        const refundRate = totalCollectedAmount > 0
+            ? ((totalRefundAmount / totalCollectedAmount) * 100).toFixed(2)
+            : 0;
+
+        res.json({
+            totalCollectedAmount,
+            pendingPaymentAmount,
+            totalRefundAmount,
+            refundRate: `${refundRate}%`
+        });
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
