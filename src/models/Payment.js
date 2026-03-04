@@ -24,8 +24,12 @@ const Payment = sequelize.define('Payment', {
         allowNull: true,
     },
     status: {
-        type: DataTypes.ENUM('pending', 'paid', 'refund'),
+        type: DataTypes.ENUM('pending', 'paid', 'refund', 'partial_refund'),
         defaultValue: 'pending',
+    },
+    refundedAmount: {
+        type: DataTypes.DECIMAL(10, 2),
+        defaultValue: 0.00,
     },
     userId: {
         type: DataTypes.INTEGER,

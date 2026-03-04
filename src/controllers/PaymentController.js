@@ -71,7 +71,7 @@ exports.updatePaymentStatus = async (req, res) => {
     const t = await sequelize.transaction();
     try {
         const { id } = req.params;
-        const { status, is_refund } = req.body;
+        const { status, is_refund, refund_type, refund_amount } = req.body;
 
         const payment = await Payment.findByPk(id);
         if (!payment) {
@@ -79,24 +79,39 @@ exports.updatePaymentStatus = async (req, res) => {
         }
 
         let finalStatus = payment.status;
+        let actualRefundAmount = 0;
+
         if (is_refund == 1) {
-            finalStatus = 'refund';
+            if (refund_type === 'partial' && refund_amount > 0) {
+                actualRefundAmount = parseFloat(refund_amount);
+                finalStatus = 'partial_refund';
+            } else {
+                actualRefundAmount = parseFloat(payment.amount) - parseFloat(payment.refundedAmount || 0);
+                finalStatus = 'refund';
+            }
+
+            if (parseFloat(payment.refundedAmount || 0) + actualRefundAmount > parseFloat(payment.amount)) {
+                await t.rollback();
+                return res.status(400).json({ message: 'Refund amount exceeds payment amount' });
+            }
+            if (parseFloat(payment.refundedAmount || 0) + actualRefundAmount === parseFloat(payment.amount)) {
+                finalStatus = 'refund';
+            }
         } else if (status) {
             finalStatus = status;
         }
 
-        await payment.update({ status: finalStatus }, { transaction: t });
+        const newRefundedAmount = is_refund == 1
+            ? parseFloat(payment.refundedAmount || 0) + actualRefundAmount
+            : parseFloat(payment.refundedAmount || 0);
 
-        // if (order) {
-        //     if (finalStatus === 'paid') {
-        //         await order.update({ status: 'completed' }, { transaction: t });
-        //     } else if (finalStatus === 'refund') {
-        //         await order.update({ status: 'canceled' }, { transaction: t });
-        //     }
-        // }
+        await payment.update({
+            status: finalStatus,
+            ...(is_refund == 1 && { refundedAmount: newRefundedAmount })
+        }, { transaction: t });
 
         // Session integration for cash refunds
-        if (payment.paymentMethod === 'cash' && finalStatus === 'refund') {
+        if (payment.paymentMethod === 'cash' && is_refund == 1 && actualRefundAmount > 0) {
             const session = await Session.findOne({
                 where: {
                     userId: req.user?.id,
@@ -105,18 +120,17 @@ exports.updatePaymentStatus = async (req, res) => {
             });
 
             if (session) {
-                const amountFloat = parseFloat(payment.amount);
                 await session.update({
-                    currentBalance: parseFloat(session.currentBalance) - amountFloat
-                }, { transaction: t });
+                    currentBalance: parseFloat(session.currentBalance) - actualRefundAmount
+                });
 
                 await SessionTransaction.create({
                     sessionId: session.id,
                     type: 'refund',
-                    amount: amountFloat,
+                    amount: actualRefundAmount,
                     paymentId: payment.id,
                     userId: req.user?.id,
-                    description: `Refund for Payment #${payment.id} (Order #${payment.orderId})`
+                    description: `Refund for Payment #${payment.id} (Order #${payment.orderId}) - ${refund_type === 'partial' ? 'Partial' : 'Full'}`
                 }, { transaction: t });
             }
         }
