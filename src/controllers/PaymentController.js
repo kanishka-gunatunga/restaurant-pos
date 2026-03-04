@@ -239,7 +239,8 @@ exports.searchPaymentDetails = async (req, res) => {
                 dateTime: order.createdAt,
                 method: validPayment ? validPayment.paymentMethod : null,
                 paymentStatus: validPayment ? validPayment.status : 'Pending',
-                amount: order.totalAmount
+                amount: order.totalAmount,
+                refundedAmount: validPayment ? validPayment.refundedAmount : 0,
             };
         });
 
@@ -282,7 +283,8 @@ exports.filterPaymentsByStatus = async (req, res) => {
                 dateTime: order.createdAt,
                 method: validPayment ? validPayment.paymentMethod : null,
                 paymentStatus: validPayment ? validPayment.status : 'Pending',
-                amount: order.totalAmount
+                amount: order.totalAmount,
+                refundedAmount: validPayment ? validPayment.refundedAmount : 0,
             };
         });
 
