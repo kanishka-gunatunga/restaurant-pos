@@ -97,6 +97,93 @@ exports.searchProducts = async (req, res) => {
     }
 };
 
+exports.getProductsByBranch = async (req, res) => {
+    try {
+        const { branchId } = req.params;
+        const { categoryId, subCategoryId, status } = req.query;
+
+        let statusFilter = { status: 'active' };
+        if (status === 'inactive') {
+            statusFilter = { status: 'inactive' };
+        } else if (status === 'all') {
+            statusFilter = {};
+        }
+
+        const where = { ...statusFilter };
+        if (categoryId) where.categoryId = categoryId;
+        if (subCategoryId) where.subCategoryId = subCategoryId;
+
+        const products = await Product.findAll({
+            where,
+            include: [
+                { model: Category, as: 'category', where: statusFilter, required: false },
+                { model: Category, as: 'subCategory', required: false },
+                {
+                    model: ProductBranch,
+                    as: 'branches',
+                    where: { branchId },
+                    required: true
+                },
+                {
+                    model: Variation,
+                    as: 'variations',
+                    where: statusFilter,
+                    required: true,
+                    include: [
+                        {
+                            model: VariationOption,
+                            as: 'options',
+                            where: statusFilter,
+                            required: true,
+                            include: [
+                                {
+                                    model: VariationPrice,
+                                    as: 'prices',
+                                    where: { branchId },
+                                    required: true
+                                },
+                                {
+                                    model: DiscountItem,
+                                    as: 'discountItems',
+                                    required: false,
+                                    include: [
+                                        { model: Discount, required: true, where: { status: 'active' } }
+                                    ]
+                                }
+                            ]
+                        },
+                        {
+                            model: ProductModification,
+                            as: 'variationModifications',
+                            include: [
+                                { model: Modification, where: statusFilter, required: false }
+                            ]
+                        }
+                    ]
+                },
+                {
+                    model: ProductModification,
+                    as: 'productModifications',
+                    include: [
+                        { model: Modification, where: statusFilter, required: false }
+                    ]
+                },
+                {
+                    model: DiscountItem,
+                    as: 'discountItems',
+                    required: false,
+                    include: [
+                        { model: Discount, required: true, where: { status: 'active' } }
+                    ]
+                }
+            ]
+        });
+        res.json(products);
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
 exports.getAllProducts = async (req, res) => {
     try {
         const { categoryId, subCategoryId, status } = req.query;
