@@ -12,6 +12,7 @@ const Variation = require('../models/Variation');
 const Category = require('../models/Category');
 const SessionTransaction = require('../models/SessionTransaction');
 const Discount = require('../models/Discount');
+const DiscountItem = require('../models/DiscountItem');
 const Branch = require('../models/Branch');
 const User = require('../models/User');
 const ModificationItem = require('../models/ModificationItem');
@@ -240,6 +241,7 @@ exports.getManagerDashboard = async (req, res) => {
                 expireDate: { [Op.lt]: new Date() } // Expired already
             },
             include: [
+                { model: Branch, as: 'Branch' },
                 {
                     model: VariationOption,
                     include: [
@@ -252,6 +254,20 @@ exports.getManagerDashboard = async (req, res) => {
         const formatVariationPriceItem = (item) => {
             const data = item.toJSON();
             const product = data.VariationOption?.Variation?.Product;
+
+            let expiredDaysText = '';
+            if (data.expireDate) {
+                const today = new Date();
+                today.setHours(0, 0, 0, 0);
+                const expiry = new Date(data.expireDate);
+                expiry.setHours(0, 0, 0, 0);
+                const diffTime = today.getTime() - expiry.getTime();
+                if (diffTime > 0) {
+                    const daysExpired = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+                    expiredDaysText = `${daysExpired} days expired`;
+                }
+            }
+
             return {
                 id: data.id,
                 quantity: data.quantity,
@@ -260,7 +276,9 @@ exports.getManagerDashboard = async (req, res) => {
                 image: product?.image,
                 variationName: `${data.VariationOption?.Variation?.name} - ${data.VariationOption?.name}`,
                 expireDate: data.expireDate,
-                batchNo: data.batchNo
+                expiredDaysText: expiredDaysText,
+                batchNo: data.batchNo,
+                branchName: data.Branch?.name || 'Unknown Branch'
             };
         };
         const expiredProductsList = expiredItems.map(formatVariationPriceItem);
@@ -274,6 +292,7 @@ exports.getManagerDashboard = async (req, res) => {
                 quantity: { [Op.lte]: lowStockThreshold }
             },
             include: [
+                { model: Branch, as: 'Branch' },
                 {
                     model: VariationOption,
                     include: [
@@ -285,14 +304,51 @@ exports.getManagerDashboard = async (req, res) => {
 
         const restockAlertsList = lowStockItems.map(item => {
             const data = formatVariationPriceItem(item);
-            data.unitsSoldThisWeek = Math.floor(Math.random() * 100) + 20; // Mock UI Metric
+            data.averageSaleForWeek = Math.floor(Math.random() * 100) + 20; // Mock UI Metric
+            data.leftQuantityText = `${data.quantity} left`;
             return data;
         });
 
         // 8. Discount Alerts (e.g., active discounts)
-        const activeDiscounts = await Discount.findAll({
-            where: { status: 'active' },
-            limit: 5
+        const sevenDaysFromNow = new Date();
+        sevenDaysFromNow.setDate(sevenDaysFromNow.getDate() + 7);
+
+        const discountAlertsListRaw = await Discount.findAll({
+            where: {
+                status: 'active',
+                expiryDate: {
+                    [Op.lte]: sevenDaysFromNow,
+                    [Op.gte]: todayNoTime
+                }
+            },
+            include: [{ model: DiscountItem, as: 'items' }]
+        });
+
+        const activeDiscounts = discountAlertsListRaw.map(discount => {
+            const data = discount.toJSON();
+            let productsCount = 0;
+            let variantsCount = 0;
+            let discountValueText = '';
+
+            if (data.items && data.items.length > 0) {
+                productsCount = data.items.filter(i => i.productId).length;
+                variantsCount = data.items.filter(i => i.variationOptionId).length;
+
+                const firstItem = data.items[0];
+                if (firstItem.discountType === 'percentage') {
+                    discountValueText = `${Number(firstItem.discountValue)}%`;
+                } else {
+                    discountValueText = `Rs. ${Number(firstItem.discountValue)}`;
+                }
+            }
+
+            return {
+                id: data.id,
+                title: data.name,
+                discountValueText,
+                itemsSummary: `${productsCount} product(s) • ${variantsCount} variant(s) with discounts`,
+                expireDate: data.expiryDate
+            };
         });
 
         res.json({
@@ -461,6 +517,20 @@ exports.getAdminDashboard = async (req, res) => {
         const formatVariationPriceItem = (item) => {
             const data = item.toJSON();
             const product = data.VariationOption?.Variation?.Product;
+
+            let expiredDaysText = '';
+            if (data.expireDate) {
+                const today = new Date();
+                today.setHours(0, 0, 0, 0);
+                const expiry = new Date(data.expireDate);
+                expiry.setHours(0, 0, 0, 0);
+                const diffTime = today.getTime() - expiry.getTime();
+                if (diffTime > 0) {
+                    const daysExpired = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+                    expiredDaysText = `${daysExpired} days expired`;
+                }
+            }
+
             return {
                 id: data.id,
                 quantity: data.quantity,
@@ -469,6 +539,7 @@ exports.getAdminDashboard = async (req, res) => {
                 image: product?.image,
                 variationName: `${data.VariationOption?.Variation?.name} - ${data.VariationOption?.name}`,
                 expireDate: data.expireDate,
+                expiredDaysText: expiredDaysText,
                 batchNo: data.batchNo,
                 branchName: data.Branch?.name || 'Unknown Branch'
             };
@@ -509,14 +580,53 @@ exports.getAdminDashboard = async (req, res) => {
         });
         const restockAlertsList = lowStockItems.map(item => {
             const data = formatVariationPriceItem(item);
-            data.unitsSoldThisWeek = Math.floor(Math.random() * 100) + 20;
+            data.averageSaleForWeek = Math.floor(Math.random() * 100) + 20;
+            data.leftQuantityText = `${data.quantity} left`;
             return data;
         });
 
         // 6. Discount Alerts globally
-        const discountAlertsList = await Discount.findAll({
-            where: { status: 'active' },
-            limit: 5 // Add limit or specific condition like "expiring soon" depending on actual needs
+        const sevenDaysFromNow = new Date();
+        sevenDaysFromNow.setDate(sevenDaysFromNow.getDate() + 7);
+        const todayNoTime = new Date();
+        todayNoTime.setHours(0, 0, 0, 0);
+
+        const discountAlertsListRaw = await Discount.findAll({
+            where: {
+                status: 'active',
+                expiryDate: {
+                    [Op.lte]: sevenDaysFromNow,
+                    [Op.gte]: todayNoTime
+                }
+            },
+            include: [{ model: DiscountItem, as: 'items' }]
+        });
+
+        const discountAlertsList = discountAlertsListRaw.map(discount => {
+            const data = discount.toJSON();
+            let productsCount = 0;
+            let variantsCount = 0;
+            let discountValueText = '';
+
+            if (data.items && data.items.length > 0) {
+                productsCount = data.items.filter(i => i.productId).length;
+                variantsCount = data.items.filter(i => i.variationOptionId).length;
+
+                const firstItem = data.items[0];
+                if (firstItem.discountType === 'percentage') {
+                    discountValueText = `${Number(firstItem.discountValue)}%`;
+                } else {
+                    discountValueText = `Rs. ${Number(firstItem.discountValue)}`;
+                }
+            }
+
+            return {
+                id: data.id,
+                title: data.name,
+                discountValueText,
+                itemsSummary: `${productsCount} product(s) • ${variantsCount} variant(s) with discounts`,
+                expireDate: data.expiryDate
+            };
         });
 
         res.json({
