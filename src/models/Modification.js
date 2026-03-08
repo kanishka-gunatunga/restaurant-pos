@@ -15,6 +15,8 @@ const Modification = sequelize.define('Modification', {
         type: DataTypes.ENUM('active', 'inactive'),
         defaultValue: 'active',
     },
+}, {
+    tableName: 'modifications',
 });
 
 module.exports = Modification;

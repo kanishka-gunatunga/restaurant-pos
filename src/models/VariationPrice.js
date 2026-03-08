@@ -37,6 +37,8 @@ const VariationPrice = sequelize.define('VariationPrice', {
         type: DataTypes.STRING,
         allowNull: true,
     }
+}, {
+    tableName: 'variationprices',
 });
 
 module.exports = VariationPrice;

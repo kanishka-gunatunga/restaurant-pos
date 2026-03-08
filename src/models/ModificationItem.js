@@ -24,6 +24,8 @@ const ModificationItem = sequelize.define('ModificationItem', {
             key: 'id',
         },
     },
+}, {
+    tableName: 'modificationitems',
 });
 
 module.exports = ModificationItem;

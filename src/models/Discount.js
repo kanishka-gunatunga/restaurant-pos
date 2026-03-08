@@ -19,6 +19,8 @@ const Discount = sequelize.define('Discount', {
         type: DataTypes.ENUM('active', 'inactive'),
         defaultValue: 'active',
     },
+}, {
+    tableName: 'discounts',
 });
 
 module.exports = Discount;

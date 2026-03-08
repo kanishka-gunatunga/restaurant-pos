@@ -19,6 +19,8 @@ const ProductModification = sequelize.define('ProductModification', {
         type: DataTypes.INTEGER,
         allowNull: false,
     },
+}, {
+    tableName: 'productmodifications',
 });
 
 module.exports = ProductModification;

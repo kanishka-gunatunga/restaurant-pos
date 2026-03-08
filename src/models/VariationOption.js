@@ -19,6 +19,8 @@ const VariationOption = sequelize.define('VariationOption', {
         type: DataTypes.ENUM('active', 'inactive'),
         defaultValue: 'active',
     },
+}, {
+    tableName: 'variationoptions',
 });
 
 module.exports = VariationOption;
