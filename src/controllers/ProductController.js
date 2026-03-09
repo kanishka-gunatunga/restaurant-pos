@@ -14,6 +14,8 @@ const DiscountItem = require('../models/DiscountItem');
 const Discount = require('../models/Discount');
 const sequelize = require('../config/database');
 const { put } = require('@vercel/blob');
+const { logActivity } = require('./ActivityLogController');
+const UserDetail = require('../models/UserDetail');
 
 exports.searchProducts = async (req, res) => {
     try {
@@ -419,6 +421,16 @@ exports.createProduct = async (req, res) => {
         }
 
         await t.commit();
+
+        const userDetail = await UserDetail.findOne({ where: { userId: req.user.id } });
+        await logActivity({
+            userId: req.user.id,
+            branchId: userDetail?.branchId || 1,
+            activityType: 'Product Created',
+            description: `Product ${name} (${code}) created`,
+            metadata: { productId: product.id, name, code, sku }
+        });
+
         res.status(201).json(product);
     } catch (error) {
         await t.rollback();
@@ -539,6 +551,16 @@ exports.updateProduct = async (req, res) => {
         }
 
         await t.commit();
+
+        const userDetail = await UserDetail.findOne({ where: { userId: req.user.id } });
+        await logActivity({
+            userId: req.user.id,
+            branchId: userDetail?.branchId || 1,
+            activityType: 'Product Updated',
+            description: `Product ID ${id} updated`,
+            metadata: { productId: id, updatedFields: productData }
+        });
+
         res.json({ message: 'Product and nested items updated successfully' });
     } catch (error) {
         await t.rollback();
@@ -634,6 +656,14 @@ exports.deactivateProduct = async (req, res) => {
         const [updated] = await Product.update({ status: 'inactive' }, { where: { id } });
 
         if (updated) {
+            const userDetail = await UserDetail.findOne({ where: { userId: req.user.id } });
+            await logActivity({
+                userId: req.user.id,
+                branchId: userDetail?.branchId || 1,
+                activityType: 'Product Deactivated',
+                description: `Product ID ${id} deactivated`,
+                metadata: { productId: id }
+            });
             return res.json({ message: 'Product deactivated successfully' });
         }
 
@@ -649,6 +679,14 @@ exports.activateProduct = async (req, res) => {
         const [updated] = await Product.update({ status: 'active' }, { where: { id } });
 
         if (updated) {
+            const userDetail = await UserDetail.findOne({ where: { userId: req.user.id } });
+            await logActivity({
+                userId: req.user.id,
+                branchId: userDetail?.branchId || 1,
+                activityType: 'Product Activated',
+                description: `Product ID ${id} activated`,
+                metadata: { productId: id }
+            });
             return res.json({ message: 'Product activated successfully' });
         }
 

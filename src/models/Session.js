@@ -37,6 +37,11 @@ const Session = sequelize.define('Session', {
         type: DataTypes.DATE,
         allowNull: true,
     },
+    actualBalance: {
+        type: DataTypes.DECIMAL(10, 2),
+        allowNull: true,
+        comment: 'Actual cash amount entered by user when closing session',
+    },
     closedBy: {
         type: DataTypes.INTEGER,
         allowNull: true,

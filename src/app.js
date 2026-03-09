@@ -21,6 +21,7 @@ const sessionRoutes = require('./routes/sessionRoutes');
 const branchRoutes = require('./routes/branchRoutes');
 const discountRoutes = require('./routes/discountRoutes');
 const dashboardRoutes = require('./routes/dashboardRoutes');
+const activityLogRoutes = require('./routes/activityLogRoutes');
 
 const app = express();
 
@@ -45,6 +46,7 @@ app.use('/api/sessions', sessionRoutes);
 app.use('/api/branches', branchRoutes);
 app.use('/api/discounts', discountRoutes);
 app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/activity-logs', activityLogRoutes);
 
 // Database Sync
 sequelize.sync().then(() => {

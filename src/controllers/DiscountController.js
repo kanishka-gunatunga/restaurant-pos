@@ -6,6 +6,8 @@ const Product = require('../models/Product');
 const VariationOption = require('../models/VariationOption');
 const Variation = require('../models/Variation');
 const VariationPrice = require('../models/VariationPrice');
+const { logActivity } = require('./ActivityLogController');
+const UserDetail = require('../models/UserDetail');
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -108,6 +110,16 @@ exports.createDiscount = async (req, res) => {
 
         // Return with associations
         const created = await Discount.findByPk(discount.id, { include: DISCOUNT_INCLUDE });
+
+        const userDetail = await UserDetail.findOne({ where: { userId: req.user.id } });
+        await logActivity({
+            userId: req.user.id,
+            branchId: userDetail?.branchId || 1,
+            activityType: 'Discount Created',
+            description: `Discount ${name} created`,
+            metadata: { discountId: discount.id, name, expiryDate }
+        });
+
         return res.status(201).json(created);
     } catch (error) {
         await t.rollback();
@@ -229,6 +241,16 @@ exports.updateDiscount = async (req, res) => {
         await t.commit();
 
         const updated = await Discount.findByPk(id, { include: DISCOUNT_INCLUDE });
+
+        const userDetail = await UserDetail.findOne({ where: { userId: req.user.id } });
+        await logActivity({
+            userId: req.user.id,
+            branchId: userDetail?.branchId || 1,
+            activityType: 'Discount Updated',
+            description: `Discount ${updated.name} updated`,
+            metadata: { discountId: id, name, expiryDate }
+        });
+
         return res.json(updated);
     } catch (error) {
         await t.rollback();
@@ -254,6 +276,16 @@ exports.deleteDiscount = async (req, res) => {
         await discount.destroy({ transaction: t });
 
         await t.commit();
+
+        const userDetail = await UserDetail.findOne({ where: { userId: req.user.id } });
+        await logActivity({
+            userId: req.user.id,
+            branchId: userDetail?.branchId || 1,
+            activityType: 'Discount Deleted',
+            description: `Discount ${discount.name} deleted`,
+            metadata: { discountId: id, name: discount.name }
+        });
+
         return res.json({ message: 'Discount deleted successfully' });
     } catch (error) {
         await t.rollback();
@@ -272,6 +304,16 @@ exports.activateDiscount = async (req, res) => {
         if (!updated) {
             return res.status(404).json({ message: 'Discount not found' });
         }
+
+        const userDetail = await UserDetail.findOne({ where: { userId: req.user.id } });
+        await logActivity({
+            userId: req.user.id,
+            branchId: userDetail?.branchId || 1,
+            activityType: 'Discount Activated',
+            description: `Discount ID ${id} activated`,
+            metadata: { discountId: id }
+        });
+
         return res.json({ message: 'Discount activated successfully' });
     } catch (error) {
         return res.status(500).json({ message: error.message });
@@ -289,6 +331,16 @@ exports.deactivateDiscount = async (req, res) => {
         if (!updated) {
             return res.status(404).json({ message: 'Discount not found' });
         }
+
+        const userDetail = await UserDetail.findOne({ where: { userId: req.user.id } });
+        await logActivity({
+            userId: req.user.id,
+            branchId: userDetail?.branchId || 1,
+            activityType: 'Discount Deactivated',
+            description: `Discount ID ${id} deactivated`,
+            metadata: { discountId: id }
+        });
+
         return res.json({ message: 'Discount deactivated successfully' });
     } catch (error) {
         return res.status(500).json({ message: error.message });

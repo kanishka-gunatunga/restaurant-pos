@@ -21,6 +21,7 @@ const ProductModificationPrice = require('./ProductModificationPrice');
 const ProductModificationItemPrice = require('./ProductModificationItemPrice');
 const Discount = require('./Discount');
 const DiscountItem = require('./DiscountItem');
+const ActivityLog = require('./ActivityLog');
 
 // User <-> UserDetail: One-to-One
 User.hasOne(UserDetail, { foreignKey: 'userId', as: 'UserDetail' });
@@ -144,3 +145,15 @@ Product.hasMany(DiscountItem, { foreignKey: 'productId', as: 'discountItems' });
 // DiscountItem - VariationOption Association
 DiscountItem.belongsTo(VariationOption, { foreignKey: 'variationOptionId', as: 'variationOption' });
 VariationOption.hasMany(DiscountItem, { foreignKey: 'variationOptionId', as: 'discountItems' });
+
+// ActivityLog Associations
+ActivityLog.belongsTo(User, { foreignKey: 'userId', as: 'user' });
+User.hasMany(ActivityLog, { foreignKey: 'userId' });
+
+ActivityLog.belongsTo(Branch, { foreignKey: 'branchId', as: 'branch' });
+Branch.hasMany(ActivityLog, { foreignKey: 'branchId' });
+
+ActivityLog.belongsTo(User, { foreignKey: 'managerId', as: 'manager' });
+
+ActivityLog.belongsTo(Order, { foreignKey: 'orderId', as: 'order' });
+Order.hasMany(ActivityLog, { foreignKey: 'orderId' });

@@ -3,6 +3,7 @@ const UserDetail = require('../models/UserDetail');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { encrypt, decrypt } = require('../utils/crypto');
+const { logActivity } = require('./ActivityLogController');
 
 exports.register = async (req, res) => {
     try {
@@ -39,6 +40,14 @@ exports.register = async (req, res) => {
             name,
             email: email || null,
             branchId: branchId ?? 1,
+        });
+
+        await logActivity({
+            userId: req.user?.id || user.id, // req.user if created by admin, user.id if self-register (though me is protected)
+            branchId: branchId ?? 1,
+            activityType: 'User Created',
+            description: `New user ${name} (${employeeId}) created with role ${role}`,
+            metadata: { employeeId, role, name }
         });
 
         res.status(201).json({ message: 'User created', userId: user.id });
@@ -303,6 +312,15 @@ exports.updateUser = async (req, res) => {
         const updated = await User.findByPk(id, {
             include: [{ model: UserDetail, as: 'UserDetail' }],
         });
+
+        await logActivity({
+            userId: req.user.id,
+            branchId: updated.UserDetail?.branchId || 1,
+            activityType: 'User Updated',
+            description: `User ${updated.UserDetail?.name || updated.employeeId} updated`,
+            metadata: { updatedFields: { name, email, branchId, employeeId, role, status } }
+        });
+
         res.json(formatUserResponse(updated));
     } catch (error) {
         res.status(400).json({ message: error.message });
@@ -323,6 +341,14 @@ exports.deactivateUser = async (req, res) => {
         user.status = 'inactive';
         await user.save();
 
+        await logActivity({
+            userId: req.user.id,
+            branchId: req.user.UserDetail?.branchId || 1,
+            activityType: 'User Deactivated',
+            description: `User ID ${id} deactivated`,
+            metadata: { targetUserId: id }
+        });
+
         res.json({ message: 'User deactivated successfully' });
     } catch (error) {
         res.status(500).json({ message: error.message });
@@ -338,6 +364,14 @@ exports.activateUser = async (req, res) => {
 
         user.status = 'active';
         await user.save();
+
+        await logActivity({
+            userId: req.user.id,
+            branchId: req.user.UserDetail?.branchId || 1,
+            activityType: 'User Activated',
+            description: `User ID ${id} activated`,
+            metadata: { targetUserId: id }
+        });
 
         res.json({ message: 'User activated successfully' });
     } catch (error) {

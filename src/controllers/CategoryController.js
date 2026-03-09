@@ -1,5 +1,7 @@
 const Category = require('../models/Category');
 const sequelize = require('../config/database');
+const { logActivity } = require('./ActivityLogController');
+const UserDetail = require('../models/UserDetail');
 
 exports.getAllCategories = async (req, res) => {
     try {
@@ -61,6 +63,15 @@ exports.createCategory = async (req, res) => {
         });
 
         res.status(201).json(createdCategory);
+
+        const userDetail = await UserDetail.findOne({ where: { userId: req.user.id } });
+        await logActivity({
+            userId: req.user.id,
+            branchId: userDetail?.branchId || 1,
+            activityType: 'Category Created',
+            description: `Category ${name} created`,
+            metadata: { categoryId: createdCategory.id, name }
+        });
     } catch (error) {
         await transaction.rollback();
         res.status(400).json({ message: error.message });
@@ -117,6 +128,16 @@ exports.updateCategory = async (req, res) => {
         }
 
         await transaction.commit();
+
+        const userDetail = await UserDetail.findOne({ where: { userId: req.user.id } });
+        await logActivity({
+            userId: req.user.id,
+            branchId: userDetail?.branchId || 1,
+            activityType: 'Category Updated',
+            description: `Category ID ${id} updated`,
+            metadata: { categoryId: id, name }
+        });
+
         res.json({ message: 'Category and subcategories updated' });
     } catch (error) {
         await transaction.rollback();
@@ -128,6 +149,16 @@ exports.deactivateCategory = async (req, res) => {
     try {
         const { id } = req.params;
         await Category.update({ status: 'inactive' }, { where: { id } });
+
+        const userDetail = await UserDetail.findOne({ where: { userId: req.user.id } });
+        await logActivity({
+            userId: req.user.id,
+            branchId: userDetail?.branchId || 1,
+            activityType: 'Category Deactivated',
+            description: `Category ID ${id} deactivated`,
+            metadata: { categoryId: id }
+        });
+
         res.json({ message: 'Category deactivated' });
     } catch (error) {
         res.status(500).json({ message: error.message });
@@ -138,6 +169,16 @@ exports.activateCategory = async (req, res) => {
     try {
         const { id } = req.params;
         await Category.update({ status: 'active' }, { where: { id } });
+
+        const userDetail = await UserDetail.findOne({ where: { userId: req.user.id } });
+        await logActivity({
+            userId: req.user.id,
+            branchId: userDetail?.branchId || 1,
+            activityType: 'Category Activated',
+            description: `Category ID ${id} activated`,
+            metadata: { categoryId: id }
+        });
+
         res.json({ message: 'Category activated' });
     } catch (error) {
         res.status(500).json({ message: error.message });

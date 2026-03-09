@@ -11,6 +11,8 @@ const Payment = require('../models/Payment');
 const sequelize = require('../config/database');
 const { decrypt } = require('../utils/crypto');
 const { Op } = require('sequelize');
+const { logActivity } = require('./ActivityLogController');
+const UserDetail = require('../models/UserDetail');
 
 exports.searchOrders = async (req, res) => {
     try {
@@ -412,6 +414,17 @@ exports.createOrder = async (req, res) => {
             ]
         });
 
+        const userDetail = await UserDetail.findOne({ where: { userId: req.user.id } });
+        await logActivity({
+            userId: req.user.id,
+            branchId: userDetail?.branchId || 1,
+            activityType: 'Order Placed',
+            description: `New order ${order.id} placed for ${orderType} at ${tableNumber || 'N/A'}`,
+            orderId: order.id,
+            amount: totalAmount,
+            metadata: { orderType, tableNumber, totalAmount }
+        });
+
         res.status(201).json(fullOrder);
     } catch (error) {
         if (t && !t.finished) await t.rollback();
@@ -445,6 +458,17 @@ exports.updateOrderStatus = async (req, res) => {
 
         await order.update(updateData);
         const updatedOrder = await Order.findByPk(id);
+
+        const userDetail = await UserDetail.findOne({ where: { userId: req.user.id } });
+        await logActivity({
+            userId: req.user.id,
+            branchId: userDetail?.branchId || 1,
+            activityType: 'Order Status Updated',
+            description: `Order ${id} status updated to ${status}`,
+            orderId: order.id,
+            metadata: { prevStatus: order._previousDataValues?.status, newStatus: status, rejectReason }
+        });
+
         res.json(updatedOrder);
     } catch (error) {
         res.status(400).json({ message: error.message });

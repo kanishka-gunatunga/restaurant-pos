@@ -8,5 +8,8 @@ router.get('/active', authenticate, sessionController.getActiveSession);
 router.post('/cash-action', authenticate, sessionController.cashAction);
 router.post('/close', authenticate, sessionController.closeSession);
 router.get('/history', authenticate, sessionController.getHistory);
+router.get('/today/summary', authenticate, sessionController.getTodaySummary);
+router.get('/today/sessions', authenticate, sessionController.getTodaySessions);
+router.get('/all-history', authenticate, sessionController.getAllHistory);
 
 module.exports = router;
