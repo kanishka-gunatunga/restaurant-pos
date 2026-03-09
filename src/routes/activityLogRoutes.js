@@ -1,9 +1,9 @@
 const express = require('express');
 const router = express.Router();
 const ActivityLogController = require('../controllers/ActivityLogController');
-const { authenticate, authorize } = require('../middleware/auth');
+const { authenticate } = require('../middleware/auth');
 
 // Only admin and manager should see logs
-router.get('/', authenticate, authorize(['admin', 'manager']), ActivityLogController.getActivityLogs);
+router.get('/', authenticate, ActivityLogController.getActivityLogs);
 
 module.exports = router;
