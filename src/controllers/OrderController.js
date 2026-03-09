@@ -533,7 +533,7 @@ exports.updateOrderItemStatus = async (req, res) => {
                     {
                         model: OrderItemModification,
                         as: 'modifications',
-                        include: [{ model: Modification, as: 'modification' }]
+                        include: [{ model: ModificationItem, as: 'modification' }]
                     }
                 ]
             });
