@@ -40,6 +40,8 @@ const DiscountItem = sequelize.define('DiscountItem', {
         type: DataTypes.DECIMAL(10, 2),
         allowNull: false,
     },
+}, {
+    tableName: 'discountitems',
 });
 
 module.exports = DiscountItem;

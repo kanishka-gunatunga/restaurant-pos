@@ -316,7 +316,7 @@ exports.createOrder = async (req, res) => {
                 if (item.modifications && item.modifications.length > 0) {
                     const modifications = item.modifications.map(mod => ({
                         orderItemId: orderItem.id,
-                        modificationId: mod.modificationId,
+                        modificationId: mod.id || mod.modificationItemId || mod.modificationId,
                         price: mod.price
                     }));
                     await OrderItemModification.bulkCreate(modifications, { transaction: t });
@@ -478,7 +478,7 @@ exports.updateOrder = async (req, res) => {
                     if (item.modifications && item.modifications.length > 0) {
                         const modifications = item.modifications.map(mod => ({
                             orderItemId: orderItem.id,
-                            modificationId: mod.modificationId,
+                            modificationId: mod.id || mod.modificationItemId || mod.modificationId,
                             price: mod.price
                         }));
                         await OrderItemModification.bulkCreate(modifications, { transaction: t });

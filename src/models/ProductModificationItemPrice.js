@@ -23,6 +23,8 @@ const ProductModificationItemPrice = sequelize.define('ProductModificationItemPr
         type: DataTypes.DECIMAL(10, 2),
         allowNull: false,
     },
+}, {
+    tableName: 'productmodificationitemprices',
 });
 
 module.exports = ProductModificationItemPrice;

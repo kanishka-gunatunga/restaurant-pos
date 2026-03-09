@@ -48,6 +48,8 @@ const Product = sequelize.define('Product', {
         type: DataTypes.ENUM('active', 'inactive'),
         defaultValue: 'active',
     },
+}, {
+    tableName: 'products',
 });
 
 module.exports = Product;

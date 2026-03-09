@@ -15,6 +15,8 @@ const ProductBranch = sequelize.define('ProductBranch', {
         type: DataTypes.INTEGER,
         allowNull: false,
     },
+}, {
+    tableName: 'productbranches',
 });
 
 module.exports = ProductBranch;

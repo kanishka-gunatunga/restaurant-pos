@@ -23,6 +23,8 @@ const Category = sequelize.define('Category', {
         type: DataTypes.ENUM('active', 'inactive'),
         defaultValue: 'active',
     },
+}, {
+    tableName: 'categories',
 });
 
 // Self-association for subcategories

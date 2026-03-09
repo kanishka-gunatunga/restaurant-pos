@@ -36,6 +36,8 @@ const OrderItem = sequelize.define('OrderItem', {
         type: DataTypes.ENUM('pending', 'complete'),
         defaultValue: 'pending',
     },
+}, {
+    tableName: 'orderitems',
 });
 
 module.exports = OrderItem;

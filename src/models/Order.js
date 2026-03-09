@@ -71,6 +71,8 @@ const Order = sequelize.define('Order', {
         type: DataTypes.INTEGER,
         allowNull: true, // Allow null for now, but should be populated via controller
     },
+}, {
+    tableName: 'orders',
 });
 
 module.exports = Order;
