@@ -133,6 +133,68 @@ exports.filterOrdersByStatus = async (req, res) => {
     }
 };
 
+exports.getOrdersExcludeStatus = async (req, res) => {
+    try {
+        const { status, paymentStatus } = req.query;
+
+        let where = {};
+        if (status) {
+            where.status = { [Op.ne]: status };
+        }
+
+        const orders = await Order.findAll({
+            where,
+            include: [
+                {
+                    model: Customer,
+                    as: 'customer',
+                    attributes: ['id', 'name', 'mobile']
+                },
+                {
+                    model: Payment,
+                    as: 'payments',
+                    attributes: ['id', 'status', 'amount', 'paymentMethod', 'createdAt']
+                },
+                {
+                    model: OrderItem,
+                    as: 'items',
+                    include: [
+                        { model: Product, as: 'product' },
+                        { model: Variation, as: 'variation' },
+                        {
+                            model: OrderItemModification,
+                            as: 'modifications',
+                            include: [{ model: ModificationItem, as: 'modification' }]
+                        }
+                    ]
+                }
+            ],
+            order: [['createdAt', 'DESC']]
+        });
+
+        // Add paymentStatus virtual field and filter by it if requested
+        let processedOrders = orders.map(order => {
+            const orderData = order.toJSON();
+            const latestPayment = orderData.payments && orderData.payments.length > 0
+                ? orderData.payments.reduce((latest, current) =>
+                    new Date(current.createdAt) > new Date(latest.createdAt) ? current : latest
+                )
+                : null;
+
+            orderData.paymentStatus = latestPayment ? latestPayment.status : 'pending';
+            return orderData;
+        });
+
+        if (paymentStatus) {
+            processedOrders = processedOrders.filter(order => order.paymentStatus === paymentStatus);
+        }
+
+        res.json(processedOrders);
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
 const verifyManagerPasscode = async (passcode) => {
     if (!passcode) return false;
     const managers = await User.findAll({
