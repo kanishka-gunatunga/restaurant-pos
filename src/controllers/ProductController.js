@@ -343,10 +343,15 @@ exports.createProduct = async (req, res) => {
             imageUrl = blob.url;
         }
 
-        const {
+        let {
             name, code, shortDescription, description, sku, categoryId, subCategoryId,
             variations, modifications, branches
         } = productData;
+
+        // Parse JSON strings if they come from multipart/form-data
+        if (typeof branches === 'string') branches = JSON.parse(branches);
+        if (typeof variations === 'string') variations = JSON.parse(variations);
+        if (typeof modifications === 'string') modifications = JSON.parse(modifications);
 
         // 1. Create base product
         const product = await Product.create({
@@ -459,10 +464,15 @@ exports.updateProduct = async (req, res) => {
             imageUrl = blob.url;
         }
 
-        const {
+        let {
             name, code, shortDescription, description, sku, categoryId, subCategoryId,
             variations, modifications, branches
         } = productData;
+
+        // Parse JSON strings if they come from multipart/form-data
+        if (typeof branches === 'string') branches = JSON.parse(branches);
+        if (typeof variations === 'string') variations = JSON.parse(variations);
+        if (typeof modifications === 'string') modifications = JSON.parse(modifications);
 
         // 1. Update base product
         await Product.update({
