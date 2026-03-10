@@ -1,6 +1,5 @@
 const express = require('express');
 const cors = require('cors');
-const bodyParser = require('body-parser');
 const sequelize = require('./config/database');
 require('dotenv').config();
 
@@ -47,6 +46,14 @@ app.use('/api/branches', branchRoutes);
 app.use('/api/discounts', discountRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/activity-logs', activityLogRoutes);
+
+// Global error handler (catches unhandled errors, e.g. JSON parse)
+app.use((err, req, res, next) => {
+    console.error(err);
+    res.status(err.status || 500).json({
+        message: err.message || 'Internal server error',
+    });
+});
 
 // Database Sync
 sequelize.sync().then(() => {

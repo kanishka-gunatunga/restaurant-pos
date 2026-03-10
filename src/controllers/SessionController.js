@@ -228,6 +228,10 @@ exports.closeSession = async (req, res) => {
         res.json({ message: 'Session closed successfully', session });
     } catch (error) {
         await t.rollback();
+        const msg = (error.message || '').toLowerCase();
+        if (msg.includes('initialization vector') || msg.includes('decipher')) {
+            return res.status(500).json({ message: 'Unable to close session. Please try again or contact support.' });
+        }
         res.status(500).json({ message: error.message });
     }
 };

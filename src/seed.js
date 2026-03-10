@@ -1,5 +1,6 @@
 const bcrypt = require('bcryptjs');
 const sequelize = require('./config/database');
+const { encrypt } = require('./utils/crypto');
 
 // Ensure all models are loaded via associations
 require('./models/associations');
@@ -26,8 +27,8 @@ async function seed() {
         const salt = await bcrypt.genSalt(10);
         const hashedPassword = await bcrypt.hash('password123', salt);
 
-        const adminUser = await User.create({ employeeId: 'EMP-001', password: hashedPassword, role: 'admin', passcode: '1111' });
-        const managerUser = await User.create({ employeeId: 'EMP-002', password: hashedPassword, role: 'manager', passcode: '2222' });
+        const adminUser = await User.create({ employeeId: 'EMP-001', password: hashedPassword, role: 'admin', passcode: encrypt('1111') });
+        const managerUser = await User.create({ employeeId: 'EMP-002', password: hashedPassword, role: 'manager', passcode: encrypt('2222') });
         const cashierUser = await User.create({ employeeId: 'EMP-003', password: hashedPassword, role: 'cashier' });
         const kitchenUser = await User.create({ employeeId: 'EMP-004', password: hashedPassword, role: 'kitchen' });
 

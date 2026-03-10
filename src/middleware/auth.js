@@ -25,7 +25,8 @@ exports.authenticate = async (req, res, next) => {
         if (error.name === 'TokenExpiredError') {
             return res.status(401).json({ message: 'Token expired.' });
         }
-        res.status(500).json({ message: error.message });
+        console.error('Auth:', error);
+        res.status(500).json({ message: error.message || 'Internal server error' });
     }
 };
 

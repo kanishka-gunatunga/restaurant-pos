@@ -29,7 +29,8 @@ exports.findOrCreate = async (req, res) => {
 
         res.status(201).json(customer);
     } catch (error) {
-        res.status(500).json({ message: error.message });
+        console.error('Customers:', error);
+        res.status(500).json({ message: error.message || 'Internal server error' });
     }
 };
 
@@ -63,7 +64,8 @@ exports.createCustomer = async (req, res) => {
 
         res.status(201).json(customer);
     } catch (error) {
-        res.status(500).json({ message: error.message });
+        console.error('Customers:', error);
+        res.status(500).json({ message: error.message || 'Internal server error' });
     }
 };
 
@@ -76,7 +78,8 @@ exports.getByMobile = async (req, res) => {
         }
         res.json(customer);
     } catch (error) {
-        res.status(500).json({ message: error.message });
+        console.error('Customers:', error);
+        res.status(500).json({ message: error.message || 'Internal server error' });
     }
 };
 
@@ -111,7 +114,8 @@ exports.getAllCustomers = async (req, res) => {
         });
         res.json(customers);
     } catch (error) {
-        res.status(500).json({ message: error.message });
+        console.error('[GET /api/customers]', error);
+        res.status(500).json({ message: error.message || 'Internal server error' });
     }
 };
 
@@ -157,7 +161,8 @@ exports.searchCustomers = async (req, res) => {
         });
         res.json(customers);
     } catch (error) {
-        res.status(500).json({ message: error.message });
+        console.error('Customers:', error);
+        res.status(500).json({ message: error.message || 'Internal server error' });
     }
 };
 
@@ -170,7 +175,8 @@ exports.getCustomerById = async (req, res) => {
         }
         res.json(customer);
     } catch (error) {
-        res.status(500).json({ message: error.message });
+        console.error('Customers:', error);
+        res.status(500).json({ message: error.message || 'Internal server error' });
     }
 };
 
@@ -199,6 +205,7 @@ exports.updateCustomer = async (req, res) => {
 
         res.json(customer);
     } catch (error) {
+        console.error('[PUT /api/customers/:id]', error);
         res.status(400).json({ message: error.message });
     }
 };
@@ -221,7 +228,8 @@ exports.updatePromotionPreference = async (req, res) => {
             customer
         });
     } catch (error) {
-        res.status(500).json({ message: error.message });
+        console.error('Customers:', error);
+        res.status(500).json({ message: error.message || 'Internal server error' });
     }
 };
 
@@ -252,7 +260,8 @@ exports.sendBulkPromotions = async (req, res) => {
             mobitel_response: smsResponse
         });
     } catch (error) {
-        res.status(500).json({ message: error.message });
+        console.error('Customers:', error);
+        res.status(500).json({ message: error.message || 'Internal server error' });
     }
 };
 
@@ -265,7 +274,8 @@ exports.deactivateCustomer = async (req, res) => {
         }
         res.status(404).json({ message: 'Customer not found' });
     } catch (error) {
-        res.status(500).json({ message: error.message });
+        console.error('Customers:', error);
+        res.status(500).json({ message: error.message || 'Internal server error' });
     }
 };
 
@@ -278,6 +288,7 @@ exports.activateCustomer = async (req, res) => {
         }
         res.status(404).json({ message: 'Customer not found' });
     } catch (error) {
-        res.status(500).json({ message: error.message });
+        console.error('Customers:', error);
+        res.status(500).json({ message: error.message || 'Internal server error' });
     }
 };

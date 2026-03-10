@@ -14,13 +14,20 @@ function encrypt(text) {
 
 function decrypt(text) {
     if (!text) return null;
-    let textParts = text.split(':');
-    let iv = Buffer.from(textParts.shift(), 'hex');
-    let encryptedText = Buffer.from(textParts.join(':'), 'hex');
-    let decipher = crypto.createDecipheriv('aes-256-cbc', Buffer.from(ENCRYPTION_KEY), iv);
-    let decrypted = decipher.update(encryptedText);
-    decrypted = Buffer.concat([decrypted, decipher.final()]);
-    return decrypted.toString();
+    try {
+        const textParts = text.split(':');
+        if (textParts.length < 2) return text; // Plain text (legacy), return as-is
+        const ivHex = textParts.shift();
+        const iv = Buffer.from(ivHex, 'hex');
+        if (iv.length !== IV_LENGTH) return text; // Invalid IV, treat as plain text
+        const encryptedText = Buffer.from(textParts.join(':'), 'hex');
+        const decipher = crypto.createDecipheriv('aes-256-cbc', Buffer.from(ENCRYPTION_KEY), iv);
+        let decrypted = decipher.update(encryptedText);
+        decrypted = Buffer.concat([decrypted, decipher.final()]);
+        return decrypted.toString();
+    } catch (err) {
+        return text; // Decryption failed (e.g. wrong format), treat as plain text
+    }
 }
 
 module.exports = { encrypt, decrypt };
