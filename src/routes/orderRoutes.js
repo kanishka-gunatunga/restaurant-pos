@@ -6,6 +6,7 @@ const { authenticate } = require('../middleware/auth');
 router.get('/', OrderController.getAllOrders);
 router.get('/search', OrderController.searchOrders);
 router.get('/filter', OrderController.filterOrdersByStatus);
+router.get('/exclude-status', OrderController.getOrdersExcludeStatus);
 router.get('/:id', OrderController.getOrderById);
 router.post('/', authenticate, OrderController.createOrder);
 router.put('/:id', authenticate, OrderController.updateOrder);

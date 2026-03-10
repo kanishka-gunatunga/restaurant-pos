@@ -5,6 +5,8 @@ const Session = require('../models/Session');
 const SessionTransaction = require('../models/SessionTransaction');
 const sequelize = require('../config/database');
 const { Op } = require('sequelize');
+const { logActivity } = require('./ActivityLogController');
+const UserDetail = require('../models/UserDetail');
 
 exports.createPayment = async (req, res) => {
     const t = await sequelize.transaction();
@@ -60,6 +62,18 @@ exports.createPayment = async (req, res) => {
         }
 
         await t.commit();
+
+        const userDetail = await UserDetail.findOne({ where: { userId: req.user.id } });
+        await logActivity({
+            userId: req.user.id,
+            branchId: userDetail?.branchId || 1,
+            activityType: 'Payment Received',
+            description: `Payment of Rs.${amount} received for Order #${orderId} via ${paymentMethod}`,
+            orderId,
+            amount,
+            metadata: { paymentMethod, transactionId, status: payment.status }
+        });
+
         res.status(201).json(payment);
     } catch (error) {
         await t.rollback();
@@ -136,6 +150,20 @@ exports.updatePaymentStatus = async (req, res) => {
         }
 
         await t.commit();
+
+        const userDetail = await UserDetail.findOne({ where: { userId: req.user.id } });
+        await logActivity({
+            userId: req.user.id,
+            branchId: userDetail?.branchId || 1,
+            activityType: is_refund == 1 ? 'Order Refunded' : 'Payment Updated',
+            description: is_refund == 1
+                ? `Refund of Rs.${actualRefundAmount} processed for Payment #${id} (Order #${payment.orderId})`
+                : `Payment #${id} status updated to ${finalStatus}`,
+            orderId: payment.orderId,
+            amount: is_refund == 1 ? actualRefundAmount : null,
+            metadata: { paymentId: id, status: finalStatus, is_refund, refund_type, actualRefundAmount }
+        });
+
         res.json({ message: 'Payment status updated', payment });
     } catch (error) {
         await t.rollback();

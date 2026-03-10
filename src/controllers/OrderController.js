@@ -11,6 +11,8 @@ const Payment = require('../models/Payment');
 const sequelize = require('../config/database');
 const { decrypt } = require('../utils/crypto');
 const { Op } = require('sequelize');
+const { logActivity } = require('./ActivityLogController');
+const UserDetail = require('../models/UserDetail');
 
 exports.searchOrders = async (req, res) => {
     try {
@@ -104,6 +106,68 @@ exports.filterOrdersByStatus = async (req, res) => {
                     include: [
                         { model: Product, as: 'product' },
                         { model: Variation, as: 'variation' }
+                    ]
+                }
+            ],
+            order: [['createdAt', 'DESC']]
+        });
+
+        // Add paymentStatus virtual field and filter by it if requested
+        let processedOrders = orders.map(order => {
+            const orderData = order.toJSON();
+            const latestPayment = orderData.payments && orderData.payments.length > 0
+                ? orderData.payments.reduce((latest, current) =>
+                    new Date(current.createdAt) > new Date(latest.createdAt) ? current : latest
+                )
+                : null;
+
+            orderData.paymentStatus = latestPayment ? latestPayment.status : 'pending';
+            return orderData;
+        });
+
+        if (paymentStatus) {
+            processedOrders = processedOrders.filter(order => order.paymentStatus === paymentStatus);
+        }
+
+        res.json(processedOrders);
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
+exports.getOrdersExcludeStatus = async (req, res) => {
+    try {
+        const { status, paymentStatus } = req.query;
+
+        let where = {};
+        if (status) {
+            where.status = { [Op.ne]: status };
+        }
+
+        const orders = await Order.findAll({
+            where,
+            include: [
+                {
+                    model: Customer,
+                    as: 'customer',
+                    attributes: ['id', 'name', 'mobile']
+                },
+                {
+                    model: Payment,
+                    as: 'payments',
+                    attributes: ['id', 'status', 'amount', 'paymentMethod', 'createdAt']
+                },
+                {
+                    model: OrderItem,
+                    as: 'items',
+                    include: [
+                        { model: Product, as: 'product' },
+                        { model: Variation, as: 'variation' },
+                        {
+                            model: OrderItemModification,
+                            as: 'modifications',
+                            include: [{ model: ModificationItem, as: 'modification' }]
+                        }
                     ]
                 }
             ],
@@ -350,6 +414,17 @@ exports.createOrder = async (req, res) => {
             ]
         });
 
+        const userDetail = await UserDetail.findOne({ where: { userId: req.user.id } });
+        await logActivity({
+            userId: req.user.id,
+            branchId: userDetail?.branchId || 1,
+            activityType: 'Order Placed',
+            description: `New order ${order.id} placed for ${orderType} at ${tableNumber || 'N/A'}`,
+            orderId: order.id,
+            amount: totalAmount,
+            metadata: { orderType, tableNumber, totalAmount }
+        });
+
         res.status(201).json(fullOrder);
     } catch (error) {
         if (t && !t.finished) await t.rollback();
@@ -383,6 +458,17 @@ exports.updateOrderStatus = async (req, res) => {
 
         await order.update(updateData);
         const updatedOrder = await Order.findByPk(id);
+
+        const userDetail = await UserDetail.findOne({ where: { userId: req.user.id } });
+        await logActivity({
+            userId: req.user.id,
+            branchId: userDetail?.branchId || 1,
+            activityType: 'Order Status Updated',
+            description: `Order ${id} status updated to ${status}`,
+            orderId: order.id,
+            metadata: { prevStatus: order._previousDataValues?.status, newStatus: status, rejectReason }
+        });
+
         res.json(updatedOrder);
     } catch (error) {
         res.status(400).json({ message: error.message });
@@ -533,7 +619,7 @@ exports.updateOrderItemStatus = async (req, res) => {
                     {
                         model: OrderItemModification,
                         as: 'modifications',
-                        include: [{ model: Modification, as: 'modification' }]
+                        include: [{ model: ModificationItem, as: 'modification' }]
                     }
                 ]
             });

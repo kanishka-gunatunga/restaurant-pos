@@ -2,6 +2,9 @@ const Customer = require('../models/Customer');
 const Order = require('../models/Order');
 const MobitelSmsService = require('../services/MobitelSmsService');
 const { Op, fn, col } = require('sequelize');
+const sequelize = require('../config/database');
+const { logActivity } = require('./ActivityLogController');
+const UserDetail = require('../models/UserDetail');
 
 exports.findOrCreate = async (req, res) => {
     try {
@@ -14,6 +17,16 @@ exports.findOrCreate = async (req, res) => {
             return res.json(customer);
         }
         customer = await Customer.create({ mobile, name, address, email, status: 'active' });
+
+        const userDetail = await UserDetail.findOne({ where: { userId: req.user.id } });
+        await logActivity({
+            userId: req.user.id,
+            branchId: userDetail?.branchId || 1,
+            activityType: 'Customer Created',
+            description: `Customer ${name} (${mobile}) created`,
+            metadata: { customerId: customer.id, name, mobile }
+        });
+
         res.status(201).json(customer);
     } catch (error) {
         console.error('Customers:', error);
@@ -39,6 +52,16 @@ exports.createCustomer = async (req, res) => {
             status: 'active',
             promotions_enabled: promotions_enabled !== undefined ? promotions_enabled : true
         });
+
+        const userDetail = await UserDetail.findOne({ where: { userId: req.user.id } });
+        await logActivity({
+            userId: req.user.id,
+            branchId: userDetail?.branchId || 1,
+            activityType: 'Customer Created',
+            description: `Customer ${name} (${mobile}) created`,
+            metadata: { customerId: customer.id, name, mobile }
+        });
+
         res.status(201).json(customer);
     } catch (error) {
         console.error('Customers:', error);
@@ -170,6 +193,16 @@ exports.updateCustomer = async (req, res) => {
         if (address !== undefined) customer.address = address;
         if (email !== undefined) customer.email = email;
         await customer.save();
+
+        const userDetail = await UserDetail.findOne({ where: { userId: req.user.id } });
+        await logActivity({
+            userId: req.user.id,
+            branchId: userDetail?.branchId || 1,
+            activityType: 'Customer Updated',
+            description: `Customer ${customer.name} (${customer.mobile}) updated`,
+            metadata: { customerId: id, updatedFields: { name, mobile, address, email } }
+        });
+
         res.json(customer);
     } catch (error) {
         console.error('[PUT /api/customers/:id]', error);

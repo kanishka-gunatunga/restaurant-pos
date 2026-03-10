@@ -1,4 +1,6 @@
 const Branch = require('../models/Branch');
+const { logActivity } = require('./ActivityLogController');
+const UserDetail = require('../models/UserDetail');
 
 exports.getAllBranches = async (req, res) => {
     try {
@@ -33,8 +35,17 @@ exports.getBranchById = async (req, res) => {
 
 exports.createBranch = async (req, res) => {
     try {
-        const { name, location } = req.body;
         const branch = await Branch.create({ name, location });
+
+        const userDetail = await UserDetail.findOne({ where: { userId: req.user.id } });
+        await logActivity({
+            userId: req.user.id,
+            branchId: userDetail?.branchId || 1,
+            activityType: 'Branch Created',
+            description: `Branch ${name} created`,
+            metadata: { branchId: branch.id, name, location }
+        });
+
         res.status(201).json(branch);
     } catch (error) {
         res.status(400).json({ message: error.message });
@@ -48,6 +59,14 @@ exports.updateBranch = async (req, res) => {
         const [updated] = await Branch.update({ name, location }, { where: { id } });
         if (updated) {
             const updatedBranch = await Branch.findByPk(id);
+            const userDetail = await UserDetail.findOne({ where: { userId: req.user.id } });
+            await logActivity({
+                userId: req.user.id,
+                branchId: userDetail?.branchId || 1,
+                activityType: 'Branch Updated',
+                description: `Branch ${updatedBranch.name} updated`,
+                metadata: { branchId: id, name, location }
+            });
             return res.json(updatedBranch);
         }
         throw new Error('Branch not found');
@@ -61,6 +80,14 @@ exports.deactivateBranch = async (req, res) => {
         const { id } = req.params;
         const [updated] = await Branch.update({ status: 'inactive' }, { where: { id } });
         if (updated) {
+            const userDetail = await UserDetail.findOne({ where: { userId: req.user.id } });
+            await logActivity({
+                userId: req.user.id,
+                branchId: userDetail?.branchId || 1,
+                activityType: 'Branch Deactivated',
+                description: `Branch ID ${id} deactivated`,
+                metadata: { branchId: id }
+            });
             return res.json({ message: 'Branch deactivated' });
         }
         throw new Error('Branch not found');
@@ -74,6 +101,14 @@ exports.activateBranch = async (req, res) => {
         const { id } = req.params;
         const [updated] = await Branch.update({ status: 'active' }, { where: { id } });
         if (updated) {
+            const userDetail = await UserDetail.findOne({ where: { userId: req.user.id } });
+            await logActivity({
+                userId: req.user.id,
+                branchId: userDetail?.branchId || 1,
+                activityType: 'Branch Activated',
+                description: `Branch ID ${id} activated`,
+                metadata: { branchId: id }
+            });
             return res.json({ message: 'Branch activated' });
         }
         throw new Error('Branch not found');

@@ -2,6 +2,7 @@ const Session = require('../models/Session');
 const SessionTransaction = require('../models/SessionTransaction');
 const User = require('../models/User');
 const UserDetail = require('../models/UserDetail');
+const { logActivity } = require('./ActivityLogController');
 const sequelize = require('../config/database');
 const { decrypt } = require('../utils/crypto');
 
@@ -64,6 +65,16 @@ exports.startSession = async (req, res) => {
             currentBalance: startBalance || 0,
             status: 'open',
             startTime: new Date()
+        });
+
+        await logActivity({
+            userId,
+            branchId,
+            activityType: 'Session Started',
+            description: `Session #${session.id} started by ${req.user.employeeId} with balance Rs.${startBalance || 0}`,
+            managerId: manager.id,
+            amount: startBalance || 0,
+            metadata: { sessionId: session.id, startBalance }
         });
 
         res.status(201).json(session);
@@ -149,6 +160,18 @@ exports.cashAction = async (req, res) => {
         }, { transaction: t });
 
         await t.commit();
+
+        const userDetail = await UserDetail.findOne({ where: { userId } });
+        await logActivity({
+            userId,
+            branchId: userDetail?.branchId || 1,
+            activityType: type === 'add' ? 'Cash In' : 'Cash Out',
+            description: `${type === 'add' ? 'Cash In' : 'Cash Out'} of Rs.${amount} performed during session #${session.id}`,
+            managerId: manager.id,
+            amount,
+            metadata: { sessionId: session.id, type, description }
+        });
+
         res.json({ session, transaction });
     } catch (error) {
         await t.rollback();
@@ -160,7 +183,7 @@ exports.closeSession = async (req, res) => {
     const t = await sequelize.transaction();
     try {
         const userId = req.user.id;
-        const { passcode } = req.body;
+        const { passcode, actualBalance } = req.body;
 
         if (!passcode) {
             return res.status(400).json({ message: 'Manager passcode is required to close session' });
@@ -185,10 +208,23 @@ exports.closeSession = async (req, res) => {
         await session.update({
             status: 'closed',
             endTime: new Date(),
-            closedBy: manager.id
+            closedBy: manager.id,
+            actualBalance: actualBalance !== undefined ? actualBalance : null
         }, { transaction: t });
 
         await t.commit();
+
+        const userDetail = await UserDetail.findOne({ where: { userId } });
+        await logActivity({
+            userId,
+            branchId: userDetail?.branchId || 1,
+            activityType: 'Session Closed',
+            description: `Session #${session.id} closed by manager ${manager.id}. Actual balance: Rs.${actualBalance || 0}`,
+            managerId: manager.id,
+            amount: actualBalance || 0,
+            metadata: { sessionId: session.id, actualBalance, expectedBalance: session.currentBalance }
+        });
+
         res.json({ message: 'Session closed successfully', session });
     } catch (error) {
         await t.rollback();
@@ -215,6 +251,254 @@ exports.getHistory = async (req, res) => {
             ]
         });
         res.json(sessions);
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
+const { Op } = require('sequelize');
+
+exports.getTodaySummary = async (req, res) => {
+    try {
+        const todayRaw = new Date();
+        const startOfDay = new Date(todayRaw.getFullYear(), todayRaw.getMonth(), todayRaw.getDate(), 0, 0, 0);
+        const endOfDay = new Date(todayRaw.getFullYear(), todayRaw.getMonth(), todayRaw.getDate(), 23, 59, 59);
+
+        const sessions = await Session.findAll({
+            where: {
+                createdAt: {
+                    [Op.between]: [startOfDay, endOfDay]
+                }
+            },
+            include: [{
+                model: SessionTransaction,
+                as: 'transactions'
+            }]
+        });
+
+        let totalExpectedBalance = 0;
+        let totalCashSales = 0;
+        let totalCashOuts = 0;
+
+        sessions.forEach(session => {
+            totalExpectedBalance += parseFloat(session.currentBalance || 0);
+
+            if (session.transactions) {
+                session.transactions.forEach(tx => {
+                    if (tx.type === 'sale') {
+                        totalCashSales += parseFloat(tx.amount || 0);
+                    } else if (tx.type === 'remove') {
+                        totalCashOuts += parseFloat(tx.amount || 0);
+                    } else if (tx.type === 'refund') {
+                        // Refunds could be considered negative cash sales, but usually we just track sales.
+                        // I'm not directly modifying cash sales by refund here for now as UI shows sales and outs
+                        // Assuming cash sales might be gross or net. Based on current logic `sale` is positive cash.
+                    }
+                });
+            }
+        });
+
+        res.json({
+            totalExpectedBalance,
+            totalCashSales,
+            totalCashOuts
+        });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: error.message });
+    }
+};
+
+exports.getTodaySessions = async (req, res) => {
+    try {
+        const todayRaw = new Date();
+        const startOfDay = new Date(todayRaw.getFullYear(), todayRaw.getMonth(), todayRaw.getDate(), 0, 0, 0);
+        const endOfDay = new Date(todayRaw.getFullYear(), todayRaw.getMonth(), todayRaw.getDate(), 23, 59, 59);
+
+        const sessions = await Session.findAll({
+            where: {
+                createdAt: {
+                    [Op.between]: [startOfDay, endOfDay]
+                }
+            },
+            include: [
+                {
+                    model: User,
+                    as: 'user',
+                    attributes: ['id', 'employeeId'],
+                    include: [{
+                        model: UserDetail,
+                        as: 'UserDetail',
+                        attributes: ['name']
+                    }]
+                },
+                {
+                    model: SessionTransaction,
+                    as: 'transactions'
+                }
+            ],
+            order: [['createdAt', 'DESC']]
+        });
+
+        const formattedSessions = sessions.map(session => {
+            let cashSales = 0;
+            let cashSalesCount = 0;
+            let cashOuts = 0;
+            let cashOutsCount = 0;
+            let cashIns = 0; // if 'add'
+
+            if (session.transactions) {
+                session.transactions.forEach(tx => {
+                    if (tx.type === 'sale') {
+                        cashSales += parseFloat(tx.amount || 0);
+                        cashSalesCount++;
+                    } else if (tx.type === 'remove') {
+                        cashOuts += parseFloat(tx.amount || 0);
+                        cashOutsCount++;
+                    } else if (tx.type === 'add') {
+                        cashIns += parseFloat(tx.amount || 0);
+                    }
+                });
+            }
+
+            const expectedBalance = parseFloat(session.currentBalance || 0);
+            const actualBalance = session.actualBalance !== null ? parseFloat(session.actualBalance) : null;
+            let outstanding = 0;
+            if (actualBalance !== null) {
+                outstanding = expectedBalance - actualBalance;
+            }
+
+            return {
+                id: session.id,
+                cashierName: session.user ? (session.user.UserDetail && session.user.UserDetail.name ? session.user.UserDetail.name : session.user.employeeId) : 'Unknown',
+                status: session.status,
+                startTime: session.startTime,
+                endTime: session.endTime,
+                drawerBalance: parseFloat(session.startBalance || 0),
+                cashSales: { amount: cashSales, count: cashSalesCount },
+                cashOuts: { amount: cashOuts, count: cashOutsCount },
+                cashIns,
+                expectedBalance,
+                actualBalance,
+                outstanding
+            };
+        });
+
+        res.json(formattedSessions);
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
+exports.getAllHistory = async (req, res) => {
+    try {
+        const { cashierId, discrepancy, fromDate, toDate } = req.query;
+        let whereClause = {};
+
+        // Fetch all sessions (open and closed)
+        // whereClause.status = 'closed'; 
+
+        if (cashierId) {
+            whereClause.userId = cashierId;
+        }
+
+        if (fromDate || toDate) {
+            whereClause.createdAt = {};
+            if (fromDate) {
+                whereClause.createdAt[Op.gte] = new Date(new Date(fromDate).setHours(0, 0, 0, 0));
+            }
+            if (toDate) {
+                whereClause.createdAt[Op.lte] = new Date(new Date(toDate).setHours(23, 59, 59, 999));
+            }
+        }
+
+        const sessions = await Session.findAll({
+            where: whereClause,
+            include: [
+                {
+                    model: User,
+                    as: 'user',
+                    attributes: ['id', 'employeeId'],
+                    include: [{
+                        model: UserDetail,
+                        as: 'UserDetail',
+                        attributes: ['name']
+                    }]
+                },
+                {
+                    model: User,
+                    as: 'closedByUser',
+                    attributes: ['id', 'employeeId'],
+                    include: [{
+                        model: UserDetail,
+                        as: 'UserDetail',
+                        attributes: ['name']
+                    }]
+                },
+                {
+                    model: SessionTransaction,
+                    as: 'transactions'
+                }
+            ],
+            order: [['createdAt', 'DESC']]
+        });
+
+        const formattedSessions = sessions.map(session => {
+            let cashSales = 0;
+            let cashSalesCount = 0;
+            let cashOuts = 0;
+            let cashOutsCount = 0;
+
+            if (session.transactions) {
+                session.transactions.forEach(tx => {
+                    if (tx.type === 'sale') {
+                        cashSales += parseFloat(tx.amount || 0);
+                        cashSalesCount++;
+                    } else if (tx.type === 'remove') {
+                        cashOuts += parseFloat(tx.amount || 0);
+                        cashOutsCount++;
+                    }
+                });
+            }
+
+            const expectedBalance = parseFloat(session.currentBalance || 0);
+            const actualBalance = session.actualBalance !== null ? parseFloat(session.actualBalance) : expectedBalance;
+            const difference = actualBalance - expectedBalance;
+
+            let sessionDiscrepancy = 'balanced';
+            if (difference > 0) {
+                sessionDiscrepancy = 'overage';
+            } else if (difference < 0) {
+                sessionDiscrepancy = 'shortage';
+            }
+
+            return {
+                id: session.id,
+                cashierId: session.userId,
+                cashierName: session.user ? (session.user.UserDetail && session.user.UserDetail.name ? session.user.UserDetail.name : session.user.employeeId) : 'Unknown',
+                date: session.startTime,
+                startTime: session.startTime,
+                endTime: session.endTime,
+                initial: parseFloat(session.startBalance || 0),
+                cashSales: { amount: cashSales, count: cashSalesCount },
+                cashOuts: { amount: cashOuts, count: cashOutsCount },
+                expected: expectedBalance,
+                actual: actualBalance,
+                difference: difference,
+                discrepancy: sessionDiscrepancy,
+                closedBy: session.closedByUser ? (session.closedByUser.UserDetail && session.closedByUser.UserDetail.name ? session.closedByUser.UserDetail.name : session.closedByUser.employeeId) : 'Unknown'
+            };
+        });
+
+        // Filter by discrepancy after calculating
+        let finalResult = formattedSessions;
+        if (discrepancy) {
+            const types = discrepancy.split(',').map(t => t.toLowerCase().trim());
+            // Map the frontend values to actual
+            finalResult = finalResult.filter(s => types.includes(s.discrepancy));
+        }
+
+        res.json(finalResult);
     } catch (error) {
         res.status(500).json({ message: error.message });
     }

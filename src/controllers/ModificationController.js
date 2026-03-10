@@ -1,6 +1,8 @@
 const Modification = require('../models/Modification');
 const ModificationItem = require('../models/ModificationItem');
 const sequelize = require('../config/database');
+const { logActivity } = require('./ActivityLogController');
+const UserDetail = require('../models/UserDetail');
 
 exports.getAllModifications = async (req, res) => {
     try {
@@ -58,6 +60,16 @@ exports.createModification = async (req, res) => {
         const createdModification = await Modification.findByPk(modification.id, {
             include: [{ model: ModificationItem, as: 'items' }]
         });
+
+        const userDetail = await UserDetail.findOne({ where: { userId: req.user.id } });
+        await logActivity({
+            userId: req.user.id,
+            branchId: userDetail?.branchId || 1,
+            activityType: 'Modification Created',
+            description: `Modification ${title} created`,
+            metadata: { modificationId: modification.id, title }
+        });
+
         res.status(201).json(createdModification);
     } catch (error) {
         await t.rollback();
@@ -90,6 +102,14 @@ exports.updateModification = async (req, res) => {
         });
 
         if (updatedModification) {
+            const userDetail = await UserDetail.findOne({ where: { userId: req.user.id } });
+            await logActivity({
+                userId: req.user.id,
+                branchId: userDetail?.branchId || 1,
+                activityType: 'Modification Updated',
+                description: `Modification ${updatedModification.title} updated`,
+                metadata: { modificationId: id, title }
+            });
             return res.status(200).json(updatedModification);
         }
         res.status(404).json({ message: 'Modification not found' });
@@ -104,6 +124,14 @@ exports.deactivateModification = async (req, res) => {
         const { id } = req.params;
         const [updated] = await Modification.update({ status: 'inactive' }, { where: { id } });
         if (updated) {
+            const userDetail = await UserDetail.findOne({ where: { userId: req.user.id } });
+            await logActivity({
+                userId: req.user.id,
+                branchId: userDetail?.branchId || 1,
+                activityType: 'Modification Deactivated',
+                description: `Modification ID ${id} deactivated`,
+                metadata: { modificationId: id }
+            });
             return res.status(200).json({ message: 'Modification deactivated' });
         }
         res.status(404).json({ message: 'Modification not found' });
@@ -117,6 +145,14 @@ exports.activateModification = async (req, res) => {
         const { id } = req.params;
         const [updated] = await Modification.update({ status: 'active' }, { where: { id } });
         if (updated) {
+            const userDetail = await UserDetail.findOne({ where: { userId: req.user.id } });
+            await logActivity({
+                userId: req.user.id,
+                branchId: userDetail?.branchId || 1,
+                activityType: 'Modification Activated',
+                description: `Modification ID ${id} activated`,
+                metadata: { modificationId: id }
+            });
             return res.status(200).json({ message: 'Modification activated' });
         }
         res.status(404).json({ message: 'Modification not found' });
