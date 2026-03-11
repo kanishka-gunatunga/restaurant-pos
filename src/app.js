@@ -56,7 +56,7 @@ app.use((err, req, res, next) => {
 });
 
 // Database Sync
-sequelize.sync().then(() => {
+sequelize.sync({alter: true}).then(() => {
     console.log('Database connected and synced');
 }).catch(err => {
     console.error('Database connection failed:', err);
