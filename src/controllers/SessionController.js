@@ -246,7 +246,7 @@ exports.getHistory = async (req, res) => {
                 {
                     model: User,
                     as: 'closedByUser',
-                    attributes: ['id', 'username', 'role']
+                    attributes: ['id', 'employeeId', 'role']
                 }
             ]
         });
