@@ -11,7 +11,7 @@ const DiscountItem = sequelize.define('DiscountItem', {
         type: DataTypes.INTEGER,
         allowNull: false,
         references: {
-            model: 'Discounts',
+            model: 'discounts',
             key: 'id',
         },
     },
@@ -19,7 +19,7 @@ const DiscountItem = sequelize.define('DiscountItem', {
         type: DataTypes.INTEGER,
         allowNull: true, // If null, applies to all selected branches or all branches
         references: {
-            model: 'Branches',
+            model: 'branches',
             key: 'id',
         },
     },
@@ -28,7 +28,7 @@ const DiscountItem = sequelize.define('DiscountItem', {
         type: DataTypes.INTEGER,
         allowNull: true,
         references: {
-            model: 'Products',
+            model: 'products',
             key: 'id',
         },
     },
@@ -36,7 +36,7 @@ const DiscountItem = sequelize.define('DiscountItem', {
         type: DataTypes.INTEGER,
         allowNull: true,
         references: {
-            model: 'VariationOptions',
+            model: 'variationoptions',
             key: 'id',
         },
     },

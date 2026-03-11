@@ -20,7 +20,7 @@ const ModificationItem = sequelize.define('ModificationItem', {
         type: DataTypes.INTEGER,
         allowNull: false,
         references: {
-            model: 'Modifications',
+            model: 'modifications',
             key: 'id',
         },
     },

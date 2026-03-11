@@ -11,7 +11,7 @@ const DiscountBranch = sequelize.define('DiscountBranch', {
         type: DataTypes.INTEGER,
         allowNull: false,
         references: {
-            model: 'Discounts',
+            model: 'discounts',
             key: 'id',
         },
     },
@@ -19,7 +19,7 @@ const DiscountBranch = sequelize.define('DiscountBranch', {
         type: DataTypes.INTEGER,
         allowNull: false,
         references: {
-            model: 'Branches', // Requires Branch model
+            model: 'branches', // Requires Branch model
             key: 'id',
         },
     },
