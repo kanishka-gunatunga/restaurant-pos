@@ -2,6 +2,7 @@ const { Op } = require('sequelize');
 const sequelize = require('../config/database');
 const Discount = require('../models/Discount');
 const DiscountItem = require('../models/DiscountItem');
+const DiscountBranch = require('../models/DiscountBranch');
 const Product = require('../models/Product');
 const VariationOption = require('../models/VariationOption');
 const Variation = require('../models/Variation');
@@ -12,6 +13,11 @@ const UserDetail = require('../models/UserDetail');
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 const DISCOUNT_INCLUDE = [
+    {
+        model: DiscountBranch,
+        as: 'branches',
+        attributes: ['branchId'],
+    },
     {
         model: DiscountItem,
         as: 'items',
@@ -58,7 +64,7 @@ const DISCOUNT_INCLUDE = [
 exports.createDiscount = async (req, res) => {
     const t = await sequelize.transaction();
     try {
-        const { name, expiryDate, items } = req.body;
+        const { name, expiryDate, isForAllBranches = true, branches, items } = req.body;
 
         if (!name) {
             await t.rollback();
@@ -80,30 +86,66 @@ exports.createDiscount = async (req, res) => {
                 await t.rollback();
                 return res.status(400).json({ message: 'discountType must be either "percentage" or "fixed"' });
             }
-            if (item.discountValue === undefined || item.discountValue === null || Number(item.discountValue) < 0) {
-                await t.rollback();
-                return res.status(400).json({ message: 'discountValue must be a non-negative number' });
+            if (isForAllBranches) {
+                if (item.discountValue === undefined || item.discountValue === null || Number(item.discountValue) < 0) {
+                    await t.rollback();
+                    return res.status(400).json({ message: 'discountValue must be a non-negative number' });
+                }
+            } else {
+                if (!item.branchDiscounts || item.branchDiscounts.length === 0) {
+                    await t.rollback();
+                    return res.status(400).json({ message: 'branchDiscounts array is required when isForAllBranches is false' });
+                }
+                for (const bd of item.branchDiscounts) {
+                    if (bd.discountValue === undefined || bd.discountValue === null || Number(bd.discountValue) < 0) {
+                        await t.rollback();
+                        return res.status(400).json({ message: 'discountValue in branchDiscounts must be a non-negative number' });
+                    }
+                }
             }
         }
 
         // Create discount
         const discount = await Discount.create(
-            { name, expiryDate: expiryDate || null, status: 'active' },
+            { name, expiryDate: expiryDate || null, isForAllBranches, status: 'active' },
             { transaction: t }
         );
 
+        if (!isForAllBranches && branches && branches.length > 0) {
+            for (const branchId of branches) {
+                await DiscountBranch.create({ discountId: discount.id, branchId }, { transaction: t });
+            }
+        }
+
         // Create discount items
         for (const item of items) {
-            await DiscountItem.create(
-                {
-                    discountId: discount.id,
-                    productId: item.productId || null,
-                    variationOptionId: item.variationOptionId || null,
-                    discountType: item.discountType,
-                    discountValue: item.discountValue,
-                },
-                { transaction: t }
-            );
+            if (isForAllBranches) {
+                await DiscountItem.create(
+                    {
+                        discountId: discount.id,
+                        productId: item.productId || null,
+                        variationOptionId: item.variationOptionId || null,
+                        branchId: null,
+                        discountType: item.discountType,
+                        discountValue: item.discountValue,
+                    },
+                    { transaction: t }
+                );
+            } else {
+                for (const bd of item.branchDiscounts) {
+                    await DiscountItem.create(
+                        {
+                            discountId: discount.id,
+                            productId: item.productId || null,
+                            variationOptionId: item.variationOptionId || null,
+                            branchId: bd.branchId,
+                            discountType: item.discountType,
+                            discountValue: bd.discountValue,
+                        },
+                        { transaction: t }
+                    );
+                }
+            }
         }
 
         await t.commit();
@@ -182,7 +224,7 @@ exports.updateDiscount = async (req, res) => {
     const t = await sequelize.transaction();
     try {
         const { id } = req.params;
-        const { name, expiryDate, items } = req.body;
+        const { name, expiryDate, isForAllBranches, branches, items } = req.body;
 
         const discount = await Discount.findByPk(id);
         if (!discount) {
@@ -190,14 +232,26 @@ exports.updateDiscount = async (req, res) => {
             return res.status(404).json({ message: 'Discount not found' });
         }
 
+        const currentIsForAllBranches = isForAllBranches !== undefined ? isForAllBranches : discount.isForAllBranches;
+
         // Update header fields
         await discount.update(
             {
                 name: name !== undefined ? name : discount.name,
                 expiryDate: expiryDate !== undefined ? (expiryDate || null) : discount.expiryDate,
+                isForAllBranches: currentIsForAllBranches,
             },
             { transaction: t }
         );
+
+        if (currentIsForAllBranches === false && branches !== undefined) {
+            await DiscountBranch.destroy({ where: { discountId: id }, transaction: t });
+            for (const branchId of branches) {
+                await DiscountBranch.create({ discountId: id, branchId }, { transaction: t });
+            }
+        } else if (currentIsForAllBranches === true) {
+            await DiscountBranch.destroy({ where: { discountId: id }, transaction: t });
+        }
 
         // Sync items if provided
         if (items !== undefined) {
@@ -215,9 +269,22 @@ exports.updateDiscount = async (req, res) => {
                     await t.rollback();
                     return res.status(400).json({ message: 'discountType must be either "percentage" or "fixed"' });
                 }
-                if (item.discountValue === undefined || item.discountValue === null || Number(item.discountValue) < 0) {
-                    await t.rollback();
-                    return res.status(400).json({ message: 'discountValue must be a non-negative number' });
+                if (currentIsForAllBranches) {
+                    if (item.discountValue === undefined || item.discountValue === null || Number(item.discountValue) < 0) {
+                        await t.rollback();
+                        return res.status(400).json({ message: 'discountValue must be a non-negative number' });
+                    }
+                } else {
+                    if (!item.branchDiscounts || item.branchDiscounts.length === 0) {
+                        await t.rollback();
+                        return res.status(400).json({ message: 'branchDiscounts array is required when isForAllBranches is false' });
+                    }
+                    for (const bd of item.branchDiscounts) {
+                        if (bd.discountValue === undefined || bd.discountValue === null || Number(bd.discountValue) < 0) {
+                            await t.rollback();
+                            return res.status(400).json({ message: 'discountValue in branchDiscounts must be a non-negative number' });
+                        }
+                    }
                 }
             }
 
@@ -225,16 +292,33 @@ exports.updateDiscount = async (req, res) => {
             await DiscountItem.destroy({ where: { discountId: id }, transaction: t });
 
             for (const item of items) {
-                await DiscountItem.create(
-                    {
-                        discountId: id,
-                        productId: item.productId || null,
-                        variationOptionId: item.variationOptionId || null,
-                        discountType: item.discountType,
-                        discountValue: item.discountValue,
-                    },
-                    { transaction: t }
-                );
+                if (currentIsForAllBranches) {
+                    await DiscountItem.create(
+                        {
+                            discountId: id,
+                            productId: item.productId || null,
+                            variationOptionId: item.variationOptionId || null,
+                            branchId: null,
+                            discountType: item.discountType,
+                            discountValue: item.discountValue,
+                        },
+                        { transaction: t }
+                    );
+                } else {
+                    for (const bd of item.branchDiscounts) {
+                        await DiscountItem.create(
+                            {
+                                discountId: id,
+                                productId: item.productId || null,
+                                variationOptionId: item.variationOptionId || null,
+                                branchId: bd.branchId,
+                                discountType: item.discountType,
+                                discountValue: bd.discountValue,
+                            },
+                            { transaction: t }
+                        );
+                    }
+                }
             }
         }
 
@@ -272,6 +356,7 @@ exports.deleteDiscount = async (req, res) => {
             return res.status(404).json({ message: 'Discount not found' });
         }
 
+        await DiscountBranch.destroy({ where: { discountId: id }, transaction: t });
         await DiscountItem.destroy({ where: { discountId: id }, transaction: t });
         await discount.destroy({ transaction: t });
 

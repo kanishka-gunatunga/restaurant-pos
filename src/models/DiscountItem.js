@@ -15,6 +15,14 @@ const DiscountItem = sequelize.define('DiscountItem', {
             key: 'id',
         },
     },
+    branchId: {
+        type: DataTypes.INTEGER,
+        allowNull: true, // If null, applies to all selected branches or all branches
+        references: {
+            model: 'Branches',
+            key: 'id',
+        },
+    },
     // Either productId OR variationOptionId must be set — enforced in controller
     productId: {
         type: DataTypes.INTEGER,

@@ -21,6 +21,7 @@ const ProductModificationPrice = require('./ProductModificationPrice');
 const ProductModificationItemPrice = require('./ProductModificationItemPrice');
 const Discount = require('./Discount');
 const DiscountItem = require('./DiscountItem');
+const DiscountBranch = require('./DiscountBranch');
 const ActivityLog = require('./ActivityLog');
 
 // User <-> UserDetail: One-to-One
@@ -134,9 +135,21 @@ ProductModificationItemPrice.belongsTo(ProductModification, { foreignKey: 'produ
 ProductModificationItemPrice.belongsTo(ModificationItem, { foreignKey: 'modificationItemId', as: 'item' });
 ProductModificationItemPrice.belongsTo(Branch, { foreignKey: 'branchId' });
 
+// Discount - DiscountBranch Association
+Discount.hasMany(DiscountBranch, { foreignKey: 'discountId', as: 'branches', onDelete: 'CASCADE', hooks: true });
+DiscountBranch.belongsTo(Discount, { foreignKey: 'discountId' });
+
+// DiscountBranch - Branch Association
+DiscountBranch.belongsTo(Branch, { foreignKey: 'branchId', as: 'branch' });
+Branch.hasMany(DiscountBranch, { foreignKey: 'branchId' });
+
 // Discount - DiscountItem Association
 Discount.hasMany(DiscountItem, { foreignKey: 'discountId', as: 'items', onDelete: 'CASCADE', hooks: true });
 DiscountItem.belongsTo(Discount, { foreignKey: 'discountId' });
+
+// DiscountItem - Branch Association
+DiscountItem.belongsTo(Branch, { foreignKey: 'branchId', as: 'branch' });
+Branch.hasMany(DiscountItem, { foreignKey: 'branchId' });
 
 // DiscountItem - Product Association
 DiscountItem.belongsTo(Product, { foreignKey: 'productId', as: 'product' });

@@ -19,6 +19,10 @@ const Discount = sequelize.define('Discount', {
         type: DataTypes.ENUM('active', 'inactive'),
         defaultValue: 'active',
     },
+    isForAllBranches: {
+        type: DataTypes.BOOLEAN,
+        defaultValue: true,
+    },
 }, {
     tableName: 'discounts',
 });

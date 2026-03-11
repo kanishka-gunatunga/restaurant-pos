@@ -12,6 +12,7 @@ const ProductBranch = require('../models/ProductBranch');
 const VariationOption = require('../models/VariationOption');
 const DiscountItem = require('../models/DiscountItem');
 const Discount = require('../models/Discount');
+const Branch = require('../models/Branch');
 const sequelize = require('../config/database');
 const { put } = require('@vercel/blob');
 const { logActivity } = require('./ActivityLogController');
@@ -62,7 +63,8 @@ exports.searchProducts = async (req, res) => {
                                     as: 'discountItems',
                                     required: false,
                                     include: [
-                                        { model: Discount, required: true, where: { status: 'active' } }
+                                        { model: Discount, required: true, where: { status: 'active' } },
+                                        { model: Branch, as: 'branch', attributes: ['id', 'name'], required: false }
                                     ]
                                 }
                             ]
@@ -88,7 +90,8 @@ exports.searchProducts = async (req, res) => {
                     as: 'discountItems',
                     required: false,
                     include: [
-                        { model: Discount, required: true, where: { status: 'active' } }
+                        { model: Discount, required: true, where: { status: 'active' } },
+                        { model: Branch, as: 'branch', attributes: ['id', 'name'], required: false }
                     ]
                 }
             ]
@@ -148,8 +151,15 @@ exports.getProductsByBranch = async (req, res) => {
                                     model: DiscountItem,
                                     as: 'discountItems',
                                     required: false,
+                                    where: {
+                                        [Op.or]: [
+                                            { branchId: null },
+                                            { branchId }
+                                        ]
+                                    },
                                     include: [
-                                        { model: Discount, required: true, where: { status: 'active' } }
+                                        { model: Discount, required: true, where: { status: 'active' } },
+                                        { model: Branch, as: 'branch', attributes: ['id', 'name'], required: false }
                                     ]
                                 }
                             ]
@@ -174,8 +184,15 @@ exports.getProductsByBranch = async (req, res) => {
                     model: DiscountItem,
                     as: 'discountItems',
                     required: false,
+                    where: {
+                        [Op.or]: [
+                            { branchId: null },
+                            { branchId }
+                        ]
+                    },
                     include: [
-                        { model: Discount, required: true, where: { status: 'active' } }
+                        { model: Discount, required: true, where: { status: 'active' } },
+                        { model: Branch, as: 'branch', attributes: ['id', 'name'], required: false }
                     ]
                 }
             ]
@@ -225,7 +242,8 @@ exports.getAllProducts = async (req, res) => {
                                     as: 'discountItems',
                                     required: false,
                                     include: [
-                                        { model: Discount, required: true, where: { status: 'active' } }
+                                        { model: Discount, required: true, where: { status: 'active' } },
+                                        { model: Branch, as: 'branch', attributes: ['id', 'name'], required: false }
                                     ]
                                 }
                             ]
@@ -251,7 +269,8 @@ exports.getAllProducts = async (req, res) => {
                     as: 'discountItems',
                     required: false,
                     include: [
-                        { model: Discount, required: true, where: { status: 'active' } }
+                        { model: Discount, required: true, where: { status: 'active' } },
+                        { model: Branch, as: 'branch', attributes: ['id', 'name'], required: false }
                     ]
                 }
             ]
@@ -287,7 +306,8 @@ exports.getProductById = async (req, res) => {
                                     as: 'discountItems',
                                     required: false,
                                     include: [
-                                        { model: Discount, required: true, where: { status: 'active' } }
+                                        { model: Discount, required: true, where: { status: 'active' } },
+                                        { model: Branch, as: 'branch', attributes: ['id', 'name'], required: false }
                                     ]
                                 }
                             ]
@@ -313,7 +333,8 @@ exports.getProductById = async (req, res) => {
                     as: 'discountItems',
                     required: false,
                     include: [
-                        { model: Discount, required: true, where: { status: 'active' } }
+                        { model: Discount, required: true, where: { status: 'active' } },
+                        { model: Branch, as: 'branch', attributes: ['id', 'name'], required: false }
                     ]
                 }
             ]
@@ -623,7 +644,8 @@ exports.getProductsByCategory = async (req, res) => {
                                     as: 'discountItems',
                                     required: false,
                                     include: [
-                                        { model: Discount, required: true, where: { status: 'active' } }
+                                        { model: Discount, required: true, where: { status: 'active' } },
+                                        { model: Branch, as: 'branch', attributes: ['id', 'name'], required: false }
                                     ]
                                 }
                             ]
@@ -649,7 +671,8 @@ exports.getProductsByCategory = async (req, res) => {
                     as: 'discountItems',
                     required: false,
                     include: [
-                        { model: Discount, required: true, where: { status: 'active' } }
+                        { model: Discount, required: true, where: { status: 'active' } },
+                        { model: Branch, as: 'branch', attributes: ['id', 'name'], required: false }
                     ]
                 }
             ]
