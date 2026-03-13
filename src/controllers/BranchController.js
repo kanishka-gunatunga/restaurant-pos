@@ -35,6 +35,7 @@ exports.getBranchById = async (req, res) => {
 
 exports.createBranch = async (req, res) => {
     try {
+        const { name, location } = req.body;
         const branch = await Branch.create({ name, location });
 
         const userDetail = await UserDetail.findOne({ where: { userId: req.user.id } });
