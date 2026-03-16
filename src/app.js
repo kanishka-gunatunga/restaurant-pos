@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const sequelize = require('./config/database');
 const Supplier = require('./models/Supplier');
+const MaterialBranch = require('./models/MaterialBranch');
 require('dotenv').config();
 
 // Load model associations (must run after models are loaded)
@@ -65,9 +66,15 @@ app.use((err, req, res, next) => {
 });
 
 // Database Sync
-sequelize.sync().then(() => {
-// sequelize.sync({alter: true}).then(() => {
-    console.log('Database connected and synced');
+sequelize.sync().then(async () => {
+    try {
+        
+        await Supplier.sync({ alter: true });
+        await MaterialBranch.sync({ alter: true });
+        console.log('Database connected and synced');
+    } catch (err) {
+        console.error('Supply table sync failed:', err);
+    }
 }).catch(err => {
     console.error('Database connection failed:', err);
 });

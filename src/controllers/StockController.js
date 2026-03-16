@@ -3,6 +3,7 @@ const StockItem = require('../models/StockItem');
 const Material = require('../models/Material');
 const Supplier = require('../models/Supplier');
 const Branch = require('../models/Branch');
+const MaterialBranch = require('../models/MaterialBranch');
 
 const DEFAULT_PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 100;
@@ -115,7 +116,10 @@ exports.createStock = async (req, res) => {
         if (!supplier) return res.status(400).json({ message: 'Supplier not found' });
 
         const qty = Number(quantityValue) ?? 0;
-        const status = computeStatus(qty, expiryDate, material.minStockValue);
+
+        let branchMin = await MaterialBranch.findOne({ where: { materialId, branchId } });
+        const minStock = branchMin ? Number(branchMin.minStockValue) || 0 : Number(material.minStockValue) || 0;
+        const status = computeStatus(qty, expiryDate, minStock);
 
         const stock = await StockItem.create({
             branchId,
@@ -161,7 +165,17 @@ exports.updateStock = async (req, res) => {
         if (quantityUnit !== undefined) updates.quantityUnit = quantityUnit;
 
         const material = stock.material || (materialId ? await Material.findByPk(materialId) : null);
-        const minStock = material ? Number(material.minStockValue) || 0 : 0;
+        let branchMin = null;
+        if (material) {
+            const effectiveMaterialId = materialId || stock.materialId;
+            const effectiveBranchId = branchId || stock.branchId;
+            branchMin = await MaterialBranch.findOne({
+                where: { materialId: effectiveMaterialId, branchId: effectiveBranchId },
+            });
+        }
+        const minStock = branchMin
+            ? Number(branchMin.minStockValue) || 0
+            : (material ? Number(material.minStockValue) || 0 : 0);
         updates.status = computeStatus(
             updates.quantityValue !== undefined ? updates.quantityValue : stock.quantityValue,
             updates.expiryDate !== undefined ? updates.expiryDate : stock.expiryDate,

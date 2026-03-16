@@ -19,6 +19,16 @@ const MaterialBranch = sequelize.define('MaterialBranch', {
         references: { model: 'branches', key: 'id' },
         onDelete: 'CASCADE',
     },
+    minStockValue: {
+        type: DataTypes.DECIMAL(10, 2),
+        allowNull: false,
+        defaultValue: 0,
+    },
+    minStockUnit: {
+        type: DataTypes.STRING,
+        allowNull: false,
+        defaultValue: 'pieces',
+    },
 }, {
     tableName: 'material_branches',
     underscored: true,

@@ -1,6 +1,7 @@
 const { Op } = require('sequelize');
 const Material = require('../models/Material');
 const MaterialBranch = require('../models/MaterialBranch');
+const Branch = require('../models/Branch');
 
 const DEFAULT_PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 100;
@@ -45,7 +46,12 @@ exports.listMaterials = async (req, res) => {
 
         const { count, rows } = await Material.findAndCountAll({
             where: whereClause,
-            include: [{ model: MaterialBranch, as: 'materialBranches', attributes: ['branchId'] }],
+            include: [{
+                model: MaterialBranch,
+                as: 'materialBranches',
+                attributes: ['branchId', 'minStockValue', 'minStockUnit'],
+                include: [{ model: Branch, as: 'branch', attributes: ['id', 'name'] }],
+            }],
             order: [['name', 'ASC']],
             limit: pageSize,
             offset: (page - 1) * pageSize,
@@ -53,7 +59,14 @@ exports.listMaterials = async (req, res) => {
 
         const data = rows.map((m) => {
             const mat = m.toJSON();
-            mat.branchIds = (mat.materialBranches || []).map((mb) => mb.branchId);
+            const branches = mat.materialBranches || [];
+            mat.branchIds = branches.map((mb) => mb.branchId);
+            mat.perBranchMinStocks = branches.map((mb) => ({
+                branchId: mb.branchId,
+                branchName: mb.branch?.name || '',
+                minStockValue: Number(mb.minStockValue ?? 0),
+                minStockUnit: mb.minStockUnit,
+            }));
             delete mat.materialBranches;
             return mat;
         });
@@ -67,11 +80,23 @@ exports.listMaterials = async (req, res) => {
 exports.getMaterialById = async (req, res) => {
     try {
         const material = await Material.findByPk(req.params.id, {
-            include: [{ model: MaterialBranch, as: 'materialBranches', attributes: ['branchId'] }],
+            include: [{
+                model: MaterialBranch,
+                as: 'materialBranches',
+                attributes: ['branchId', 'minStockValue', 'minStockUnit'],
+                include: [{ model: Branch, as: 'branch', attributes: ['id', 'name'] }],
+            }],
         });
         if (!material) return res.status(404).json({ message: 'Material not found' });
         const out = material.toJSON();
-        out.branchIds = (out.materialBranches || []).map((mb) => mb.branchId);
+        const branches = out.materialBranches || [];
+        out.branchIds = branches.map((mb) => mb.branchId);
+        out.perBranchMinStocks = branches.map((mb) => ({
+            branchId: mb.branchId,
+            branchName: mb.branch?.name || '',
+            minStockValue: Number(mb.minStockValue ?? 0),
+            minStockUnit: mb.minStockUnit,
+        }));
         delete out.materialBranches;
         res.json(out);
     } catch (error) {
@@ -81,7 +106,16 @@ exports.getMaterialById = async (req, res) => {
 
 exports.createMaterial = async (req, res) => {
     try {
-        const { name, category, unit, allBranches, branchIds, minStockValue, minStockUnit } = req.body;
+        const {
+            name,
+            category,
+            unit,
+            allBranches,
+            branchIds,
+            minStockValue,
+            minStockUnit,
+            perBranchMinStocks,
+        } = req.body;
         if (!name) return res.status(400).json({ message: 'Name is required' });
 
         const material = await Material.create({
@@ -94,15 +128,38 @@ exports.createMaterial = async (req, res) => {
         });
 
         const bidList = Array.isArray(branchIds) ? branchIds : [];
+        const perBranch = Array.isArray(perBranchMinStocks) ? perBranchMinStocks : [];
+
         if (!material.allBranches && bidList.length > 0) {
-            await MaterialBranch.bulkCreate(bidList.map((branchId) => ({ materialId: material.id, branchId })));
+            const records = bidList.map((branchId) => {
+                const found = perBranch.find((b) => b.branchId === branchId) || {};
+                return {
+                    materialId: material.id,
+                    branchId,
+                    minStockValue: found.minStockValue != null ? Number(found.minStockValue) : (minStockValue != null ? Number(minStockValue) : 0),
+                    minStockUnit: found.minStockUnit || minStockUnit || unit || 'pieces',
+                };
+            });
+            await MaterialBranch.bulkCreate(records);
         }
 
         const withBranches = await Material.findByPk(material.id, {
-            include: [{ model: MaterialBranch, as: 'materialBranches', attributes: ['branchId'] }],
+            include: [{
+                model: MaterialBranch,
+                as: 'materialBranches',
+                attributes: ['branchId', 'minStockValue', 'minStockUnit'],
+                include: [{ model: Branch, as: 'branch', attributes: ['id', 'name'] }],
+            }],
         });
         const out = withBranches.toJSON();
-        out.branchIds = (out.materialBranches || []).map((mb) => mb.branchId);
+        const branches = out.materialBranches || [];
+        out.branchIds = branches.map((mb) => mb.branchId);
+        out.perBranchMinStocks = branches.map((mb) => ({
+            branchId: mb.branchId,
+            branchName: mb.branch?.name || '',
+            minStockValue: Number(mb.minStockValue ?? 0),
+            minStockUnit: mb.minStockUnit,
+        }));
         delete out.materialBranches;
         res.status(201).json(out);
     } catch (error) {
@@ -115,7 +172,17 @@ exports.updateMaterial = async (req, res) => {
         const material = await Material.findByPk(req.params.id);
         if (!material) return res.status(404).json({ message: 'Material not found' });
 
-        const { name, category, unit, allBranches, branchIds, minStockValue, minStockUnit } = req.body;
+        const {
+            name,
+            category,
+            unit,
+            allBranches,
+            branchIds,
+            minStockValue,
+            minStockUnit,
+            perBranchMinStocks,
+        } = req.body;
+
         await material.update({
             ...(name !== undefined && { name }),
             ...(category !== undefined && { category }),
@@ -128,16 +195,38 @@ exports.updateMaterial = async (req, res) => {
         if (branchIds !== undefined) {
             await MaterialBranch.destroy({ where: { materialId: material.id } });
             const bidList = Array.isArray(branchIds) ? branchIds : [];
+            const perBranch = Array.isArray(perBranchMinStocks) ? perBranchMinStocks : [];
             if (!material.allBranches && bidList.length > 0) {
-                await MaterialBranch.bulkCreate(bidList.map((branchId) => ({ materialId: material.id, branchId })));
+                const records = bidList.map((branchId) => {
+                    const found = perBranch.find((b) => b.branchId === branchId) || {};
+                    return {
+                        materialId: material.id,
+                        branchId,
+                        minStockValue: found.minStockValue != null ? Number(found.minStockValue) : (minStockValue != null ? Number(minStockValue) : 0),
+                        minStockUnit: found.minStockUnit || minStockUnit || unit || material.unit || 'pieces',
+                    };
+                });
+                await MaterialBranch.bulkCreate(records);
             }
         }
 
         const withBranches = await Material.findByPk(material.id, {
-            include: [{ model: MaterialBranch, as: 'materialBranches', attributes: ['branchId'] }],
+            include: [{
+                model: MaterialBranch,
+                as: 'materialBranches',
+                attributes: ['branchId', 'minStockValue', 'minStockUnit'],
+                include: [{ model: Branch, as: 'branch', attributes: ['id', 'name'] }],
+            }],
         });
         const out = withBranches.toJSON();
-        out.branchIds = (out.materialBranches || []).map((mb) => mb.branchId);
+        const branches = out.materialBranches || [];
+        out.branchIds = branches.map((mb) => mb.branchId);
+        out.perBranchMinStocks = branches.map((mb) => ({
+            branchId: mb.branchId,
+            branchName: mb.branch?.name || '',
+            minStockValue: Number(mb.minStockValue ?? 0),
+            minStockUnit: mb.minStockUnit,
+        }));
         delete out.materialBranches;
         res.json(out);
     } catch (error) {
