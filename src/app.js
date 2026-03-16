@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const sequelize = require('./config/database');
+const Supplier = require('./models/Supplier');
 require('dotenv').config();
 
 // Load model associations (must run after models are loaded)
@@ -21,6 +22,10 @@ const branchRoutes = require('./routes/branchRoutes');
 const discountRoutes = require('./routes/discountRoutes');
 const dashboardRoutes = require('./routes/dashboardRoutes');
 const activityLogRoutes = require('./routes/activityLogRoutes');
+const supplierRoutes = require('./routes/supplierRoutes');
+const materialRoutes = require('./routes/materialRoutes');
+const stockRoutes = require('./routes/stockRoutes');
+const assignmentRoutes = require('./routes/assignmentRoutes');
 
 const app = express();
 
@@ -46,6 +51,10 @@ app.use('/api/branches', branchRoutes);
 app.use('/api/discounts', discountRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/activity-logs', activityLogRoutes);
+app.use('/api/suppliers', supplierRoutes);
+app.use('/api/materials', materialRoutes);
+app.use('/api/supply/stocks', stockRoutes);
+app.use('/api/supply/assignments', assignmentRoutes);
 
 // Global error handler (catches unhandled errors, e.g. JSON parse)
 app.use((err, req, res, next) => {
@@ -56,7 +65,8 @@ app.use((err, req, res, next) => {
 });
 
 // Database Sync
-sequelize.sync({alter: true}).then(() => {
+sequelize.sync().then(() => {
+// sequelize.sync({alter: true}).then(() => {
     console.log('Database connected and synced');
 }).catch(err => {
     console.error('Database connection failed:', err);
