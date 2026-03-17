@@ -37,6 +37,11 @@ const Material = sequelize.define('Material', {
         allowNull: true,
         defaultValue: 'pieces',
     },
+    isActive: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: true,
+    },
 }, {
     tableName: 'materials',
     underscored: true,

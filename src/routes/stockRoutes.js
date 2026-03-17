@@ -8,6 +8,7 @@ const upload = multer({ storage: multer.memoryStorage() });
 
 router.get('/', authenticate, StockController.listStocks);
 router.get('/export', authenticate, StockController.exportStocks);
+router.get('/import-template', authenticate, StockController.getStockImportTemplate);
 router.post('/import', authenticate, upload.single('file'), StockController.importStocks);
 router.get('/:id', authenticate, StockController.getStockById);
 router.post('/', authenticate, StockController.createStock);

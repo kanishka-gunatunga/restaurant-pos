@@ -14,9 +14,12 @@ exports.listMaterials = async (req, res) => {
     try {
         const page = Math.max(1, parseInt(req.query.page, 10) || 1);
         const pageSize = Math.min(MAX_PAGE_SIZE, Math.max(1, parseInt(req.query.pageSize, 10) || DEFAULT_PAGE_SIZE));
-        const { q, category, branchId } = req.query;
+        const { q, category, branchId, includeInactive } = req.query;
 
         const where = {};
+        if (includeInactive !== 'true') {
+            where.isActive = true;
+        }
         if (q && String(q).trim()) {
             where.name = { [Op.like]: `%${String(q).trim()}%` };
         }
@@ -125,6 +128,7 @@ exports.createMaterial = async (req, res) => {
             allBranches: Boolean(allBranches),
             minStockValue: minStockValue != null ? Number(minStockValue) : 0,
             minStockUnit: minStockUnit || 'pieces',
+            isActive: true,
         });
 
         const bidList = Array.isArray(branchIds) ? branchIds : [];
@@ -181,6 +185,7 @@ exports.updateMaterial = async (req, res) => {
             minStockValue,
             minStockUnit,
             perBranchMinStocks,
+            isActive,
         } = req.body;
 
         await material.update({
@@ -190,6 +195,7 @@ exports.updateMaterial = async (req, res) => {
             ...(allBranches !== undefined && { allBranches: Boolean(allBranches) }),
             ...(minStockValue !== undefined && { minStockValue: Number(minStockValue) }),
             ...(minStockUnit !== undefined && { minStockUnit }),
+            ...(isActive !== undefined && { isActive: Boolean(isActive) }),
         });
 
         if (branchIds !== undefined) {
@@ -238,8 +244,8 @@ exports.deleteMaterial = async (req, res) => {
     try {
         const material = await Material.findByPk(req.params.id);
         if (!material) return res.status(404).json({ message: 'Material not found' });
-        await material.destroy();
-        res.json({ message: 'Material deleted' });
+        await material.update({ isActive: false });
+        res.json({ message: 'Material deactivated' });
     } catch (error) {
         res.status(500).json({ message: error.message });
     }

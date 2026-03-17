@@ -24,9 +24,12 @@ exports.listAssignments = async (req, res) => {
     try {
         const page = Math.max(1, parseInt(req.query.page, 10) || 1);
         const pageSize = Math.min(MAX_PAGE_SIZE, Math.max(1, parseInt(req.query.pageSize, 10) || DEFAULT_PAGE_SIZE));
-        const { q, branchId } = req.query;
+        const { q, branchId, includeInactive } = req.query;
 
         const where = {};
+        if (includeInactive !== 'true') {
+            where.isActive = true;
+        }
         if (branchId && branchId !== 'all' && branchId !== '') {
             where.branchId = branchId;
         }
@@ -85,6 +88,7 @@ exports.createAssignment = async (req, res) => {
             quantity: Number(quantity) ?? 0,
             quantityUnit: quantityUnit || 'items',
             materialsUsed: Array.isArray(materialsUsed) ? materialsUsed : [],
+            isActive: true,
         };
         const assignment = await ProductAssignment.create(payload);
         const a = assignment.toJSON();
@@ -100,7 +104,7 @@ exports.updateAssignment = async (req, res) => {
         const assignment = await ProductAssignment.findByPk(req.params.id);
         if (!assignment) return res.status(404).json({ message: 'Assignment not found' });
 
-        const { branchId, productId, productName, batchNo, expiryDate, quantity, quantityUnit, materialsUsed } = req.body;
+        const { branchId, productId, productName, batchNo, expiryDate, quantity, quantityUnit, materialsUsed, isActive } = req.body;
         await assignment.update({
             ...(branchId !== undefined && { branchId }),
             ...(productId !== undefined && { productId }),
@@ -110,6 +114,7 @@ exports.updateAssignment = async (req, res) => {
             ...(quantity !== undefined && { quantity: Number(quantity) }),
             ...(quantityUnit !== undefined && { quantityUnit }),
             ...(materialsUsed !== undefined && { materialsUsed: Array.isArray(materialsUsed) ? materialsUsed : [] }),
+            ...(isActive !== undefined && { isActive: Boolean(isActive) }),
         });
         const a = assignment.toJSON();
         a.materialsUsed = await enrichMaterialsUsed(a.materialsUsed || []);
@@ -123,8 +128,8 @@ exports.deleteAssignment = async (req, res) => {
     try {
         const assignment = await ProductAssignment.findByPk(req.params.id);
         if (!assignment) return res.status(404).json({ message: 'Assignment not found' });
-        await assignment.destroy();
-        res.json({ message: 'Assignment deleted' });
+        await assignment.update({ isActive: false });
+        res.json({ message: 'Assignment deactivated' });
     } catch (error) {
         res.status(500).json({ message: error.message });
     }

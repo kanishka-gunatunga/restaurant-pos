@@ -1,4 +1,7 @@
 const { Op } = require('sequelize');
+const { Readable } = require('stream');
+const csvParser = require('csv-parser');
+const sequelize = require('../config/database');
 const StockItem = require('../models/StockItem');
 const Material = require('../models/Material');
 const Supplier = require('../models/Supplier');
@@ -21,6 +24,44 @@ function computeStatus(quantityValue, expiryDate, minStockValue) {
     return 'available';
 }
 
+function normalizeUnit(unit) {
+    if (!unit) return null;
+    const u = String(unit).trim().toLowerCase();
+    if (u === 'pcs' || u === 'pc') return 'pieces';
+    return u;
+}
+
+function isValidIsoDate(dateStr) {
+    if (!dateStr) return true;
+    const s = String(dateStr).trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
+    const d = new Date(`${s}T00:00:00.000Z`);
+    return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === s;
+}
+
+async function parseCsvBuffer(buffer) {
+    return await new Promise((resolve, reject) => {
+        const rows = [];
+        const stream = Readable.from(buffer);
+        stream
+            .pipe(csvParser({
+                mapHeaders: ({ header }) => (header ? String(header).trim() : header),
+                skipLines: 0,
+            }))
+            .on('data', (data) => rows.push(data))
+            .on('end', () => resolve(rows))
+            .on('error', (err) => reject(err));
+    });
+}
+
+function getEffectiveMinStock(materialId, branchId, materialMap, materialBranchMap) {
+    const mb = materialBranchMap.get(`${materialId}:${branchId}`);
+    if (mb) return Number(mb.minStockValue) || 0;
+    const material = materialMap.get(materialId);
+    if (!material) return 0;
+    return Number(material.minStockValue) || 0;
+}
+
 /**
  * List stock items with material name, supplier name, category; filters q, branchId, category, status; pagination.
  */
@@ -28,9 +69,12 @@ exports.listStocks = async (req, res) => {
     try {
         const page = Math.max(1, parseInt(req.query.page, 10) || 1);
         const pageSize = Math.min(MAX_PAGE_SIZE, Math.max(1, parseInt(req.query.pageSize, 10) || DEFAULT_PAGE_SIZE));
-        const { q, branchId, category, status } = req.query;
+        const { q, branchId, category, status, includeInactive } = req.query;
 
         const where = {};
+        if (includeInactive !== 'true') {
+            where.isActive = true;
+        }
         if (branchId && branchId !== 'all' && branchId !== '') {
             where.branchId = branchId;
         }
@@ -130,6 +174,7 @@ exports.createStock = async (req, res) => {
             quantityValue: qty,
             quantityUnit: quantityUnit || material.minStockUnit || 'pieces',
             status,
+            isActive: true,
         });
         const out = (await StockItem.findByPk(stock.id, {
             include: [
@@ -154,7 +199,7 @@ exports.updateStock = async (req, res) => {
         const stock = await StockItem.findByPk(req.params.id, { include: [{ model: Material, as: 'material', attributes: ['minStockValue'] }] });
         if (!stock) return res.status(404).json({ message: 'Stock item not found' });
 
-        const { branchId, materialId, supplierId, batchNo, expiryDate, quantityValue, quantityUnit } = req.body;
+        const { branchId, materialId, supplierId, batchNo, expiryDate, quantityValue, quantityUnit, isActive } = req.body;
         const updates = {};
         if (branchId !== undefined) updates.branchId = branchId;
         if (materialId !== undefined) updates.materialId = materialId;
@@ -163,6 +208,7 @@ exports.updateStock = async (req, res) => {
         if (expiryDate !== undefined) updates.expiryDate = expiryDate;
         if (quantityValue !== undefined) updates.quantityValue = Number(quantityValue);
         if (quantityUnit !== undefined) updates.quantityUnit = quantityUnit;
+        if (isActive !== undefined) updates.isActive = Boolean(isActive);
 
         const material = stock.material || (materialId ? await Material.findByPk(materialId) : null);
         let branchMin = null;
@@ -205,8 +251,8 @@ exports.deleteStock = async (req, res) => {
     try {
         const stock = await StockItem.findByPk(req.params.id);
         if (!stock) return res.status(404).json({ message: 'Stock item not found' });
-        await stock.destroy();
-        res.json({ message: 'Stock item deleted' });
+        await stock.update({ isActive: false });
+        res.json({ message: 'Stock item deactivated' });
     } catch (error) {
         res.status(500).json({ message: error.message });
     }
@@ -217,17 +263,241 @@ exports.deleteStock = async (req, res) => {
  */
 exports.importStocks = async (req, res) => {
     try {
-        if (!req.file && !req.files?.file) {
-            return res.status(400).json({ message: 'No file uploaded. Send multipart/form-data with a file field.' });
+        console.log('[stocks:import] hit', {
+            userId: req.user?.id,
+            ip: req.ip,
+        });
+        if (!req.file) {
+            console.warn('[stocks:import] missing file');
+            return res.status(400).json({ message: 'File is required (field name: file)' });
         }
-        const file = req.file || req.files?.file;
-        // TODO: parse file (xlsx/csv), validate rows, create/update StockItem, collect errors
-        res.status(200).json({
-            message: 'Import endpoint ready; parsing not yet implemented',
+
+        const originalName = req.file.originalname || '';
+        console.log('[stocks:import] file received', { originalName, size: req.file.size });
+        if (!originalName.toLowerCase().endsWith('.csv')) {
+            return res.status(400).json({ message: 'Only CSV import is supported. Please upload a .csv file.' });
+        }
+
+        let rows;
+        try {
+            rows = await parseCsvBuffer(req.file.buffer);
+        } catch (e) {
+            console.warn('[stocks:import] csv parse error', e);
+            return res.status(400).json({ message: `Invalid CSV format: ${e.message}` });
+        }
+
+        if (!rows.length) {
+            console.warn('[stocks:import] no data rows');
+            return res.status(400).json({
+                message: 'Import failed: file contains no data rows',
+                created: 0,
+                updated: 0,
+                failedRows: [],
+                warnings: [],
+            });
+        }
+        console.log('[stocks:import] parsed rows', { count: rows.length });
+
+        // Option A (ID-based CSV)
+        // Required: branchId, materialId, supplierId, quantityValue
+        // Optional: quantityUnit, batchNo, expiryDate
+        const requiredCols = ['branchId', 'materialId', 'supplierId', 'quantityValue'];
+        const headerKeys = Object.keys(rows[0] || {});
+        for (const col of requiredCols) {
+            if (!headerKeys.includes(col)) {
+                return res.status(400).json({ message: `Invalid CSV format: missing required column '${col}'` });
+            }
+        }
+
+        const allowedUnits = new Set(['kg', 'g', 'pieces']);
+        const failedRows = [];
+        const warnings = [];
+        const valid = [];
+
+        // prefetch active branches (for allBranches=true materials we may still validate branch existence)
+        const [branches, materials, suppliers] = await Promise.all([
+            Branch.findAll({ attributes: ['id'] }),
+            Material.findAll({ attributes: ['id', 'unit', 'allBranches', 'minStockValue', 'minStockUnit', 'isActive'] }),
+            Supplier.findAll({ attributes: ['id'] }),
+        ]);
+
+        const branchSet = new Set(branches.map((b) => b.id));
+        const supplierSet = new Set(suppliers.map((s) => s.id));
+        const materialMap = new Map(materials.map((m) => [m.id, m]));
+
+        // Load all material_branch rows for quick validation and min lookup
+        const materialBranchRows = await MaterialBranch.findAll({ attributes: ['materialId', 'branchId', 'minStockValue', 'minStockUnit'] });
+        const materialBranchMap = new Map(materialBranchRows.map((mb) => [`${mb.materialId}:${mb.branchId}`, mb]));
+
+        // CSV parser doesn't provide row numbers; header is row 1, first data row is row 2
+        rows.forEach((row, idx) => {
+            const rowNumber = idx + 2;
+
+            const branchId = parseInt(String(row.branchId).trim(), 10);
+            const materialId = parseInt(String(row.materialId).trim(), 10);
+            const supplierId = parseInt(String(row.supplierId).trim(), 10);
+            const quantityValue = Number(String(row.quantityValue).trim());
+
+            if (!Number.isInteger(branchId) || !branchSet.has(branchId)) {
+                failedRows.push({ rowNumber, reason: `Invalid or unknown branchId: '${row.branchId}'`, raw: row });
+                return;
+            }
+            if (!Number.isInteger(materialId) || !materialMap.has(materialId)) {
+                failedRows.push({ rowNumber, reason: `Invalid or unknown materialId: '${row.materialId}'`, raw: row });
+                return;
+            }
+            if (!Number.isInteger(supplierId) || !supplierSet.has(supplierId)) {
+                failedRows.push({ rowNumber, reason: `Invalid or unknown supplierId: '${row.supplierId}'`, raw: row });
+                return;
+            }
+            if (!Number.isFinite(quantityValue) || quantityValue < 0) {
+                failedRows.push({ rowNumber, reason: `Invalid quantityValue: '${row.quantityValue}'`, raw: row });
+                return;
+            }
+
+            const material = materialMap.get(materialId);
+            if (material && material.isActive === false) {
+                failedRows.push({ rowNumber, reason: `Material is inactive: '${materialId}'`, raw: row });
+                return;
+            }
+
+            // No hard-fail if material_branches is missing. We will fall back to material global min / 0.
+            if (material && material.allBranches === false) {
+                const key = `${materialId}:${branchId}`;
+                if (!materialBranchMap.has(key)) {
+                    warnings.push({
+                        rowNumber,
+                        reason: 'No branch min stock found; used material global min / 0 fallback',
+                        raw: row,
+                    });
+                }
+            }
+
+            const batchNo = row.batchNo != null && String(row.batchNo).trim() !== '' ? String(row.batchNo).trim() : null;
+            if (batchNo && batchNo.length > 64) {
+                failedRows.push({ rowNumber, reason: 'Invalid batchNo: too long (max 64 chars)', raw: row });
+                return;
+            }
+
+            const expiryDate = row.expiryDate != null && String(row.expiryDate).trim() !== '' ? String(row.expiryDate).trim() : null;
+            if (expiryDate && !isValidIsoDate(expiryDate)) {
+                failedRows.push({ rowNumber, reason: `Invalid expiryDate (expected YYYY-MM-DD): '${row.expiryDate}'`, raw: row });
+                return;
+            }
+
+            let quantityUnit = normalizeUnit(row.quantityUnit);
+            if (!quantityUnit) {
+                quantityUnit = normalizeUnit(material.unit) || 'pieces';
+            }
+            if (!allowedUnits.has(quantityUnit)) {
+                failedRows.push({ rowNumber, reason: `Invalid quantityUnit: '${row.quantityUnit}'`, raw: row });
+                return;
+            }
+
+            // Upsert uniqueness rule:
+            // - if batchNo exists: (branchId, materialId, batchNo)
+            // - else: (branchId, materialId, supplierId, expiryDate) but expiryDate must be present
+            if (!batchNo && !expiryDate) {
+                failedRows.push({ rowNumber, reason: 'batchNo is required when expiryDate is empty (to avoid duplicate imports)', raw: row });
+                return;
+            }
+
+            valid.push({
+                branchId,
+                materialId,
+                supplierId,
+                batchNo,
+                expiryDate,
+                quantityValue,
+                quantityUnit,
+            });
+        });
+
+        let created = 0;
+        let updated = 0;
+
+        await sequelize.transaction(async (t) => {
+            for (const v of valid) {
+                const where = v.batchNo
+                    ? { branchId: v.branchId, materialId: v.materialId, batchNo: v.batchNo }
+                    : { branchId: v.branchId, materialId: v.materialId, supplierId: v.supplierId, expiryDate: v.expiryDate };
+
+                const existing = await StockItem.findOne({ where, transaction: t });
+
+                // get min stock for status computation
+                const minStock = getEffectiveMinStock(v.materialId, v.branchId, materialMap, materialBranchMap);
+                const status = computeStatus(v.quantityValue, v.expiryDate, minStock);
+
+                if (existing) {
+                    await existing.update({
+                        supplierId: v.supplierId,
+                        expiryDate: v.expiryDate,
+                        quantityValue: v.quantityValue,
+                        quantityUnit: v.quantityUnit,
+                        batchNo: v.batchNo,
+                        status,
+                        isActive: true,
+                    }, { transaction: t });
+                    updated += 1;
+                } else {
+                    await StockItem.create({
+                        ...v,
+                        status,
+                        isActive: true,
+                    }, { transaction: t });
+                    created += 1;
+                }
+            }
+        });
+
+        console.log('[stocks:import] summary', {
+            created,
+            updated,
+            failed: failedRows.length,
+            totalRows: rows.length,
+            validRows: valid.length,
+        });
+
+        if (created + updated > 0) {
+            return res.status(200).json({
+                message: 'Import completed',
+                created,
+                updated,
+                failedRows,
+                warnings,
+            });
+        }
+
+        if (failedRows.length > 0) {
+            return res.status(400).json({
+                message: 'Import failed: no rows were applied',
+                created: 0,
+                updated: 0,
+                failedRows,
+                warnings,
+            });
+        }
+
+        return res.status(400).json({
+            message: 'Import failed: no rows were applied',
             created: 0,
             updated: 0,
-            failedRows: [],
+            failedRows: [{ rowNumber: 1, reason: 'No valid rows to import', raw: {} }],
+            warnings,
         });
+    } catch (error) {
+        console.error('[stocks:import] unexpected error', error);
+        res.status(500).json({ message: error.message });
+    }
+};
+
+exports.getStockImportTemplate = async (req, res) => {
+    try {
+        const headers = ['branchId', 'materialId', 'supplierId', 'quantityValue', 'quantityUnit', 'batchNo', 'expiryDate'];
+        const csv = `${headers.join(',')}\r\n`;
+        res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+        res.setHeader('Content-Disposition', 'attachment; filename=stocks-import-template.csv');
+        res.send(csv);
     } catch (error) {
         res.status(500).json({ message: error.message });
     }
