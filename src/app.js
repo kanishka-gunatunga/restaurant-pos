@@ -27,6 +27,7 @@ const supplierRoutes = require('./routes/supplierRoutes');
 const materialRoutes = require('./routes/materialRoutes');
 const stockRoutes = require('./routes/stockRoutes');
 const assignmentRoutes = require('./routes/assignmentRoutes');
+const printRoutes = require('./routes/printRoutes');
 
 const app = express();
 
@@ -56,6 +57,7 @@ app.use('/api/suppliers', supplierRoutes);
 app.use('/api/materials', materialRoutes);
 app.use('/api/supply/stocks', stockRoutes);
 app.use('/api/supply/assignments', assignmentRoutes);
+app.use('/api/print', printRoutes);
 
 // Global error handler (catches unhandled errors, e.g. JSON parse)
 app.use((err, req, res, next) => {
