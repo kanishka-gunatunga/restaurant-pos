@@ -8,7 +8,6 @@ const StockItem = require('./models/StockItem');
 const ProductAssignment = require('./models/ProductAssignment');
 require('dotenv').config();
 
-// Load model associations (must run after models are loaded)
 require('./models/associations');
 
 const authRoutes = require('./routes/authRoutes');
@@ -30,9 +29,9 @@ const supplierRoutes = require('./routes/supplierRoutes');
 const materialRoutes = require('./routes/materialRoutes');
 const stockRoutes = require('./routes/stockRoutes');
 const assignmentRoutes = require('./routes/assignmentRoutes');
+const cronRoutes = require('./routes/cronRoutes');
 
 const app = express();
-
 
 // Middleware
 app.use(cors());
@@ -59,8 +58,9 @@ app.use('/api/suppliers', supplierRoutes);
 app.use('/api/materials', materialRoutes);
 app.use('/api/supply/stocks', stockRoutes);
 app.use('/api/supply/assignments', assignmentRoutes);
+app.use('/api/cron', cronRoutes);
 
-// Global error handler (catches unhandled errors, e.g. JSON parse)
+// Global error handler
 app.use((err, req, res, next) => {
     console.error(err);
     res.status(err.status || 500).json({
@@ -68,10 +68,9 @@ app.use((err, req, res, next) => {
     });
 });
 
-// Database Sync
-sequelize.sync().then(async () => { 
+// Sync supply tables (avoids altering users table)
+sequelize.sync().then(async () => {
     try {
-        
         await Supplier.sync({ alter: true });
         await Material.sync({ alter: true });
         await MaterialBranch.sync({ alter: true });

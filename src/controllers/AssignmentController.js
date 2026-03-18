@@ -6,18 +6,29 @@ const Product = require('../models/Product');
 const DEFAULT_PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 100;
 
-/**
- * Enrich materialsUsed with materialName from DB when materialId is present.
- */
 async function enrichMaterialsUsed(materialsUsed) {
     if (!Array.isArray(materialsUsed) || materialsUsed.length === 0) return materialsUsed;
-    const ids = [...new Set(materialsUsed.map((m) => m.materialId).filter(Boolean))];
+    const rawIds = materialsUsed.map((m) => m.materialId ?? m.material_id).filter(Boolean);
+    const ids = [...new Set(rawIds.map((id) => (typeof id === 'number' ? id : parseInt(id, 10))))].filter((n) => !Number.isNaN(n));
+    if (ids.length === 0) return materialsUsed.map(normalizeMaterialItem);
     const materials = await Material.findAll({ where: { id: { [Op.in]: ids } }, attributes: ['id', 'name'] });
-    const byId = Object.fromEntries(materials.map((m) => [m.id, m.name]));
-    return materialsUsed.map((m) => ({
-        ...m,
-        materialName: m.materialName || (m.materialId ? byId[m.materialId] : null),
-    }));
+    const byId = new Map(materials.map((m) => [m.id, m.name]));
+    return materialsUsed.map((m) => normalizeMaterialItem(m, byId));
+}
+
+function normalizeMaterialItem(m, byId = new Map()) {
+    const rawId = m.materialId ?? m.material_id;
+    const id = typeof rawId === 'number' ? rawId : parseInt(rawId, 10);
+    const materialId = Number.isNaN(id) ? rawId : id;
+    const materialName = (typeof id === 'number' && !Number.isNaN(id) && byId.has(id))
+        ? byId.get(id)
+        : (m.materialName ?? m.material_name ?? null);
+    return {
+        materialId,
+        materialName,
+        qtyValue: Number(m.qtyValue ?? m.qty_value ?? 0),
+        qtyUnit: String(m.qtyUnit ?? m.qty_unit ?? 'pieces'),
+    };
 }
 
 exports.listAssignments = async (req, res) => {

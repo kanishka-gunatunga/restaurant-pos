@@ -7,21 +7,46 @@ const Material = require('../models/Material');
 const Supplier = require('../models/Supplier');
 const Branch = require('../models/Branch');
 const MaterialBranch = require('../models/MaterialBranch');
+const {
+    getLocalCalendarTodayYYYYMMDD,
+    isStockPastExpiryGoodThrough,
+    computeStockStatus,
+} = require('../utils/stockExpiry');
 
 const DEFAULT_PAGE_SIZE = 20;
-const MAX_PAGE_SIZE = 100;
+const MAX_PAGE_SIZE = 500;
 
-/**
- * Compute stock status from quantity, expiry and material's minStockValue.
- */
-function computeStatus(quantityValue, expiryDate, minStockValue) {
-    const q = Number(quantityValue) || 0;
-    const min = Number(minStockValue) || 0;
-    const today = new Date().toISOString().slice(0, 10);
-    if (expiryDate && String(expiryDate).slice(0, 10) < today) return 'expired';
-    if (q <= 0) return 'out';
-    if (min > 0 && q < min) return 'low';
-    return 'available';
+async function loadMaterialBranchMapForStockRows(stockRowsJson) {
+    const pairs = [];
+    const seen = new Set();
+    for (const r of stockRowsJson) {
+        const k = `${r.materialId}:${r.branchId}`;
+        if (!seen.has(k)) {
+            seen.add(k);
+            pairs.push({ materialId: r.materialId, branchId: r.branchId });
+        }
+    }
+    if (!pairs.length) return new Map();
+    const mbs = await MaterialBranch.findAll({
+        where: { [Op.or]: pairs },
+        attributes: ['materialId', 'branchId', 'minStockValue'],
+    });
+    return new Map(mbs.map((mb) => [`${mb.materialId}:${mb.branchId}`, mb]));
+}
+
+function effectiveMinStockForRow(row, mbMap) {
+    const key = `${row.materialId}:${row.branchId}`;
+    const mb = mbMap.get(key);
+    if (mb) return Number(mb.minStockValue) || 0;
+    const m = row.material;
+    return m ? Number(m.minStockValue) || 0 : 0;
+}
+
+function applyDerivedStockFields(row, mbMap) {
+    const min = effectiveMinStockForRow(row, mbMap);
+    row.expired = isStockPastExpiryGoodThrough(row.expiryDate);
+    row.status = computeStockStatus(row.quantityValue, row.expiryDate, min);
+    return row;
 }
 
 function normalizeUnit(unit) {
@@ -62,24 +87,54 @@ function getEffectiveMinStock(materialId, branchId, materialMap, materialBranchM
     return Number(material.minStockValue) || 0;
 }
 
-/**
- * List stock items with material name, supplier name, category; filters q, branchId, category, status; pagination.
- */
 exports.listStocks = async (req, res) => {
     try {
         const page = Math.max(1, parseInt(req.query.page, 10) || 1);
         const pageSize = Math.min(MAX_PAGE_SIZE, Math.max(1, parseInt(req.query.pageSize, 10) || DEFAULT_PAGE_SIZE));
         const { q, branchId, category, status, includeInactive } = req.query;
 
-        const where = {};
+        const baseWhere = {};
         if (includeInactive !== 'true') {
-            where.isActive = true;
+            baseWhere.isActive = true;
         }
         if (branchId && branchId !== 'all' && branchId !== '') {
-            where.branchId = branchId;
+            baseWhere.branchId = branchId;
         }
+
+        const localToday = getLocalCalendarTodayYYYYMMDD();
+        let where = { ...baseWhere };
         if (status && status !== 'all' && ['available', 'low', 'out', 'expired'].includes(status)) {
-            where.status = status;
+            if (status === 'expired') {
+                where = {
+                    [Op.and]: [
+                        baseWhere,
+                        {
+                            [Op.or]: [
+                                {
+                                    [Op.and]: [
+                                        { expiryDate: { [Op.ne]: null } },
+                                        { expiryDate: { [Op.lt]: localToday } },
+                                    ],
+                                },
+                                { status: 'expired' },
+                            ],
+                        },
+                    ],
+                };
+            } else {
+                where = {
+                    [Op.and]: [
+                        baseWhere,
+                        { status },
+                        {
+                            [Op.or]: [
+                                { expiryDate: null },
+                                { expiryDate: { [Op.gte]: localToday } },
+                            ],
+                        },
+                    ],
+                };
+            }
         }
 
         const materialWhere = {};
@@ -108,12 +163,13 @@ exports.listStocks = async (req, res) => {
             offset: (page - 1) * pageSize,
         });
 
-        const data = rows.map((row) => {
-            const s = row.toJSON();
+        const jsonRows = rows.map((row) => row.toJSON());
+        const mbMap = await loadMaterialBranchMapForStockRows(jsonRows);
+        const data = jsonRows.map((s) => {
+            applyDerivedStockFields(s, mbMap);
             s.materialName = s.material?.name;
             s.category = s.material?.category;
             s.supplierName = s.supplier?.name;
-            s.expired = s.expiryDate ? s.expiryDate < new Date().toISOString().slice(0, 10) : false;
             delete s.material;
             delete s.supplier;
             return s;
@@ -136,10 +192,11 @@ exports.getStockById = async (req, res) => {
         });
         if (!stock) return res.status(404).json({ message: 'Stock item not found' });
         const s = stock.toJSON();
+        const mbMap = await loadMaterialBranchMapForStockRows([s]);
+        applyDerivedStockFields(s, mbMap);
         s.materialName = s.material?.name;
         s.category = s.material?.category;
         s.supplierName = s.supplier?.name;
-        s.expired = s.expiryDate ? s.expiryDate < new Date().toISOString().slice(0, 10) : false;
         delete s.material;
         delete s.supplier;
         res.json(s);
@@ -163,7 +220,7 @@ exports.createStock = async (req, res) => {
 
         let branchMin = await MaterialBranch.findOne({ where: { materialId, branchId } });
         const minStock = branchMin ? Number(branchMin.minStockValue) || 0 : Number(material.minStockValue) || 0;
-        const status = computeStatus(qty, expiryDate, minStock);
+        const status = computeStockStatus(qty, expiryDate, minStock);
 
         const stock = await StockItem.create({
             branchId,
@@ -185,7 +242,8 @@ exports.createStock = async (req, res) => {
         out.materialName = out.material?.name;
         out.category = out.material?.category;
         out.supplierName = out.supplier?.name;
-        out.expired = out.expiryDate ? out.expiryDate < new Date().toISOString().slice(0, 10) : false;
+        const mbMapOut = await loadMaterialBranchMapForStockRows([out]);
+        applyDerivedStockFields(out, mbMapOut);
         delete out.material;
         delete out.supplier;
         res.status(201).json(out);
@@ -222,7 +280,7 @@ exports.updateStock = async (req, res) => {
         const minStock = branchMin
             ? Number(branchMin.minStockValue) || 0
             : (material ? Number(material.minStockValue) || 0 : 0);
-        updates.status = computeStatus(
+        updates.status = computeStockStatus(
             updates.quantityValue !== undefined ? updates.quantityValue : stock.quantityValue,
             updates.expiryDate !== undefined ? updates.expiryDate : stock.expiryDate,
             minStock
@@ -238,7 +296,8 @@ exports.updateStock = async (req, res) => {
         out.materialName = out.material?.name;
         out.category = out.material?.category;
         out.supplierName = out.supplier?.name;
-        out.expired = out.expiryDate ? out.expiryDate < new Date().toISOString().slice(0, 10) : false;
+        const mbMapUp = await loadMaterialBranchMapForStockRows([out]);
+        applyDerivedStockFields(out, mbMapUp);
         delete out.material;
         delete out.supplier;
         res.json(out);
@@ -271,7 +330,6 @@ exports.importStocks = async (req, res) => {
             console.warn('[stocks:import] missing file');
             return res.status(400).json({ message: 'File is required (field name: file)' });
         }
-
         const originalName = req.file.originalname || '';
         console.log('[stocks:import] file received', { originalName, size: req.file.size });
         if (!originalName.toLowerCase().endsWith('.csv')) {
@@ -285,7 +343,6 @@ exports.importStocks = async (req, res) => {
             console.warn('[stocks:import] csv parse error', e);
             return res.status(400).json({ message: `Invalid CSV format: ${e.message}` });
         }
-
         if (!rows.length) {
             console.warn('[stocks:import] no data rows');
             return res.status(400).json({
@@ -298,7 +355,6 @@ exports.importStocks = async (req, res) => {
         }
         console.log('[stocks:import] parsed rows', { count: rows.length });
 
-        // Option A (ID-based CSV)
         // Required: branchId, materialId, supplierId, quantityValue
         // Optional: quantityUnit, batchNo, expiryDate
         const requiredCols = ['branchId', 'materialId', 'supplierId', 'quantityValue'];
@@ -426,7 +482,7 @@ exports.importStocks = async (req, res) => {
 
                 // get min stock for status computation
                 const minStock = getEffectiveMinStock(v.materialId, v.branchId, materialMap, materialBranchMap);
-                const status = computeStatus(v.quantityValue, v.expiryDate, minStock);
+                const status = computeStockStatus(v.quantityValue, v.expiryDate, minStock);
 
                 if (existing) {
                     await existing.update({
@@ -508,26 +564,64 @@ exports.getStockImportTemplate = async (req, res) => {
  */
 exports.exportStocks = async (req, res) => {
     try {
-        const { branchId, category, status } = req.query;
-        const where = {};
-        if (branchId && branchId !== 'all') where.branchId = branchId;
-        if (status && status !== 'all') where.status = status;
+        const { branchId, category, status, includeInactive } = req.query;
+        const baseWhere = {};
+        if (includeInactive !== 'true') baseWhere.isActive = true;
+        if (branchId && branchId !== 'all') baseWhere.branchId = branchId;
+
+        const localToday = getLocalCalendarTodayYYYYMMDD();
+        let where = { ...baseWhere };
+        if (status && status !== 'all' && ['available', 'low', 'out', 'expired'].includes(status)) {
+            if (status === 'expired') {
+                where = {
+                    [Op.and]: [
+                        baseWhere,
+                        {
+                            [Op.or]: [
+                                {
+                                    [Op.and]: [
+                                        { expiryDate: { [Op.ne]: null } },
+                                        { expiryDate: { [Op.lt]: localToday } },
+                                    ],
+                                },
+                                { status: 'expired' },
+                            ],
+                        },
+                    ],
+                };
+            } else {
+                where = {
+                    [Op.and]: [
+                        baseWhere,
+                        { status },
+                        {
+                            [Op.or]: [
+                                { expiryDate: null },
+                                { expiryDate: { [Op.gte]: localToday } },
+                            ],
+                        },
+                    ],
+                };
+            }
+        }
 
         const rows = await StockItem.findAll({
             where,
             include: [
-                { model: Material, as: 'material', attributes: ['id', 'name', 'category', 'unit'] },
+                { model: Material, as: 'material', attributes: ['id', 'name', 'category', 'unit', 'minStockValue'] },
                 { model: Supplier, as: 'supplier', attributes: ['id', 'name'] },
             ],
             order: [['createdAt', 'DESC']],
         });
 
-        let list = rows;
+        let list = rows.map((r) => r.toJSON());
         if (category && category !== 'all') {
-            list = rows.filter((r) => r.material && r.material.category === category);
+            list = list.filter((r) => r.material && r.material.category === category);
         }
+        const mbMap = await loadMaterialBranchMapForStockRows(list);
+        list.forEach((r) => applyDerivedStockFields(r, mbMap));
 
-        const headers = ['id', 'materialName', 'category', 'supplierName', 'branchId', 'batchNo', 'expiryDate', 'quantityValue', 'quantityUnit', 'status'];
+        const headers = ['id', 'materialName', 'category', 'supplierName', 'branchId', 'batchNo', 'expiryDate', 'quantityValue', 'quantityUnit', 'status', 'expired'];
         const csvLines = [
             headers.join(','),
             ...list.map((row) => {
@@ -544,6 +638,7 @@ exports.exportStocks = async (req, res) => {
                     row.quantityValue,
                     row.quantityUnit || '',
                     row.status,
+                    row.expired ? 'true' : 'false',
                 ].map((cell) => (typeof cell === 'string' && (cell.includes(',') || cell.includes('"')) ? `"${String(cell).replace(/"/g, '""')}"` : cell)).join(',');
             }),
         ];
