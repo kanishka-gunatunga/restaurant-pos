@@ -47,6 +47,11 @@ const StockItem = sequelize.define('StockItem', {
         defaultValue: 'available',
         comment: 'Derived from quantity and expiry; can be recomputed',
     },
+    isActive: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: true,
+    },
 }, {
     tableName: 'stock_items',
     underscored: true,

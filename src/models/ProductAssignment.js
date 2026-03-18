@@ -48,6 +48,11 @@ const ProductAssignment = sequelize.define('ProductAssignment', {
         defaultValue: [],
         comment: 'Array of { materialId, materialName?, qtyValue, qtyUnit }',
     },
+    isActive: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: true,
+    },
 }, {
     tableName: 'product_assignments',
     underscored: true,
