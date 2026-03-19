@@ -3,6 +3,7 @@ const SessionTransaction = require('../models/SessionTransaction');
 const User = require('../models/User');
 const UserDetail = require('../models/UserDetail');
 const { logActivity } = require('./ActivityLogController');
+const { auditLog } = require('../utils/auditLogger');
 const sequelize = require('../config/database');
 const { decrypt } = require('../utils/crypto');
 
@@ -76,6 +77,7 @@ exports.startSession = async (req, res) => {
             amount: startBalance || 0,
             metadata: { sessionId: session.id, startBalance }
         });
+        auditLog('drawer_open', { ip: req.ip, userId, metadata: { sessionId: session.id } });
 
         res.status(201).json(session);
     } catch (error) {
@@ -224,6 +226,7 @@ exports.closeSession = async (req, res) => {
             amount: actualBalance || 0,
             metadata: { sessionId: session.id, actualBalance, expectedBalance: session.currentBalance }
         });
+        auditLog('drawer_close', { ip: req.ip, userId, metadata: { sessionId: session.id } });
 
         res.json({ message: 'Session closed successfully', session });
     } catch (error) {

@@ -70,10 +70,14 @@ exports.register = async (req, res) => {
 };
 
 exports.login = async (req, res) => {
+    const { auditLog } = require('../utils/auditLogger');
+    const ip = req.ip;
+
     try {
         const { employeeId, password } = req.body;
 
         if (!employeeId || !password) {
+            auditLog('login_failed', { ip, path: '/api/auth/login', reason: 'missing_credentials' });
             return res.status(400).json({ message: 'Employee ID and password are required' });
         }
 
@@ -82,17 +86,36 @@ exports.login = async (req, res) => {
             include: [{ model: UserDetail, as: 'UserDetail' }],
         });
 
-        if (!user) return res.status(404).json({ message: 'User not found' });
-        if (user.status !== 'active') return res.status(403).json({ message: 'Account is inactive' });
+        if (!user) {
+            auditLog('login_failed', { ip, path: '/api/auth/login', reason: 'user_not_found', metadata: { employeeId: String(employeeId).slice(0, 8) + '***' } });
+            return res.status(404).json({ message: 'User not found' });
+        }
+        if (user.status !== 'active') {
+            auditLog('login_failed', { ip, path: '/api/auth/login', reason: 'account_inactive', userId: user.id });
+            return res.status(403).json({ message: 'Account is inactive' });
+        }
 
         const isMatch = await bcrypt.compare(password, user.password);
-        if (!isMatch) return res.status(401).json({ message: 'Invalid credentials' });
+        if (!isMatch) {
+            auditLog('login_failed', { ip, path: '/api/auth/login', reason: 'invalid_password', userId: user.id });
+            return res.status(401).json({ message: 'Invalid credentials' });
+        }
 
-        const token = jwt.sign({ id: user.id, role: user.role }, process.env.JWT_SECRET || 'secret', {
-            expiresIn: '1d',
-        });
+        const jwtSecret = process.env.JWT_SECRET || (process.env.NODE_ENV === 'production' ? null : 'secret');
+        if (!jwtSecret) return res.status(500).json({ message: 'Server configuration error' });
+        const expiresIn = process.env.JWT_EXPIRES_IN || '12h';
+        const token = jwt.sign({ id: user.id, role: user.role }, jwtSecret, { expiresIn });
+
+        auditLog('login_success', { ip, path: '/api/auth/login', userId: user.id });
 
         const userDetail = user.UserDetail;
+        await logActivity({
+            userId: user.id,
+            branchId: userDetail?.branchId || null,
+            activityType: 'Login',
+            description: `User ${user.employeeId} logged in`,
+        });
+
         res.json({
             token,
             user: {
@@ -106,6 +129,7 @@ exports.login = async (req, res) => {
             },
         });
     } catch (error) {
+        auditLog('login_failed', { ip, path: '/api/auth/login', reason: 'server_error' });
         res.status(500).json({ message: error.message });
     }
 };
