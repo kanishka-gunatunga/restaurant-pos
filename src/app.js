@@ -1,5 +1,6 @@
 const express = require('express');
 const cors = require('cors');
+const helmet = require('helmet');
 const sequelize = require('./config/database');
 const Supplier = require('./models/Supplier');
 const Material = require('./models/Material');
@@ -30,11 +31,46 @@ const materialRoutes = require('./routes/materialRoutes');
 const stockRoutes = require('./routes/stockRoutes');
 const assignmentRoutes = require('./routes/assignmentRoutes');
 const cronRoutes = require('./routes/cronRoutes');
+const { validatePositiveInt } = require('./middleware/validate');
 
 const app = express();
 
-// Middleware
-app.use(cors());
+app.param('id', (req, res, next, id) => {
+    const err = validatePositiveInt(id, 'id');
+    if (err) return res.status(400).json({ message: err });
+    next();
+});
+
+// CORS_ORIGIN: comma-separated origins. Use *.domain.com for wildcard (e.g. *.vercel.app for previews).
+// Dev default: http://localhost:3000. Production: set in Vercel env vars.
+const corsConfig = process.env.CORS_ORIGIN
+    ? process.env.CORS_ORIGIN.split(',').map((o) => o.trim()).filter(Boolean)
+    : ['http://localhost:3000'];
+
+function corsOrigin(origin, cb) {
+    if (!origin) return cb(null, true);
+    for (const allowed of corsConfig) {
+        if (allowed.startsWith('*.')) {
+            const suffix = allowed.slice(2);
+            try {
+                const host = new URL(origin).hostname;
+                if (host === suffix || host.endsWith('.' + suffix)) return cb(null, true);
+            } catch (_) {}
+        } else if (origin === allowed) {
+            return cb(null, true);
+        }
+    }
+    return cb(null, false);
+}
+
+app.use(helmet({ contentSecurityPolicy: false }));
+app.use(cors({
+    origin: corsConfig.length ? corsOrigin : true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+    credentials: true,
+    maxAge: 86400,
+}));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -60,9 +96,9 @@ app.use('/api/supply/stocks', stockRoutes);
 app.use('/api/supply/assignments', assignmentRoutes);
 app.use('/api/cron', cronRoutes);
 
-// Global error handler
+// Global error handler (do not log request body to avoid leaking tokens/passwords)
 app.use((err, req, res, next) => {
-    console.error(err);
+    if (process.env.NODE_ENV !== 'production') console.error(err);
     res.status(err.status || 500).json({
         message: err.message || 'Internal server error',
     });

@@ -6,6 +6,7 @@ const SessionTransaction = require('../models/SessionTransaction');
 const sequelize = require('../config/database');
 const { Op } = require('sequelize');
 const { logActivity } = require('./ActivityLogController');
+const { auditLog } = require('../utils/auditLogger');
 const UserDetail = require('../models/UserDetail');
 
 exports.createPayment = async (req, res) => {
@@ -163,6 +164,9 @@ exports.updatePaymentStatus = async (req, res) => {
             amount: is_refund == 1 ? actualRefundAmount : null,
             metadata: { paymentId: id, status: finalStatus, is_refund, refund_type, actualRefundAmount }
         });
+        if (is_refund == 1) {
+            auditLog('refund', { ip: req.ip, userId: req.user.id, metadata: { paymentId: id, orderId: payment.orderId, amount: actualRefundAmount } });
+        }
 
         res.json({ message: 'Payment status updated', payment });
     } catch (error) {
