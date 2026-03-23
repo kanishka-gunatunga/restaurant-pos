@@ -8,6 +8,8 @@ const upload = multer({ storage: multer.memoryStorage() });
 
 router.get('/', authenticate, ProductController.getAllProducts);
 router.get('/search', authenticate, ProductController.searchProducts);
+router.get('/export-template', authenticate, ProductController.exportTemplate);
+router.post('/import', authenticate, upload.single('file'), ProductController.importProducts);
 router.get('/branch/:branchId', authenticate, ProductController.getProductsByBranch);
 router.get('/:id', authenticate, ProductController.getProductById);
 router.get('/category/:categoryId', authenticate, ProductController.getProductsByCategory);

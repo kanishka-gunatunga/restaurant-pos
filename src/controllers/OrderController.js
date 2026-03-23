@@ -13,6 +13,15 @@ const { decrypt } = require('../utils/crypto');
 const { Op } = require('sequelize');
 const { logActivity } = require('./ActivityLogController');
 const UserDetail = require('../models/UserDetail');
+const Pusher = require('pusher');
+
+const pusher = new Pusher({
+  appId: process.env.PUSHER_APP_ID,
+  key: process.env.PUSHER_KEY,
+  secret: process.env.PUSHER_SECRET,
+  cluster: process.env.PUSHER_CLUSTER,
+  useTLS: true
+});
 
 exports.searchOrders = async (req, res) => {
     try {
@@ -424,6 +433,15 @@ exports.createOrder = async (req, res) => {
             amount: totalAmount,
             metadata: { orderType, tableNumber, totalAmount }
         });
+
+        try {
+            await pusher.trigger('orders-channel', 'new-order', {
+                message: 'New order created',
+                orderId: order.id 
+            });
+        } catch (error) {
+        console.error('Pusher trigger error:', error);
+        }
 
         res.status(201).json(fullOrder);
     } catch (error) {

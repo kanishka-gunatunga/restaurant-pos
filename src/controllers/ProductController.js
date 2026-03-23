@@ -17,6 +17,7 @@ const sequelize = require('../config/database');
 const { put } = require('@vercel/blob');
 const { logActivity } = require('./ActivityLogController');
 const UserDetail = require('../models/UserDetail');
+const xlsx = require('xlsx');
 
 exports.searchProducts = async (req, res) => {
     try {
@@ -726,5 +727,271 @@ exports.activateProduct = async (req, res) => {
         res.status(404).json({ message: 'Product not found' });
     } catch (error) {
         res.status(500).json({ message: error.message });
+    }
+};
+
+exports.exportTemplate = async (req, res) => {
+    try {
+        const wb = xlsx.utils.book_new();
+
+        // Sheet 1: Products
+        const productsWs = xlsx.utils.aoa_to_sheet([
+            ['Product Code', 'Name', 'SKU', 'Category Name', 'SubCategory Name', 'Short Description', 'Branches (Comma Separated Names)', 'Status'],
+            ['BURG-01', 'Classic Burger', 'BURG-C-01', 'Fast Food', 'Burgers', 'Delicious classic beef burger', 'Main Branch, City Center', 'active'],
+            ['PIZZA-01', 'Margherita Pizza', 'PZ-M-01', 'Italian', 'Pizza', 'Classic cheese and tomato pizza', 'Main Branch', 'active']
+        ]);
+        xlsx.utils.book_append_sheet(wb, productsWs, 'Products');
+
+        // Sheet 2: Variations & Prices
+        const variationsWs = xlsx.utils.aoa_to_sheet([
+            ['Product Code', 'Variation Name', 'Option Name', 'Branch Name', 'Price', 'Discount Price', 'Quantity', 'Batch No', 'Status'],
+            ['BURG-01', 'Size', 'Regular', 'Main Branch', '500.00', '', '100', 'BATCH1', 'active'],
+            ['BURG-01', 'Size', 'Large', 'Main Branch', '750.00', '700.00', '50', 'BATCH1', 'active'],
+            ['BURG-01', 'Size', 'Regular', 'City Center', '550.00', '', '100', 'BATCH1', 'active'],
+            ['PIZZA-01', 'Crust', 'Thin Crust', 'Main Branch', '1200.00', '', '20', '', 'active']
+        ]);
+        xlsx.utils.book_append_sheet(wb, variationsWs, 'Variations & Prices');
+
+        // Sheet 3: Modifications
+        const modsWs = xlsx.utils.aoa_to_sheet([
+            ['Product Code', 'Variation Name (Optional)', 'Modification Name'],
+            ['BURG-01', '', 'Extra Toppings'],
+            ['PIZZA-01', 'Crust', 'Crust Options']
+        ]);
+        xlsx.utils.book_append_sheet(wb, modsWs, 'Modifications');
+
+        const excelBuffer = xlsx.write(wb, { type: 'buffer', bookType: 'xlsx' });
+
+        res.setHeader('Content-Disposition', 'attachment; filename=product_import_template.xlsx');
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        res.send(excelBuffer);
+
+        const userDetail = await UserDetail.findOne({ where: { userId: req.user.id } });
+        await logActivity({
+            userId: req.user.id,
+            branchId: userDetail?.branchId || 1,
+            activityType: 'Exported Product Template',
+            description: `User downloaded the product import template`,
+            metadata: {}
+        });
+
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
+exports.importProducts = async (req, res) => {
+    if (!req.file) {
+        return res.status(400).json({ message: 'No file uploaded' });
+    }
+
+    const t = await sequelize.transaction();
+    try {
+        const wb = xlsx.read(req.file.buffer, { type: 'buffer' });
+        
+        const productsSheet = wb.Sheets['Products'];
+        const variationsSheet = wb.Sheets['Variations & Prices'];
+        const modificationsSheet = wb.Sheets['Modifications'];
+
+        if (!productsSheet || !variationsSheet || !modificationsSheet) {
+            throw new Error('Invalid Excel file format. Missing required sheets: "Products", "Variations & Prices", or "Modifications"');
+        }
+
+        const productsData = xlsx.utils.sheet_to_json(productsSheet);
+        const variationsData = xlsx.utils.sheet_to_json(variationsSheet);
+        const modificationsData = xlsx.utils.sheet_to_json(modificationsSheet);
+
+        let createdProductsCount = 0;
+        let createdVariationsCount = 0;
+
+        for (const pRow of productsData) {
+            const productCode = pRow['Product Code'];
+            if (!productCode) continue;
+
+            const existingProduct = await Product.findOne({ where: { code: productCode }, transaction: t });
+            if (existingProduct) {
+                throw new Error(`Product with code ${productCode} already exists.`);
+            }
+
+            // Lookup Category by Name
+            let categoryId = null;
+            if (pRow['Category Name']) {
+                let category = await Category.findOne({ 
+                    where: sequelize.where(sequelize.fn('LOWER', sequelize.col('name')), pRow['Category Name'].toLowerCase()), 
+                    transaction: t 
+                });
+                if (!category) {
+                    category = await Category.create({ name: pRow['Category Name'], status: 'active' }, { transaction: t });
+                }
+                categoryId = category.id;
+            }
+
+            // Lookup SubCategory by Name (ensure it belongs to the parent category if categoryId exists)
+            let subCategoryId = null;
+            if (pRow['SubCategory Name']) {
+                const subCatWhere = {
+                    name: sequelize.where(sequelize.fn('LOWER', sequelize.col('name')), pRow['SubCategory Name'].toLowerCase())
+                };
+                if (categoryId) subCatWhere.parentId = categoryId;
+                
+                let subCategory = await Category.findOne({ where: subCatWhere, transaction: t });
+                if (!subCategory) {
+                    subCategory = await Category.create({ 
+                        name: pRow['SubCategory Name'], 
+                        parentId: categoryId,
+                        status: 'active' 
+                    }, { transaction: t });
+                }
+                subCategoryId = subCategory.id;
+            }
+
+            const product = await Product.create({
+                name: pRow['Name'],
+                code: productCode,
+                sku: pRow['SKU'] || null,
+                categoryId: categoryId,
+                subCategoryId: subCategoryId,
+                shortDescription: pRow['Short Description'] || '',
+                description: '',
+                status: pRow['Status'] || 'active',
+                image: null 
+            }, { transaction: t });
+            createdProductsCount++;
+
+            // Product branches
+            const branchesStr = pRow['Branches (Comma Separated Names)'];
+            if (branchesStr !== undefined && branchesStr !== null) {
+                const branchNames = branchesStr.toString().split(',').map(b => b.trim());
+                for (const bName of branchNames) {
+                    if (bName) {
+                        let branch = await Branch.findOne({ 
+                            where: sequelize.where(sequelize.fn('LOWER', sequelize.col('name')), bName.toLowerCase()), 
+                            transaction: t 
+                        });
+                        if (!branch) {
+                            branch = await Branch.create({ name: bName }, { transaction: t });
+                        }
+                        await ProductBranch.create({
+                            productId: product.id,
+                            branchId: branch.id
+                        }, { transaction: t });
+                    }
+                }
+            }
+
+            // Process Variations
+            const pVariations = variationsData.filter(v => v['Product Code'] === productCode);
+            const variationsMap = new Map(); 
+            const optionsMap = new Map();    
+
+            for (const vRow of pVariations) {
+                const varName = vRow['Variation Name'];
+                const optName = vRow['Option Name'];
+
+                if (!varName || !optName) continue;
+
+                let variation = variationsMap.get(varName);
+                if (!variation) {
+                    variation = await Variation.create({
+                        productId: product.id,
+                        name: varName,
+                        status: vRow['Status'] || 'active'
+                    }, { transaction: t });
+                    variationsMap.set(varName, variation);
+                }
+
+                let option = optionsMap.get(`${variation.id}-${optName}`);
+                if (!option) {
+                    option = await VariationOption.create({
+                        variationId: variation.id,
+                        name: optName,
+                        status: vRow['Status'] || 'active'
+                    }, { transaction: t });
+                    optionsMap.set(`${variation.id}-${optName}`, option);
+                    createdVariationsCount++;
+                }
+
+                if (vRow['Branch Name'] && vRow['Price']) {
+                    let branch = await Branch.findOne({ 
+                        where: sequelize.where(sequelize.fn('LOWER', sequelize.col('name')), vRow['Branch Name'].toLowerCase()), 
+                        transaction: t 
+                    });
+                    if (!branch) {
+                        branch = await Branch.create({ name: vRow['Branch Name'] }, { transaction: t });
+                    }
+
+                    await VariationPrice.create({
+                        variationOptionId: option.id,
+                        branchId: branch.id,
+                        price: parseFloat(vRow['Price']),
+                        discountPrice: vRow['Discount Price'] ? parseFloat(vRow['Discount Price']) : null,
+                        quantity: vRow['Quantity'] ? parseInt(vRow['Quantity']) : 0,
+                        batchNo: vRow['Batch No'] || null,
+                        expireDate: null
+                    }, { transaction: t });
+                }
+            }
+
+            // Process Modifications (Add-ons)
+            const pMods = modificationsData.filter(m => m['Product Code'] === productCode);
+            
+            for (const mRow of pMods) {
+                const modName = mRow['Modification Name'];
+                if (!modName) continue;
+
+                const modification = await Modification.findOne({ 
+                    where: sequelize.where(sequelize.fn('LOWER', sequelize.col('title')), modName.toLowerCase()), 
+                    transaction: t 
+                });
+
+                if (!modification) {
+                    throw new Error(`Modification '${modName}' not found in the database. Please create it first.`);
+                }
+
+                let variationId = null;
+                const varName = mRow['Variation Name (Optional)'];
+                if (varName) {
+                    const variation = variationsMap.get(varName);
+                    if (!variation) {
+                        throw new Error(`Variation '${varName}' not found for product '${productCode}' while mapping modification '${modName}'.`);
+                    }
+                    variationId = variation.id;
+                }
+
+                // Check if already linked
+                const existingLink = await ProductModification.findOne({
+                    where: {
+                        productId: product.id,
+                        modificationId: modification.id,
+                        variationId: variationId || null
+                    },
+                    transaction: t
+                });
+
+                if (!existingLink) {
+                    await ProductModification.create({
+                        productId: product.id,
+                        variationId: variationId || null,
+                        modificationId: modification.id
+                    }, { transaction: t });
+                }
+            }
+        }
+
+        await t.commit();
+
+        const userDetail = await UserDetail.findOne({ where: { userId: req.user.id } });
+        await logActivity({
+            userId: req.user.id,
+            branchId: userDetail?.branchId || 1,
+            activityType: 'Imported Products via Excel',
+            description: `Imported ${createdProductsCount} products`,
+            metadata: { createdProductsCount, createdVariationsCount }
+        });
+
+        res.status(200).json({ message: `Successfully imported ${createdProductsCount} products.` });
+    } catch (error) {
+        await t.rollback();
+        res.status(400).json({ message: error.message || 'Error parsing Excel file' });
     }
 };

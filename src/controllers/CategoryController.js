@@ -2,6 +2,7 @@ const Category = require('../models/Category');
 const sequelize = require('../config/database');
 const { logActivity } = require('./ActivityLogController');
 const UserDetail = require('../models/UserDetail');
+const xlsx = require('xlsx');
 
 exports.getAllCategories = async (req, res) => {
     try {
@@ -250,5 +251,129 @@ exports.getCategoryById = async (req, res) => {
         res.json(category);
     } catch (error) {
         res.status(500).json({ message: error.message });
+    }
+};
+
+exports.exportTemplate = async (req, res) => {
+    try {
+        const wb = xlsx.utils.book_new();
+
+        // Sheet 1: Categories
+        const categoriesWs = xlsx.utils.aoa_to_sheet([
+            ['Category Name', 'Subcategories (Comma Separated)', 'Status'],
+            ['Fast Food', 'Burgers, Fries, Hot Dogs', 'active'],
+            ['Italian', 'Pizza, Pasta, Salads', 'active'],
+            ['Beverages', 'Soft Drinks, Hot Drinks', 'active']
+        ]);
+        categoriesWs['!cols'] = [
+            { wch: 25 }, { wch: 50 }, { wch: 10 }
+        ];
+        
+        xlsx.utils.book_append_sheet(wb, categoriesWs, 'Categories');
+
+        const excelBuffer = xlsx.write(wb, { type: 'buffer', bookType: 'xlsx' });
+
+        res.setHeader('Content-Disposition', 'attachment; filename=category_import_template.xlsx');
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        res.send(excelBuffer);
+
+        const userDetail = await UserDetail.findOne({ where: { userId: req.user.id } });
+        await logActivity({
+            userId: req.user.id,
+            branchId: userDetail?.branchId || 1,
+            activityType: 'Exported Category Template',
+            description: `User downloaded the category import template`,
+            metadata: {}
+        });
+
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
+exports.importCategories = async (req, res) => {
+    if (!req.file) {
+        return res.status(400).json({ message: 'No file uploaded' });
+    }
+
+    const t = await sequelize.transaction();
+    try {
+        const wb = xlsx.read(req.file.buffer, { type: 'buffer' });
+        
+        const categoriesSheet = wb.Sheets['Categories'];
+
+        if (!categoriesSheet) {
+            throw new Error('Invalid Excel file format. Missing required sheet: "Categories"');
+        }
+
+        const categoriesData = xlsx.utils.sheet_to_json(categoriesSheet);
+
+        let createdCategoriesCount = 0;
+        let createdSubCategoriesCount = 0;
+
+        for (const cRow of categoriesData) {
+            const catName = cRow['Category Name'];
+            if (!catName) continue;
+
+            const existingCategory = await Category.findOne({ 
+                where: { 
+                    parentId: null,
+                    name: sequelize.where(sequelize.fn('LOWER', sequelize.col('name')), catName.toLowerCase())
+                }, 
+                transaction: t 
+            });
+
+            let parentCategory = existingCategory;
+            if (!parentCategory) {
+                parentCategory = await Category.create({
+                    name: catName,
+                    parentId: null,
+                    status: cRow['Status'] || 'active'
+                }, { transaction: t });
+                createdCategoriesCount++;
+            }
+
+            // Process Subcategories
+            const subcategoriesStr = cRow['Subcategories (Comma Separated)'];
+            if (subcategoriesStr !== undefined && subcategoriesStr !== null) {
+                const subNames = subcategoriesStr.toString().split(',').map(s => s.trim());
+                for (const sName of subNames) {
+                    if (sName) {
+                        let existingSubCategory = await Category.findOne({ 
+                            where: {
+                                parentId: parentCategory.id,
+                                name: sequelize.where(sequelize.fn('LOWER', sequelize.col('name')), sName.toLowerCase())
+                            }, 
+                            transaction: t 
+                        });
+                        
+                        if (!existingSubCategory) {
+                            await Category.create({ 
+                                name: sName,
+                                parentId: parentCategory.id,
+                                status: cRow['Status'] || 'active'
+                            }, { transaction: t });
+                            createdSubCategoriesCount++;
+                        }
+                    }
+                }
+            }
+        }
+
+        await t.commit();
+
+        const userDetail = await UserDetail.findOne({ where: { userId: req.user.id } });
+        await logActivity({
+            userId: req.user.id,
+            branchId: userDetail?.branchId || 1,
+            activityType: 'Imported Categories via Excel',
+            description: `Imported ${createdCategoriesCount} categories and ${createdSubCategoriesCount} subcategories`,
+            metadata: { createdCategoriesCount, createdSubCategoriesCount }
+        });
+
+        res.status(200).json({ message: `Successfully imported ${createdCategoriesCount} new categories and ${createdSubCategoriesCount} new subcategories.` });
+    } catch (error) {
+        await t.rollback();
+        res.status(400).json({ message: error.message || 'Error parsing Excel file' });
     }
 };
