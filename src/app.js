@@ -1,9 +1,14 @@
 const express = require('express');
 const cors = require('cors');
+const helmet = require('helmet');
 const sequelize = require('./config/database');
+const Supplier = require('./models/Supplier');
+const Material = require('./models/Material');
+const MaterialBranch = require('./models/MaterialBranch');
+const StockItem = require('./models/StockItem');
+const ProductAssignment = require('./models/ProductAssignment');
 require('dotenv').config();
 
-// Load model associations (must run after models are loaded)
 require('./models/associations');
 
 const authRoutes = require('./routes/authRoutes');
@@ -21,12 +26,51 @@ const branchRoutes = require('./routes/branchRoutes');
 const discountRoutes = require('./routes/discountRoutes');
 const dashboardRoutes = require('./routes/dashboardRoutes');
 const activityLogRoutes = require('./routes/activityLogRoutes');
+const supplierRoutes = require('./routes/supplierRoutes');
+const materialRoutes = require('./routes/materialRoutes');
+const stockRoutes = require('./routes/stockRoutes');
+const assignmentRoutes = require('./routes/assignmentRoutes');
+const cronRoutes = require('./routes/cronRoutes');
+const { validatePositiveInt } = require('./middleware/validate');
 
 const app = express();
 
+app.param('id', (req, res, next, id) => {
+    const err = validatePositiveInt(id, 'id');
+    if (err) return res.status(400).json({ message: err });
+    next();
+});
 
-// Middleware
-app.use(cors());
+// CORS_ORIGIN: comma-separated origins. Use *.domain.com for wildcard (e.g. *.vercel.app for previews).
+// Dev default: http://localhost:3000. Production: set in Vercel env vars.
+const corsConfig = process.env.CORS_ORIGIN
+    ? process.env.CORS_ORIGIN.split(',').map((o) => o.trim()).filter(Boolean)
+    : ['http://localhost:3000'];
+
+function corsOrigin(origin, cb) {
+    if (!origin) return cb(null, true);
+    for (const allowed of corsConfig) {
+        if (allowed.startsWith('*.')) {
+            const suffix = allowed.slice(2);
+            try {
+                const host = new URL(origin).hostname;
+                if (host === suffix || host.endsWith('.' + suffix)) return cb(null, true);
+            } catch (_) {}
+        } else if (origin === allowed) {
+            return cb(null, true);
+        }
+    }
+    return cb(null, false);
+}
+
+app.use(helmet({ contentSecurityPolicy: false }));
+app.use(cors({
+    origin: corsConfig.length ? corsOrigin : true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+    credentials: true,
+    maxAge: 86400,
+}));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -46,18 +90,32 @@ app.use('/api/branches', branchRoutes);
 app.use('/api/discounts', discountRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/activity-logs', activityLogRoutes);
+app.use('/api/suppliers', supplierRoutes);
+app.use('/api/materials', materialRoutes);
+app.use('/api/supply/stocks', stockRoutes);
+app.use('/api/supply/assignments', assignmentRoutes);
+app.use('/api/cron', cronRoutes);
 
-// Global error handler (catches unhandled errors, e.g. JSON parse)
+// Global error handler (do not log request body to avoid leaking tokens/passwords)
 app.use((err, req, res, next) => {
-    console.error(err);
+    if (process.env.NODE_ENV !== 'production') console.error(err);
     res.status(err.status || 500).json({
         message: err.message || 'Internal server error',
     });
 });
 
-// Database Sync
-sequelize.sync({alter: true}).then(() => {
-    console.log('Database connected and synced');
+// Sync supply tables (avoids altering users table)
+sequelize.sync().then(async () => {
+    try {
+        await Supplier.sync({ alter: true });
+        await Material.sync({ alter: true });
+        await MaterialBranch.sync({ alter: true });
+        await StockItem.sync({ alter: true });
+        await ProductAssignment.sync({ alter: true });
+        console.log('Database connected and synced');
+    } catch (err) {
+        console.error('Supply table sync failed:', err);
+    }
 }).catch(err => {
     console.error('Database connection failed:', err);
 });

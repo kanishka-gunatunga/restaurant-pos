@@ -23,6 +23,11 @@ const Discount = require('./Discount');
 const DiscountItem = require('./DiscountItem');
 const DiscountBranch = require('./DiscountBranch');
 const ActivityLog = require('./ActivityLog');
+const Supplier = require('./Supplier');
+const Material = require('./Material');
+const MaterialBranch = require('./MaterialBranch');
+const StockItem = require('./StockItem');
+const ProductAssignment = require('./ProductAssignment');
 
 // User <-> UserDetail: One-to-One
 User.hasOne(UserDetail, { foreignKey: 'userId', as: 'UserDetail' });
@@ -170,3 +175,27 @@ ActivityLog.belongsTo(User, { foreignKey: 'managerId', as: 'manager' });
 
 ActivityLog.belongsTo(Order, { foreignKey: 'orderId', as: 'order' });
 Order.hasMany(ActivityLog, { foreignKey: 'orderId' });
+
+// Supply: Branch <-> Supplier
+Branch.hasMany(Supplier, { foreignKey: 'branchId', as: 'suppliers' });
+Supplier.belongsTo(Branch, { foreignKey: 'branchId', as: 'branch' });
+
+// Supply: Material <-> MaterialBranch <-> Branch (many-to-many when allBranches = false)
+Material.hasMany(MaterialBranch, { foreignKey: 'materialId', as: 'materialBranches', onDelete: 'CASCADE', hooks: true });
+MaterialBranch.belongsTo(Material, { foreignKey: 'materialId' });
+MaterialBranch.belongsTo(Branch, { foreignKey: 'branchId', as: 'branch' });
+Branch.hasMany(MaterialBranch, { foreignKey: 'branchId', as: 'materialBranches' });
+
+// Supply: StockItem
+Material.hasMany(StockItem, { foreignKey: 'materialId', as: 'stockItems', onDelete: 'CASCADE', hooks: true });
+StockItem.belongsTo(Material, { foreignKey: 'materialId', as: 'material' });
+Supplier.hasMany(StockItem, { foreignKey: 'supplierId', as: 'stockItems', onDelete: 'RESTRICT' });
+StockItem.belongsTo(Supplier, { foreignKey: 'supplierId', as: 'supplier' });
+Branch.hasMany(StockItem, { foreignKey: 'branchId', as: 'stockItems', onDelete: 'CASCADE', hooks: true });
+StockItem.belongsTo(Branch, { foreignKey: 'branchId', as: 'branch' });
+
+// Supply: ProductAssignment
+Branch.hasMany(ProductAssignment, { foreignKey: 'branchId', as: 'productAssignments', onDelete: 'CASCADE', hooks: true });
+ProductAssignment.belongsTo(Branch, { foreignKey: 'branchId', as: 'branch' });
+Product.hasMany(ProductAssignment, { foreignKey: 'productId', as: 'productAssignments', onDelete: 'SET NULL' });
+ProductAssignment.belongsTo(Product, { foreignKey: 'productId', as: 'product' });
