@@ -5,7 +5,7 @@
   "scripts": {
     "start": "node src/app.js",
     "dev": "nodemon src/app.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "node -e \"console.log('No tests configured'); process.exit(0);\""
   },
   "keywords": [],
   "author": "",

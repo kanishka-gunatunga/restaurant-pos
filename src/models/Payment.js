@@ -27,6 +27,10 @@ const Payment = sequelize.define('Payment', {
         type: DataTypes.ENUM('pending', 'paid', 'refund', 'partial_refund'),
         defaultValue: 'pending',
     },
+    paymentRole: {
+        type: DataTypes.ENUM('sale', 'balance_due'),
+        defaultValue: 'sale',
+    },
     refundedAmount: {
         type: DataTypes.DECIMAL(10, 2),
         defaultValue: 0.00,

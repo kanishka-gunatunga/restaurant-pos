@@ -3,6 +3,7 @@ const UserDetail = require('../models/UserDetail');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { encrypt, decrypt } = require('../utils/crypto');
+const { invalidManagerPasscode } = require('../utils/managerPasscodeResponse');
 const { logActivity } = require('./ActivityLogController');
 
 exports.register = async (req, res) => {
@@ -155,7 +156,9 @@ exports.verifyPasscode = async (req, res) => {
         }
 
         const decryptedPasscode = decrypt(user.passcode);
-        if (passcode !== decryptedPasscode) return res.status(401).json({ message: 'Invalid passcode' });
+        if (passcode !== decryptedPasscode) {
+            return invalidManagerPasscode(res, 'Invalid passcode');
+        }
 
         res.json({ message: 'Passcode verified', verified: true });
     } catch (error) {

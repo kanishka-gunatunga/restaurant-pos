@@ -10,8 +10,6 @@ const VariationPrice = require('../models/VariationPrice');
 const { logActivity } = require('./ActivityLogController');
 const UserDetail = require('../models/UserDetail');
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-
 const DISCOUNT_INCLUDE = [
     {
         model: DiscountBranch,
@@ -55,12 +53,6 @@ const DISCOUNT_INCLUDE = [
     },
 ];
 
-// ─── Controllers ─────────────────────────────────────────────────────────────
-
-/**
- * POST /api/discounts
- * Body: { name, expiryDate?, items: [{ productId?, variationOptionId?, discountType, discountValue }] }
- */
 exports.createDiscount = async (req, res) => {
     const t = await sequelize.transaction();
     try {
@@ -180,9 +172,7 @@ exports.getAllDiscounts = async (req, res) => {
         const where = {};
         if (status === 'inactive') {
             where.status = 'inactive';
-        } else if (status === 'all') {
-            // no filter
-        } else {
+        } else if (status !== 'all') {
             where.status = 'active';
         }
 
