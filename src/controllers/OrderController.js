@@ -3,7 +3,6 @@ const OrderItem = require('../models/OrderItem');
 const OrderItemModification = require('../models/OrderItemModification');
 const Product = require('../models/Product');
 const Variation = require('../models/Variation');
-const Modification = require('../models/Modification');
 const ModificationItem = require('../models/ModificationItem');
 const Customer = require('../models/Customer');
 const User = require('../models/User');
@@ -26,6 +25,7 @@ const {
     getTolerance,
 } = require('../utils/orderPaymentState');
 const { invalidManagerPasscode } = require('../utils/managerPasscodeResponse');
+const { enrichOrderJsonItemsForDetail } = require('../utils/orderItemDetailPayload');
 
 const customerOrderInclude = {
     model: Customer,
@@ -45,22 +45,44 @@ const orderItemsBasicInclude = {
     include: [
         { model: Product, as: 'product' },
         { model: Variation, as: 'variation' },
-    ],
-};
-
-const orderItemsFullInclude = {
-    model: OrderItem,
-    as: 'items',
-    include: [
-        { model: Product, as: 'product' },
-        { model: Variation, as: 'variation' },
         {
             model: OrderItemModification,
             as: 'modifications',
-            include: [{ model: ModificationItem, as: 'modification' }],
+            attributes: ['id', 'orderItemId', 'modificationId', 'price'],
+            include: [
+                {
+                    model: ModificationItem,
+                    as: 'modification',
+                    attributes: ['id', 'title', 'price', 'modificationId'],
+                },
+            ],
         },
     ],
 };
+
+const orderItemsFullInclude = orderItemsBasicInclude;
+
+function buildOrderItemModificationRows(orderItemId, modifications) {
+    if (!modifications?.length) {
+        return [];
+    }
+    const rows = [];
+    for (const mod of modifications) {
+        const modId = mod.id ?? mod.modificationItemId ?? mod.modificationId;
+        if (modId == null) {
+            continue;
+        }
+        const qty = Math.max(1, parseInt(mod.quantity, 10) || 1);
+        for (let i = 0; i < qty; i++) {
+            rows.push({
+                orderItemId,
+                modificationId: modId,
+                price: mod.price,
+            });
+        }
+    }
+    return rows;
+}
 
 exports.searchOrders = async (req, res) => {
     try {
@@ -87,7 +109,13 @@ exports.searchOrders = async (req, res) => {
             order: [['createdAt', 'DESC']]
         });
 
-        const processedOrders = orders.map((order) => attachDerivedPaymentFieldsToOrderJson(order.toJSON()));
+        const processedOrders = await Promise.all(
+            orders.map(async (order) => {
+                const json = attachDerivedPaymentFieldsToOrderJson(order.toJSON());
+                await enrichOrderJsonItemsForDetail(json);
+                return json;
+            })
+        );
 
         res.json(processedOrders);
     } catch (error) {
@@ -110,7 +138,13 @@ exports.filterOrdersByStatus = async (req, res) => {
             order: [['createdAt', 'DESC']]
         });
 
-        let processedOrders = orders.map((order) => attachDerivedPaymentFieldsToOrderJson(order.toJSON()));
+        let processedOrders = await Promise.all(
+            orders.map(async (order) => {
+                const json = attachDerivedPaymentFieldsToOrderJson(order.toJSON());
+                await enrichOrderJsonItemsForDetail(json);
+                return json;
+            })
+        );
 
         if (paymentStatus) {
             processedOrders = processedOrders.filter(order => order.paymentStatus === paymentStatus);
@@ -137,7 +171,13 @@ exports.getOrdersExcludeStatus = async (req, res) => {
             order: [['createdAt', 'DESC']]
         });
 
-        let processedOrders = orders.map((order) => attachDerivedPaymentFieldsToOrderJson(order.toJSON()));
+        let processedOrders = await Promise.all(
+            orders.map(async (order) => {
+                const json = attachDerivedPaymentFieldsToOrderJson(order.toJSON());
+                await enrichOrderJsonItemsForDetail(json);
+                return json;
+            })
+        );
 
         if (paymentStatus) {
             processedOrders = processedOrders.filter(order => order.paymentStatus === paymentStatus);
@@ -173,7 +213,13 @@ exports.getAllOrders = async (req, res) => {
             order: [['createdAt', 'DESC']]
         });
 
-        const processedOrders = orders.map((order) => attachDerivedPaymentFieldsToOrderJson(order.toJSON()));
+        const processedOrders = await Promise.all(
+            orders.map(async (order) => {
+                const json = attachDerivedPaymentFieldsToOrderJson(order.toJSON());
+                await enrichOrderJsonItemsForDetail(json);
+                return json;
+            })
+        );
 
         res.json(processedOrders);
     } catch (error) {
@@ -191,7 +237,9 @@ exports.getOrderById = async (req, res) => {
             return res.status(404).json({ message: 'Order not found' });
         }
 
-        res.json(attachDerivedPaymentFieldsToOrderJson(order.toJSON()));
+        const payload = attachDerivedPaymentFieldsToOrderJson(order.toJSON());
+        await enrichOrderJsonItemsForDetail(payload);
+        res.json(payload);
     } catch (error) {
         res.status(500).json({ message: error.message });
     }
@@ -258,23 +306,20 @@ exports.createOrder = async (req, res) => {
 
         if (order_products && order_products.length > 0) {
             for (const item of order_products) {
+                const variationId = item.variationId ?? item.variation_id ?? null;
                 const orderItem = await OrderItem.create({
                     orderId: order.id,
                     productId: item.productId,
-                    variationId: item.variationId,
+                    variationId,
                     quantity: item.quantity,
                     unitPrice: item.unitPrice,
                     productDiscount: item.productDiscount,
                     status: 'pending'
                 }, { transaction: t });
 
-                if (item.modifications && item.modifications.length > 0) {
-                    const modifications = item.modifications.map(mod => ({
-                        orderItemId: orderItem.id,
-                        modificationId: mod.id || mod.modificationItemId || mod.modificationId,
-                        price: mod.price
-                    }));
-                    await OrderItemModification.bulkCreate(modifications, { transaction: t });
+                const modRows = buildOrderItemModificationRows(orderItem.id, item.modifications);
+                if (modRows.length > 0) {
+                    await OrderItemModification.bulkCreate(modRows, { transaction: t });
                 }
             }
         }
@@ -315,7 +360,9 @@ exports.createOrder = async (req, res) => {
             metadata: { orderType, tableNumber, totalAmount: finalTotals.totalAmount }
         });
 
-        res.status(201).json(attachDerivedPaymentFieldsToOrderJson(fullOrder.toJSON()));
+        const createdPayload = attachDerivedPaymentFieldsToOrderJson(fullOrder.toJSON());
+        await enrichOrderJsonItemsForDetail(createdPayload);
+        res.status(201).json(createdPayload);
     } catch (error) {
         if (t && !t.finished) await t.rollback();
         console.error('Create Order Error:', error);
@@ -328,7 +375,9 @@ async function loadOrderWithDerivedFields(orderId) {
         include: [customerOrderInclude, paymentsOrderInclude, orderItemsFullInclude],
     });
     if (!full) return null;
-    return attachDerivedPaymentFieldsToOrderJson(full.toJSON());
+    const json = attachDerivedPaymentFieldsToOrderJson(full.toJSON());
+    await enrichOrderJsonItemsForDetail(json);
+    return json;
 }
 
 exports.updateOrderStatus = async (req, res) => {
@@ -559,23 +608,20 @@ exports.updateOrder = async (req, res) => {
 
             if (order_products.length > 0) {
                 for (const item of order_products) {
+                    const variationId = item.variationId ?? item.variation_id ?? null;
                     const orderItem = await OrderItem.create({
                         orderId: order.id,
                         productId: item.productId,
-                        variationId: item.variationId,
+                        variationId,
                         quantity: item.quantity,
                         unitPrice: item.unitPrice,
                         productDiscount: item.productDiscount,
                         status: item.status || 'pending'
                     }, { transaction: t });
 
-                    if (item.modifications && item.modifications.length > 0) {
-                        const modifications = item.modifications.map(mod => ({
-                            orderItemId: orderItem.id,
-                            modificationId: mod.id || mod.modificationItemId || mod.modificationId,
-                            price: mod.price
-                        }));
-                        await OrderItemModification.bulkCreate(modifications, { transaction: t });
+                    const modRows = buildOrderItemModificationRows(orderItem.id, item.modifications);
+                    if (modRows.length > 0) {
+                        await OrderItemModification.bulkCreate(modRows, { transaction: t });
                     }
                 }
             }
@@ -631,6 +677,7 @@ exports.updateOrder = async (req, res) => {
         });
 
         const payload = attachDerivedPaymentFieldsToOrderJson(fullOrder.toJSON());
+        await enrichOrderJsonItemsForDetail(payload);
         const clientPayStatus = bodyPaymentStatus !== undefined ? bodyPaymentStatus : bodyPaymentStatusSnake;
         logIgnoredClientPaymentStatus(id, clientPayStatus, payload.paymentStatus);
 
@@ -656,11 +703,20 @@ exports.updateOrderItemStatus = async (req, res) => {
                     {
                         model: OrderItemModification,
                         as: 'modifications',
-                        include: [{ model: ModificationItem, as: 'modification' }]
-                    }
-                ]
+                        attributes: ['id', 'orderItemId', 'modificationId', 'price'],
+                        include: [
+                            {
+                                model: ModificationItem,
+                                as: 'modification',
+                                attributes: ['id', 'title', 'price', 'modificationId'],
+                            },
+                        ],
+                    },
+                ],
             });
-            return res.json(updatedItem);
+            const itemJson = updatedItem.toJSON();
+            await enrichOrderJsonItemsForDetail({ items: [itemJson] });
+            return res.json(itemJson);
         }
 
         res.status(404).json({ message: 'Order item not found' });
