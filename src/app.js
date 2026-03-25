@@ -129,8 +129,10 @@ sequelize
             await ProductAssignment.sync({ alter: true });
             const Order = require('./models/Order');
             const Payment = require('./models/Payment');
+            const PrintJob = require('./models/PrintJob');
             await Order.sync({ alter: true });
             await Payment.sync({ alter: true });
+            await PrintJob.sync({ alter: true });
             console.log('Database schema alter sync finished');
         } catch (err) {
             console.error('Schema alter sync failed:', err);

@@ -31,7 +31,7 @@ exports.generateReceiptHtml = (order, payment, branch) => {
             
             <div style="margin-bottom: 10px;">
                 <p style="margin: 2px 0;">Order ID: #${order.id}</p>
-                <p style="margin: 2px 0;">Date: ${new Date().toLocaleString()}</p>
+                <p style="margin: 2px 0;">Date: ${new Date(order.createdAt).toLocaleString()}</p>
                 <p style="margin: 2px 0;">Type: ${order.orderType.toUpperCase()}</p>
                 ${order.customer ? `<p style="margin: 2px 0;">Customer: ${order.customer.name}</p>` : ''}
                 <hr style="border: none; border-top: 1px dashed #000; margin: 5px 0;">

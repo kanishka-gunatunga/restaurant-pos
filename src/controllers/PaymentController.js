@@ -223,7 +223,8 @@ exports.createPayment = async (req, res) => {
                     ]
                 });
 
-                const branchId = req.user?.UserDetail?.branchId || 1;
+                const userDetail = await UserDetail.findOne({ where: { userId: req.user.id } });
+                const branchId = userDetail?.branchId || 1;
                 const branch = await Branch.findByPk(branchId);
                 const content = templateService.generateReceiptHtml(fullOrder, payment, branch);
 
@@ -236,7 +237,7 @@ exports.createPayment = async (req, res) => {
                 });
             }
         } catch (printError) {
-            console.error('Failed to queue print job:', printError);
+            console.error('[PaymentController] Failed to queue print job for order', orderId, ':', printError);
             // Don't fail the payment if printing fails
         }
 

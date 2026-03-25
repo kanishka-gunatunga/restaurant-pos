@@ -60,12 +60,11 @@ exports.createManualPrintJob = async (req, res) => {
         });
 
         if (!order) return res.status(404).json({ message: 'Order not found' });
-
         const payment = paymentId ? await Payment.findByPk(paymentId) : null;
-        
-        // Fetch branch info via associations if possible, or just use branch 1
-        // (Assuming req.user has branchId if authenticated)
-        const branchId = req.user?.UserDetail?.branchId || 1;
+
+        const UserDetail = require('../models/UserDetail');
+        const userDetail = await UserDetail.findOne({ where: { userId: req.user.id } });
+        const branchId = userDetail?.branchId || 1;
         const branch = await Branch.findByPk(branchId);
 
         const templateService = require('../services/templateService');
