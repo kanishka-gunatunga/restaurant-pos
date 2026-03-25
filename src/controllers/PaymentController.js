@@ -47,6 +47,14 @@ const applyBranchFilter = async (req, whereClause) => {
     }
     return whereClause;
 };
+const PrintJob = require('../models/PrintJob');
+const OrderItem = require('../models/OrderItem');
+const OrderItemModification = require('../models/OrderItemModification');
+const ModificationItem = require('../models/ModificationItem');
+const Product = require('../models/Product');
+const Variation = require('../models/Variation');
+const Branch = require('../models/Branch');
+const templateService = require('../services/templateService');
 
 exports.createPayment = async (req, res) => {
     const t = await sequelize.transaction();
@@ -191,6 +199,45 @@ exports.createPayment = async (req, res) => {
             userId: req.user.id,
             metadata: { orderId, paymentId: payment.id, amount: payment.amount, status: payment.status },
         });
+
+        // Queue Receipt Print Job after successful payment
+        try {
+            if (status === 'paid' || !status) {
+                const fullOrder = await Order.findByPk(orderId, {
+                    include: [
+                        { model: Customer, as: 'customer' },
+                        {
+                            model: OrderItem,
+                            as: 'items',
+                            include: [
+                                { model: Product, as: 'product' },
+                                { model: Variation, as: 'variation' },
+                                {
+                                    model: OrderItemModification,
+                                    as: 'modifications',
+                                    include: [{ model: ModificationItem, as: 'modification' }]
+                                }
+                            ]
+                        }
+                    ]
+                });
+
+                const branchId = req.user?.UserDetail?.branchId || 1;
+                const branch = await Branch.findByPk(branchId);
+                const content = templateService.generateReceiptHtml(fullOrder, payment, branch);
+
+                await PrintJob.create({
+                    orderId: fullOrder.id,
+                    paymentId: payment.id,
+                    content,
+                    type: 'receipt',
+                    status: 'pending'
+                });
+            }
+        } catch (printError) {
+            console.error('Failed to queue print job:', printError);
+            // Don't fail the payment if printing fails
+        }
 
         const userDetail = await UserDetail.findOne({ where: { userId: req.user.id } });
         await logActivity({

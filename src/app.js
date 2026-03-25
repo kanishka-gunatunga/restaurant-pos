@@ -32,6 +32,7 @@ const stockRoutes = require('./routes/stockRoutes');
 const assignmentRoutes = require('./routes/assignmentRoutes');
 const cronRoutes = require('./routes/cronRoutes');
 const { validatePositiveInt } = require('./middleware/validate');
+const printRoutes = require('./routes/printRoutes');
 
 const app = express();
 
@@ -93,6 +94,7 @@ app.use('/api/materials', materialRoutes);
 app.use('/api/supply/stocks', stockRoutes);
 app.use('/api/supply/assignments', assignmentRoutes);
 app.use('/api/cron', cronRoutes);
+app.use('/api/print', printRoutes);
 
 // Global error handler (do not log request body to avoid leaking tokens/passwords)
 app.use((err, req, res, next) => {
