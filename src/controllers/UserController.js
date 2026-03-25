@@ -1,5 +1,6 @@
 const User = require('../models/User');
 const UserDetail = require('../models/UserDetail');
+const Branch = require('../models/Branch');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { encrypt, decrypt } = require('../utils/crypto');
@@ -169,7 +170,20 @@ exports.verifyPasscode = async (req, res) => {
 exports.getMe = async (req, res) => {
     try {
         const user = await User.findByPk(req.user.id, {
-            include: [{ model: UserDetail, as: 'UserDetail' }],
+            include: [
+                {
+                    model: UserDetail,
+                    as: 'UserDetail',
+                    include: [
+                        {
+                            model: Branch,
+                            as: 'Branch',
+                            attributes: ['id', 'name'],
+                            required: false,
+                        },
+                    ],
+                },
+            ],
         });
 
         if (!user) return res.status(404).json({ message: 'User not found' });
@@ -184,6 +198,7 @@ exports.getMe = async (req, res) => {
                 name: userDetail?.name,
                 email: userDetail?.email,
                 branchId: userDetail?.branchId,
+                branchName: userDetail?.Branch?.name ?? null,
             },
         });
     } catch (error) {
