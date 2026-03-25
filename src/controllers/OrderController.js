@@ -23,10 +23,27 @@ const pusher = new Pusher({
   useTLS: true
 });
 
+const applyBranchFilter = async (req, whereClause) => {
+    if (req.user && req.user.role !== 'admin') {
+        const userDetail = await UserDetail.findOne({ where: { userId: req.user.id } });
+        if (userDetail) {
+            const usersInBranch = await UserDetail.findAll({
+                where: { branchId: userDetail.branchId },
+                attributes: ['userId']
+            });
+            whereClause.userId = { [Op.in]: usersInBranch.map(u => u.userId) };
+        } else {
+            whereClause.userId = req.user.id;
+        }
+    }
+    return whereClause;
+};
+
 exports.searchOrders = async (req, res) => {
     try {
         const { q, orderId, customerName, phone } = req.query;
         let where = {};
+        where = await applyBranchFilter(req, where);
 
         if (q) {
             // General search by ID or name or phone
@@ -92,6 +109,7 @@ exports.filterOrdersByStatus = async (req, res) => {
         const { status, paymentStatus } = req.query;
 
         let where = {};
+        where = await applyBranchFilter(req, where);
         if (status) {
             where.status = status;
         }
@@ -149,6 +167,7 @@ exports.getOrdersExcludeStatus = async (req, res) => {
         const { status, paymentStatus } = req.query;
 
         let where = {};
+        where = await applyBranchFilter(req, where);
         if (status) {
             where.status = { [Op.ne]: status };
         }
@@ -225,7 +244,11 @@ const verifyManagerPasscode = async (passcode) => {
 
 exports.getAllOrders = async (req, res) => {
     try {
+        let where = {};
+        where = await applyBranchFilter(req, where);
+
         const orders = await Order.findAll({
+            where,
             include: [
                 {
                     model: Customer,

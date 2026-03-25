@@ -9,6 +9,22 @@ const { logActivity } = require('./ActivityLogController');
 const { auditLog } = require('../utils/auditLogger');
 const UserDetail = require('../models/UserDetail');
 
+const applyBranchFilter = async (req, whereClause) => {
+    if (req.user && req.user.role !== 'admin') {
+        const userDetail = await UserDetail.findOne({ where: { userId: req.user.id } });
+        if (userDetail) {
+            const usersInBranch = await UserDetail.findAll({
+                where: { branchId: userDetail.branchId },
+                attributes: ['userId']
+            });
+            whereClause.userId = { [Op.in]: usersInBranch.map(u => u.userId) };
+        } else {
+            whereClause.userId = req.user.id;
+        }
+    }
+    return whereClause;
+};
+
 exports.createPayment = async (req, res) => {
     const t = await sequelize.transaction();
     try {
@@ -187,7 +203,11 @@ exports.getPaymentsByOrder = async (req, res) => {
 
 exports.getAllPaymentDetails = async (req, res) => {
     try {
+        let where = {};
+        where = await applyBranchFilter(req, where);
+
         const orders = await Order.findAll({
+            where,
             include: [
                 {
                     model: Customer,
@@ -230,6 +250,7 @@ exports.searchPaymentDetails = async (req, res) => {
     try {
         const { query } = req.query;
         let where = {};
+        where = await applyBranchFilter(req, where);
 
         if (query) {
             where = {
@@ -286,7 +307,11 @@ exports.filterPaymentsByStatus = async (req, res) => {
     try {
         const { status } = req.query;
 
+        let where = {};
+        where = await applyBranchFilter(req, where);
+
         const orders = await Order.findAll({
+            where,
             include: [
                 {
                     model: Customer,
@@ -336,7 +361,9 @@ exports.filterPaymentsByStatus = async (req, res) => {
 
 exports.getPaymentStats = async (req, res) => {
     try {
-        const payments = await Payment.findAll();
+        let where = {};
+        where = await applyBranchFilter(req, where);
+        const payments = await Payment.findAll({ where });
 
         let totalCollectedAmount = 0;
         let pendingPaymentAmount = 0;
