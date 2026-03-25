@@ -77,6 +77,7 @@ exports.createManualPrintJob = async (req, res) => {
         const job = await PrintJob.create({
             order_id: orderId,
             payment_id: paymentId || null,
+            printer_name: 'Main_Counter_Printer',
             content,
             type: type || 'receipt',
             status: 'pending'
