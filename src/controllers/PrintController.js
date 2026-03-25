@@ -40,9 +40,11 @@ exports.createManualPrintJob = async (req, res) => {
     try {
         const { orderId, paymentId, type } = req.body;
 
+        const User = require('../models/User');
         const order = await Order.findByPk(orderId, {
             include: [
                 { model: Customer, as: 'customer' },
+                { model: User, as: 'user', attributes: ['name', 'username'] },
                 {
                     model: OrderItem,
                     as: 'items',

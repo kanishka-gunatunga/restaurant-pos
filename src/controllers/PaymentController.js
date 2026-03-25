@@ -207,6 +207,7 @@ exports.createPayment = async (req, res) => {
                 const fullOrder = await Order.findByPk(orderId, {
                     include: [
                         { model: Customer, as: 'customer' },
+                        { model: User, as: 'user', attributes: ['name', 'username'] },
                         {
                             model: OrderItem,
                             as: 'items',
