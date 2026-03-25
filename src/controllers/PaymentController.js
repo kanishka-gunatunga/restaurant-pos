@@ -8,6 +8,14 @@ const { Op, Transaction } = require('sequelize');
 const { logActivity } = require('./ActivityLogController');
 const { auditLog } = require('../utils/auditLogger');
 const UserDetail = require('../models/UserDetail');
+const PrintJob = require('../models/PrintJob');
+const OrderItem = require('../models/OrderItem');
+const OrderItemModification = require('../models/OrderItemModification');
+const ModificationItem = require('../models/ModificationItem');
+const Product = require('../models/Product');
+const Variation = require('../models/Variation');
+const Branch = require('../models/Branch');
+const templateService = require('../services/templateService');
 const {
     trySettleExistingPendingPayment,
     wouldDoubleCoverOrder,
@@ -47,14 +55,7 @@ const applyBranchFilter = async (req, whereClause) => {
     }
     return whereClause;
 };
-const PrintJob = require('../models/PrintJob');
-const OrderItem = require('../models/OrderItem');
-const OrderItemModification = require('../models/OrderItemModification');
-const ModificationItem = require('../models/ModificationItem');
-const Product = require('../models/Product');
-const Variation = require('../models/Variation');
-const Branch = require('../models/Branch');
-const templateService = require('../services/templateService');
+
 
 exports.createPayment = async (req, res) => {
     const t = await sequelize.transaction();
