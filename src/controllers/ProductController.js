@@ -797,9 +797,17 @@ exports.importProducts = async (req, res) => {
             throw new Error('Invalid Excel file format. Missing required sheets: "Products", "Variations & Prices", or "Modifications"');
         }
 
-        const productsData = xlsx.utils.sheet_to_json(productsSheet);
-        const variationsData = xlsx.utils.sheet_to_json(variationsSheet);
-        const modificationsData = xlsx.utils.sheet_to_json(modificationsSheet);
+        const normalizeKeys = (arr) => arr.map(obj => {
+            const newObj = {};
+            for (let key in obj) {
+                newObj[key.trim()] = obj[key];
+            }
+            return newObj;
+        });
+
+        const productsData = normalizeKeys(xlsx.utils.sheet_to_json(productsSheet));
+        const variationsData = normalizeKeys(xlsx.utils.sheet_to_json(variationsSheet));
+        const modificationsData = normalizeKeys(xlsx.utils.sheet_to_json(modificationsSheet));
 
         let createdProductsCount = 0;
         let createdVariationsCount = 0;
@@ -880,7 +888,7 @@ exports.importProducts = async (req, res) => {
             }
 
             // Process Variations
-            const pVariations = variationsData.filter(v => v['Product Code'] === productCode);
+            const pVariations = variationsData.filter(v => String(v['Product Code']).trim() === String(productCode).trim());
             const variationsMap = new Map(); 
             const optionsMap = new Map();    
 
@@ -911,19 +919,21 @@ exports.importProducts = async (req, res) => {
                     createdVariationsCount++;
                 }
 
-                if (vRow['Branch Name'] && vRow['Price']) {
+                const priceVal = vRow['Price'];
+                if (vRow['Branch Name'] && priceVal !== undefined && priceVal !== null && priceVal !== '') {
+                    const branchNameStr = String(vRow['Branch Name']).trim();
                     let branch = await Branch.findOne({ 
-                        where: sequelize.where(sequelize.fn('LOWER', sequelize.col('name')), vRow['Branch Name'].toLowerCase()), 
+                        where: sequelize.where(sequelize.fn('LOWER', sequelize.col('name')), branchNameStr.toLowerCase()), 
                         transaction: t 
                     });
                     if (!branch) {
-                        branch = await Branch.create({ name: vRow['Branch Name'] }, { transaction: t });
+                        branch = await Branch.create({ name: branchNameStr }, { transaction: t });
                     }
 
                     await VariationPrice.create({
                         variationOptionId: option.id,
                         branchId: branch.id,
-                        price: parseFloat(vRow['Price']),
+                        price: parseFloat(priceVal),
                         discountPrice: vRow['Discount Price'] ? parseFloat(vRow['Discount Price']) : null,
                         quantity: vRow['Quantity'] ? parseInt(vRow['Quantity']) : 0,
                         batchNo: vRow['Batch No'] || null,
@@ -933,7 +943,7 @@ exports.importProducts = async (req, res) => {
             }
 
             // Process Modifications (Add-ons)
-            const pMods = modificationsData.filter(m => m['Product Code'] === productCode);
+            const pMods = modificationsData.filter(m => String(m['Product Code']).trim() === String(productCode).trim());
             
             for (const mRow of pMods) {
                 const modName = mRow['Modification Name'];
