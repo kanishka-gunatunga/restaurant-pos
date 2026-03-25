@@ -202,8 +202,8 @@ Product.hasMany(ProductAssignment, { foreignKey: 'productId', as: 'productAssign
 ProductAssignment.belongsTo(Product, { foreignKey: 'productId', as: 'product' });
 
 // PrintJob Associations
-Order.hasMany(PrintJob, { foreignKey: 'orderId', as: 'printJobs' });
-PrintJob.belongsTo(Order, { foreignKey: 'orderId', as: 'order' });
+Order.hasMany(PrintJob, { foreignKey: 'order_id', as: 'printJobs' });
+PrintJob.belongsTo(Order, { foreignKey: 'order_id', as: 'order' });
 
-Payment.hasMany(PrintJob, { foreignKey: 'paymentId', as: 'printJobs' });
-PrintJob.belongsTo(Payment, { foreignKey: 'paymentId', as: 'payment' });
+Payment.hasMany(PrintJob, { foreignKey: 'payment_id', as: 'printJobs' });
+PrintJob.belongsTo(Payment, { foreignKey: 'payment_id', as: 'payment' });

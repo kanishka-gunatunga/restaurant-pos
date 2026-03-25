@@ -7,17 +7,20 @@ const PrintJob = sequelize.define('PrintJob', {
         autoIncrement: true,
         primaryKey: true,
     },
-    orderId: {
+    order_id: {
         type: DataTypes.INTEGER,
         allowNull: false,
+        field: 'order_id'
     },
-    paymentId: {
+    payment_id: {
         type: DataTypes.INTEGER,
         allowNull: true,
+        field: 'payment_id'
     },
-    printerName: {
+    printer_name: {
         type: DataTypes.STRING,
         allowNull: true,
+        field: 'printer_name'
     },
     content: {
         type: DataTypes.TEXT('long'),
@@ -31,9 +34,18 @@ const PrintJob = sequelize.define('PrintJob', {
         type: DataTypes.ENUM('receipt'),
         defaultValue: 'receipt',
     },
+    createdAt: {
+        type: DataTypes.DATE,
+        field: 'created_at'
+    },
+    updatedAt: {
+        type: DataTypes.DATE,
+        field: 'updated_at'
+    }
 }, {
     tableName: 'print_jobs',
     underscored: true,
+    timestamps: true
 });
 
 module.exports = PrintJob;

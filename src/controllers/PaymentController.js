@@ -230,8 +230,8 @@ exports.createPayment = async (req, res) => {
                 const content = templateService.generateReceiptHtml(fullOrder, payment, branch);
 
                 await PrintJob.create({
-                    orderId: fullOrder.id,
-                    paymentId: payment.id,
+                    order_id: fullOrder.id,
+                    payment_id: payment.id,
                     content,
                     type: 'receipt',
                     status: 'pending'

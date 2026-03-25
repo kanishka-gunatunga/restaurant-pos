@@ -25,16 +25,16 @@ exports.generateReceiptHtml = (order, payment, branch) => {
             }).join('');
         }
 
-        const name = (item.product?.name || 'Item').substring(0, 20);
+        const name = (item.product?.name || 'Item').substring(0, 18);
         const variation = item.variation?.name ? `(${item.variation.name})` : '';
-        const fullName = `${name} ${variation}`.padEnd(22);
-        const price = parseFloat(item.unitPrice).toFixed(2).padStart(8);
-        const qty = parseFloat(item.quantity).toFixed(2).padStart(6);
-        const amount = (item.quantity * item.unitPrice).toFixed(2).padStart(8);
+        const fullName = `${name} ${variation}`.padEnd(20);
+        const price = parseFloat(item.unitPrice).toFixed(2).padStart(9);
+        const qty = parseFloat(item.quantity).toFixed(2).padStart(5);
+        const amount = (item.quantity * item.unitPrice).toFixed(2).padStart(10);
 
         return `
             <div style="margin-bottom: 2px;">
-                <div style="display: flex; justify-content: space-between; white-space: pre;"><span style="flex: 2;">${fullName}</span><span style="flex: 1; text-align: right;">${price}</span><span style="flex: 1; text-align: right;">${qty}</span><span style="flex: 1; text-align: right;">${amount}</span></div>
+                <div style="display: flex; justify-content: space-between; white-space: pre;"><span style="flex: 2;">${fullName} </span><span style="flex: 1; text-align: right;">${price} </span><span style="flex: 1; text-align: right;">${qty} </span><span style="flex: 1; text-align: right;">${amount}</span></div>
                 ${modificationsHtml}
             </div>
         `;
@@ -57,14 +57,14 @@ exports.generateReceiptHtml = (order, payment, branch) => {
 
             <div style="display: flex; justify-content: space-between; margin-bottom: 5px; white-space: pre;"><span>CASHIER: ${order.user?.name || 'Staff'}                </span><span>UNIT: ${branch?.id || '1'}</span></div>
 
-            <div style="display: flex; justify-content: space-between; border-top: 1px dashed #000; border-bottom: 1px dashed #000; padding: 2px 0; font-weight: bold; text-transform: uppercase; white-space: pre;"><span style="flex: 2;">PRODUCT               </span><span style="flex: 1; text-align: right;">PRICE  </span><span style="flex: 1; text-align: right;">QTY   </span><span style="flex: 1; text-align: right;">AMOUNT</span></div>
+            <div style="display: flex; justify-content: space-between; border-top: 1px dashed #000; border-bottom: 1px dashed #000; padding: 2px 0; font-weight: bold; text-transform: uppercase; white-space: pre;"><span style="flex: 2;">PRODUCT               </span> <span style="flex: 1; text-align: right;">PRICE  </span> <span style="flex: 1; text-align: right;">QTY   </span> <span style="flex: 1; text-align: right;">AMOUNT</span></div>
 
             <div style="text-align: center; margin: 4px 0; font-weight: bold;">Original</div>
 
             <div style="margin-bottom: 5px;">
                 ${itemsHtml}
                 ${totalDiscount > 0 ? `
-                <div style="display: flex; justify-content: space-between; margin-top: 2px; white-space: pre;"><span>Promotion Discount                            </span><span>${(-totalDiscount).toFixed(2).padStart(10)}</span></div>` : ''}
+                <div style="display: flex; justify-content: space-between; margin-top: 2px; white-space: pre;"><span>Promotion Discount                            </span> <span>${(-totalDiscount).toFixed(2).padStart(10)}</span></div>` : ''}
                 <div style="border-top: 1px dashed #000; margin: 5px 0;"></div>
             </div>
 

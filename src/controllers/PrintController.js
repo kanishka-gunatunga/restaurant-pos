@@ -15,8 +15,10 @@ exports.getPendingJobs = async (req, res) => {
             where: { status: 'pending' },
             order: [['createdAt', 'ASC']]
         });
+        console.log(`[PrintController] Found ${jobs.length} pending jobs`);
         res.json(jobs);
     } catch (error) {
+        console.error('[PrintController] Error in getPendingJobs:', error);
         res.status(500).json({ message: error.message });
     }
 };
@@ -73,8 +75,8 @@ exports.createManualPrintJob = async (req, res) => {
         const content = templateService.generateReceiptHtml(order, payment, branch);
 
         const job = await PrintJob.create({
-            orderId,
-            paymentId: paymentId || null,
+            order_id: orderId,
+            payment_id: paymentId || null,
             content,
             type: type || 'receipt',
             status: 'pending'

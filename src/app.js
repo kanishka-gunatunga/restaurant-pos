@@ -117,25 +117,32 @@ sequelize
     .authenticate()
     .then(async () => {
         console.log('Database connection OK');
+        console.log('DB_SYNC_ALTER status:', runAlterSync);
         if (!runAlterSync) {
-            console.log('Skipping DB_SYNC_ALTER (set DB_SYNC_ALTER=true to run supply/order/payment schema alters)');
+            console.log('Skipping DB_SYNC_ALTER (set DB_SYNC_ALTER=true in .env to run schema alters)');
             return;
         }
         try {
+            console.log('Starting individual model sync...');
             await Supplier.sync({ alter: true });
             await Material.sync({ alter: true });
             await MaterialBranch.sync({ alter: true });
             await StockItem.sync({ alter: true });
             await ProductAssignment.sync({ alter: true });
+            
             const Order = require('./models/Order');
             const Payment = require('./models/Payment');
             const PrintJob = require('./models/PrintJob');
+            
+            console.log('Syncing Order, Payment, and PrintJob models...');
             await Order.sync({ alter: true });
             await Payment.sync({ alter: true });
             await PrintJob.sync({ alter: true });
-            console.log('Database schema alter sync finished');
+            
+            console.log('Database schema alter sync finished successfully');
         } catch (err) {
-            console.error('Schema alter sync failed:', err);
+            console.error('Schema alter sync failed with error:', err.message);
+            if (err.stack) console.error(err.stack);
         }
     })
     .catch((err) => {

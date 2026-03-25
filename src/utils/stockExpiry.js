@@ -28,7 +28,7 @@ function computeStockStatus(quantityValue, expiryDate, minStockValue) {
     if (isStockPastExpiryGoodThrough(expiryDate)) return 'expired';
     const q = Number(quantityValue) || 0;
     const min = Number(minStockValue) || 0;
-    if (q <= 0) return 'out';
+    if (q <= 0) return 'out'; 
     if (min > 0 && q < min) return 'low';
     return 'available';
 }
