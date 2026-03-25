@@ -1,8 +1,10 @@
 const User = require('../models/User');
 const UserDetail = require('../models/UserDetail');
+const Branch = require('../models/Branch');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { encrypt, decrypt } = require('../utils/crypto');
+const { invalidManagerPasscode } = require('../utils/managerPasscodeResponse');
 const { logActivity } = require('./ActivityLogController');
 
 exports.register = async (req, res) => {
@@ -155,7 +157,9 @@ exports.verifyPasscode = async (req, res) => {
         }
 
         const decryptedPasscode = decrypt(user.passcode);
-        if (passcode !== decryptedPasscode) return res.status(401).json({ message: 'Invalid passcode' });
+        if (passcode !== decryptedPasscode) {
+            return invalidManagerPasscode(res, 'Invalid passcode');
+        }
 
         res.json({ message: 'Passcode verified', verified: true });
     } catch (error) {
@@ -166,7 +170,20 @@ exports.verifyPasscode = async (req, res) => {
 exports.getMe = async (req, res) => {
     try {
         const user = await User.findByPk(req.user.id, {
-            include: [{ model: UserDetail, as: 'UserDetail' }],
+            include: [
+                {
+                    model: UserDetail,
+                    as: 'UserDetail',
+                    include: [
+                        {
+                            model: Branch,
+                            as: 'Branch',
+                            attributes: ['id', 'name'],
+                            required: false,
+                        },
+                    ],
+                },
+            ],
         });
 
         if (!user) return res.status(404).json({ message: 'User not found' });
@@ -181,6 +198,7 @@ exports.getMe = async (req, res) => {
                 name: userDetail?.name,
                 email: userDetail?.email,
                 branchId: userDetail?.branchId,
+                branchName: userDetail?.Branch?.name ?? null,
             },
         });
     } catch (error) {

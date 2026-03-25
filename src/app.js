@@ -41,8 +41,6 @@ app.param('id', (req, res, next, id) => {
     next();
 });
 
-// CORS_ORIGIN: comma-separated origins. Use *.domain.com for wildcard (e.g. *.vercel.app for previews).
-// Dev default: http://localhost:3000. Production: set in Vercel env vars.
 const corsConfig = process.env.CORS_ORIGIN
     ? process.env.CORS_ORIGIN.split(',').map((o) => o.trim()).filter(Boolean)
     : ['http://localhost:3000'];
@@ -99,26 +97,46 @@ app.use('/api/cron', cronRoutes);
 // Global error handler (do not log request body to avoid leaking tokens/passwords)
 app.use((err, req, res, next) => {
     if (process.env.NODE_ENV !== 'production') console.error(err);
+    const sqlCode = err.parent?.code || err.original?.code;
+    if (sqlCode === 'ER_TOO_MANY_USER_CONNECTIONS') {
+        return res.status(503).json({
+            message:
+                'Database connection limit reached for this user. Use DB_POOL_MAX=1, run only one server process, and ask the DBA to free or raise max_user_connections.',
+        });
+    }
     res.status(err.status || 500).json({
         message: err.message || 'Internal server error',
     });
 });
 
-// Sync supply tables (avoids altering users table)
-sequelize.sync().then(async () => {
-    try {
-        await Supplier.sync({ alter: true });
-        await Material.sync({ alter: true });
-        await MaterialBranch.sync({ alter: true });
-        await StockItem.sync({ alter: true });
-        await ProductAssignment.sync({ alter: true });
-        console.log('Database connected and synced');
-    } catch (err) {
-        console.error('Supply table sync failed:', err);
-    }
-}).catch(err => {
-    console.error('Database connection failed:', err);
-});
+const runAlterSync = ['1', 'true', 'yes'].includes(String(process.env.DB_SYNC_ALTER || '').toLowerCase());
+
+sequelize
+    .authenticate()
+    .then(async () => {
+        console.log('Database connection OK');
+        if (!runAlterSync) {
+            console.log('Skipping DB_SYNC_ALTER (set DB_SYNC_ALTER=true to run supply/order/payment schema alters)');
+            return;
+        }
+        try {
+            await Supplier.sync({ alter: true });
+            await Material.sync({ alter: true });
+            await MaterialBranch.sync({ alter: true });
+            await StockItem.sync({ alter: true });
+            await ProductAssignment.sync({ alter: true });
+            const Order = require('./models/Order');
+            const Payment = require('./models/Payment');
+            await Order.sync({ alter: true });
+            await Payment.sync({ alter: true });
+            console.log('Database schema alter sync finished');
+        } catch (err) {
+            console.error('Schema alter sync failed:', err);
+        }
+    })
+    .catch((err) => {
+        console.error('Database connection failed:', err);
+    });
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
