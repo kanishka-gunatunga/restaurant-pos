@@ -2,7 +2,7 @@ const { Sequelize } = require('sequelize');
 require('dotenv').config();
 
 const poolMaxRaw = parseInt(process.env.DB_POOL_MAX, 10);
-const poolMax = Number.isFinite(poolMaxRaw) && poolMaxRaw > 0 ? poolMaxRaw : 2;
+const poolMax = Number.isFinite(poolMaxRaw) && poolMaxRaw > 0 ? poolMaxRaw : 10;
 
 const sequelize = new Sequelize(
   process.env.DB_NAME,

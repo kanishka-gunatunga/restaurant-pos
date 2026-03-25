@@ -8,6 +8,13 @@ const sequelize = require('../config/database');
 const { decrypt } = require('../utils/crypto');
 const { invalidManagerPasscode } = require('../utils/managerPasscodeResponse');
 
+function isConnectionAcquireTimeout(err) {
+    return (
+        err.name === 'SequelizeConnectionAcquireTimeoutError' ||
+        /operation timeout/i.test(String(err?.message || ''))
+    );
+}
+
 const verifyManagerPasscode = async (passcode) => {
     if (!passcode) return false;
     const managers = await User.findAll({
@@ -115,32 +122,32 @@ exports.getActiveSession = async (req, res) => {
 };
 
 exports.cashAction = async (req, res) => {
-    const t = await sequelize.transaction();
+    let t;
     try {
         const userId = req.user.id;
         const { type, amount, description, passcode } = req.body; // type: 'add' or 'remove'
 
         if (!passcode) {
-            await t.rollback();
             return res.status(400).json({ message: 'Manager passcode is required for cash actions' });
+        }
+
+        if (!['add', 'remove'].includes(type)) {
+            return res.status(400).json({ message: 'Invalid action type. Must be add or remove.' });
         }
 
         const manager = await verifyManagerPasscode(passcode);
         if (!manager) {
-            await t.rollback();
             return invalidManagerPasscode(res);
         }
 
-        if (!['add', 'remove'].includes(type)) {
-            await t.rollback();
-            return res.status(400).json({ message: 'Invalid action type. Must be add or remove.' });
-        }
+        t = await sequelize.transaction();
 
         const session = await Session.findOne({
             where: {
                 userId,
-                status: 'open'
-            }
+                status: 'open',
+            },
+            transaction: t,
         });
 
         if (!session) {
@@ -168,6 +175,7 @@ exports.cashAction = async (req, res) => {
         }, { transaction: t });
 
         await t.commit();
+        t = null;
 
         const userDetail = await UserDetail.findOne({ where: { userId } });
         await logActivity({
@@ -182,33 +190,40 @@ exports.cashAction = async (req, res) => {
 
         res.json({ session, transaction });
     } catch (error) {
-        await t.rollback();
+        if (t && !t.finished) await t.rollback();
+        if (isConnectionAcquireTimeout(error)) {
+            return res.status(503).json({
+                message:
+                    'Database is temporarily busy (connection pool timeout). Try again in a moment. If this persists, set DB_POOL_MAX higher and avoid many parallel API calls.',
+            });
+        }
         res.status(500).json({ message: error.message });
     }
 };
 
 exports.closeSession = async (req, res) => {
-    const t = await sequelize.transaction();
+    let t;
     try {
         const userId = req.user.id;
         const { passcode, actualBalance } = req.body;
 
         if (!passcode) {
-            await t.rollback();
             return res.status(400).json({ message: 'Manager passcode is required to close session' });
         }
 
         const manager = await verifyManagerPasscode(passcode);
         if (!manager) {
-            await t.rollback();
             return invalidManagerPasscode(res);
         }
+
+        t = await sequelize.transaction();
 
         const session = await Session.findOne({
             where: {
                 userId,
-                status: 'open'
-            }
+                status: 'open',
+            },
+            transaction: t,
         });
 
         if (!session) {
@@ -224,6 +239,7 @@ exports.closeSession = async (req, res) => {
         }, { transaction: t });
 
         await t.commit();
+        t = null;
 
         const userDetail = await UserDetail.findOne({ where: { userId } });
         await logActivity({
@@ -239,10 +255,16 @@ exports.closeSession = async (req, res) => {
 
         res.json({ message: 'Session closed successfully', session });
     } catch (error) {
-        await t.rollback();
+        if (t && !t.finished) await t.rollback();
         const msg = (error.message || '').toLowerCase();
         if (msg.includes('initialization vector') || msg.includes('decipher')) {
             return res.status(500).json({ message: 'Unable to close session. Please try again or contact support.' });
+        }
+        if (isConnectionAcquireTimeout(error)) {
+            return res.status(503).json({
+                message:
+                    'Database is temporarily busy (connection pool timeout). Try again in a moment. If this persists, set DB_POOL_MAX higher and avoid many parallel API calls.',
+            });
         }
         res.status(500).json({ message: error.message });
     }
