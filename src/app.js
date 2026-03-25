@@ -41,9 +41,10 @@ app.param('id', (req, res, next, id) => {
     next();
 });
 
+const isProd = process.env.NODE_ENV === 'production';
 const corsConfig = process.env.CORS_ORIGIN
     ? process.env.CORS_ORIGIN.split(',').map((o) => o.trim()).filter(Boolean)
-    : ['http://localhost:3000'];
+    : [];
 
 function corsOrigin(origin, cb) {
     if (!origin) return cb(null, true);
@@ -63,7 +64,7 @@ function corsOrigin(origin, cb) {
 
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(cors({
-    origin: corsConfig.length ? corsOrigin : true,
+    origin: isProd && corsConfig.length ? corsOrigin : true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
     credentials: true,
