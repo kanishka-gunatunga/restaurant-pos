@@ -40,7 +40,7 @@ const Order = sequelize.define('Order', {
         allowNull: true,
     },
     orderTimer: {
-        type: DataTypes.INTEGER, // Could be seconds or a timestamp depending on usage
+        type: DataTypes.INTEGER,
         allowNull: true,
     },
     status: {
@@ -69,7 +69,11 @@ const Order = sequelize.define('Order', {
     },
     userId: {
         type: DataTypes.INTEGER,
-        allowNull: true, // Allow null for now, but should be populated via controller
+        allowNull: true,
+    },
+    paymentStatus: {
+        type: DataTypes.ENUM('pending', 'paid', 'partial_refund', 'refund'),
+        defaultValue: 'pending',
     },
 }, {
     tableName: 'orders',

@@ -6,6 +6,7 @@ const { logActivity } = require('./ActivityLogController');
 const { auditLog } = require('../utils/auditLogger');
 const sequelize = require('../config/database');
 const { decrypt } = require('../utils/crypto');
+const { invalidManagerPasscode } = require('../utils/managerPasscodeResponse');
 
 const verifyManagerPasscode = async (passcode) => {
     if (!passcode) return false;
@@ -38,7 +39,7 @@ exports.startSession = async (req, res) => {
 
         const manager = await verifyManagerPasscode(passcode);
         if (!manager) {
-            return res.status(401).json({ message: 'Invalid manager passcode' });
+            return invalidManagerPasscode(res);
         }
 
         // Automatically fetch branchId from user profile if not provided
@@ -120,15 +121,18 @@ exports.cashAction = async (req, res) => {
         const { type, amount, description, passcode } = req.body; // type: 'add' or 'remove'
 
         if (!passcode) {
+            await t.rollback();
             return res.status(400).json({ message: 'Manager passcode is required for cash actions' });
         }
 
         const manager = await verifyManagerPasscode(passcode);
         if (!manager) {
-            return res.status(401).json({ message: 'Invalid manager passcode' });
+            await t.rollback();
+            return invalidManagerPasscode(res);
         }
 
         if (!['add', 'remove'].includes(type)) {
+            await t.rollback();
             return res.status(400).json({ message: 'Invalid action type. Must be add or remove.' });
         }
 
@@ -140,6 +144,7 @@ exports.cashAction = async (req, res) => {
         });
 
         if (!session) {
+            await t.rollback();
             return res.status(404).json({ message: 'No active session found' });
         }
 
@@ -148,6 +153,7 @@ exports.cashAction = async (req, res) => {
             : parseFloat(session.currentBalance) - parseFloat(amount);
 
         if (newBalance < 0) {
+            await t.rollback();
             return res.status(400).json({ message: 'Insufficient balance in drawer' });
         }
 
@@ -188,12 +194,14 @@ exports.closeSession = async (req, res) => {
         const { passcode, actualBalance } = req.body;
 
         if (!passcode) {
+            await t.rollback();
             return res.status(400).json({ message: 'Manager passcode is required to close session' });
         }
 
         const manager = await verifyManagerPasscode(passcode);
         if (!manager) {
-            return res.status(401).json({ message: 'Invalid manager passcode' });
+            await t.rollback();
+            return invalidManagerPasscode(res);
         }
 
         const session = await Session.findOne({
@@ -204,6 +212,7 @@ exports.closeSession = async (req, res) => {
         });
 
         if (!session) {
+            await t.rollback();
             return res.status(404).json({ message: 'No active session found' });
         }
 
