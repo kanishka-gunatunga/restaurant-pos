@@ -452,6 +452,7 @@ exports.getKitchenDashboard = async (req, res) => {
                 items: data.items.map(item => ({
                     id: item.id,
                     quantity: item.quantity,
+                    status: item.status,
                     productName: item.product?.name,
                     variationName: item.variation?.name,
                     modifications: item.modifications.map(mod => mod.modification?.title).filter(Boolean)
