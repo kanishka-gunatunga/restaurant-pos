@@ -112,16 +112,43 @@ app.use((err, req, res, next) => {
     });
 });
 
+const runAlterSync = ['1', 'true', 'yes'].includes(String(process.env.DB_SYNC_ALTER || '').toLowerCase());
+
 sequelize
-    .authenticate()
-    .then(() => {
-        console.log('Database connected...');
-        if (process.env.DB_SYNC_ALTER === 'true' || process.env.DB_SYNC_ALTER === '1') {
-            return sequelize.sync({ alter: true });
+    .connectWithRetry()
+    .then(async () => {
+        console.log('Database connection OK');
+        if (!runAlterSync) {
+            console.log('Skipping DB_SYNC_ALTER (set DB_SYNC_ALTER=true to run supply/order/payment schema alters)');
+            return;
+        }
+        try {
+            await Supplier.sync({ alter: true });
+            await Material.sync({ alter: true });
+            await MaterialBranch.sync({ alter: true });
+            await StockItem.sync({ alter: true });
+            await ProductAssignment.sync({ alter: true });
+            const Order = require('./models/Order');
+            const Payment = require('./models/Payment');
+            await Order.sync({ alter: true });
+            await Payment.sync({ alter: true });
+            console.log('Database schema alter sync finished');
+        } catch (err) {
+            console.error('Schema alter sync failed:', err);
         }
     })
     .catch((err) => {
         console.error('Database connection failed:', err);
+        const code = err.parent?.code || err.original?.code;
+        if (code === 'ER_TOO_MANY_USER_CONNECTIONS') {
+            console.error(
+                '\n>>> Fix: MySQL user has no free connection slots (shared across ALL clients).\n' +
+                    '    1) Disconnect MySQL Workbench (and any other tools using the same DB user).\n' +
+                    '    2) Task Manager: end every extra "Node.js" process for this project.\n' +
+                    '    3) Ask DBA: SHOW PROCESSLIST; KILL sleeping connections for this user, or raise\n' +
+                    '       max_user_connections (e.g. ALTER USER ... WITH MAX_USER_CONNECTIONS 20).\n'
+            );
+        }
     });
 
 const PORT = process.env.PORT || 5000;
