@@ -8,6 +8,7 @@ const { Op, Transaction } = require('sequelize');
 const { logActivity } = require('./ActivityLogController');
 const { auditLog } = require('../utils/auditLogger');
 const UserDetail = require('../models/UserDetail');
+const User = require('../models/User');
 const PrintJob = require('../models/PrintJob');
 const OrderItem = require('../models/OrderItem');
 const OrderItemModification = require('../models/OrderItemModification');
@@ -16,6 +17,7 @@ const Product = require('../models/Product');
 const Variation = require('../models/Variation');
 const Branch = require('../models/Branch');
 const templateService = require('../services/templateService');
+const { roundMoney } = require('../utils/orderTotals');
 const {
     trySettleExistingPendingPayment,
     wouldDoubleCoverOrder,
@@ -24,7 +26,34 @@ const {
     deriveAggregatePaymentStatus,
     PAYMENT_LIST_ATTRIBUTES,
     attachDerivedPaymentFieldsToOrderJson,
+    normalizePaymentRole,
+    getTolerance,
 } = require('../utils/orderPaymentState');
+
+/** Single payment row shape for clients (status + paymentStatus + snake_case mirrors). */
+function formatPaymentRowForClient(p) {
+    const row = typeof p.toJSON === 'function' ? p.toJSON() : { ...p };
+    const status = row.status;
+    const role = row.paymentRole ?? row.payment_role;
+    return {
+        ...row,
+        paymentStatus: status,
+        payment_status: status,
+        paymentRole: role,
+        payment_role: role,
+        orderId: row.orderId ?? row.order_id,
+        order_id: row.orderId ?? row.order_id,
+        amount: row.amount != null ? Number(row.amount) : row.amount,
+        refundedAmount: row.refundedAmount != null ? Number(row.refundedAmount) : Number(row.refunded_amount) || 0,
+        refunded_amount: row.refundedAmount != null ? Number(row.refundedAmount) : Number(row.refunded_amount) || 0,
+        paymentMethod: row.paymentMethod ?? row.payment_method,
+        payment_method: row.paymentMethod ?? row.payment_method,
+    };
+}
+
+function isRefundBodyFlag(val) {
+    return val === 1 || val === '1' || val === true || val === 'true';
+}
 
 async function jsonPaymentWithOrderSummary(orderId, paymentRecord, res, statusCode) {
     const orderWithPayments = await Order.findByPk(orderId, {
@@ -267,45 +296,85 @@ exports.updatePaymentStatus = async (req, res) => {
         const { id } = req.params;
         const { status, is_refund, refund_type, refund_amount } = req.body;
 
-        const payment = await Payment.findByPk(id, { transaction: t });
+        const payment = await Payment.findByPk(id, { transaction: t, lock: Transaction.LOCK.UPDATE });
         if (!payment) {
             await t.rollback();
             return res.status(404).json({ message: 'Payment not found' });
         }
 
+        const isRefund = isRefundBodyFlag(is_refund);
         let finalStatus = payment.status;
         let actualRefundAmount = 0;
 
-        if (is_refund == 1) {
-            if (refund_type === 'partial' && refund_amount > 0) {
+        if (isRefund) {
+            if (normalizePaymentRole(payment.paymentRole) === 'balance_due') {
+                await t.rollback();
+                return res.status(400).json({
+                    message:
+                        'Cannot refund a balance-due line. Refund the main sale payment (paymentRole sale, status paid).',
+                });
+            }
+
+            if (payment.status === 'pending') {
+                await t.rollback();
+                return res.status(400).json({ message: 'Cannot refund a pending payment; it is not settled yet.' });
+            }
+
+            const paidSoFar = parseFloat(payment.amount) || 0;
+            const alreadyRefunded = parseFloat(payment.refundedAmount || 0) || 0;
+            const remainingRefundable = roundMoney(paidSoFar - alreadyRefunded);
+            const tol = getTolerance();
+
+            if (payment.status === 'refund' && remainingRefundable <= tol) {
+                await t.rollback();
+                return res.status(400).json({ message: 'This payment is already fully refunded.' });
+            }
+
+            const rt = refund_type != null ? String(refund_type).toLowerCase().trim() : 'full';
+
+            if (rt === 'partial') {
                 actualRefundAmount = parseFloat(refund_amount);
-                finalStatus = 'partial_refund';
+                if (!Number.isFinite(actualRefundAmount) || actualRefundAmount <= 0) {
+                    await t.rollback();
+                    return res.status(400).json({
+                        message: 'Partial refund requires refund_amount as a positive number.',
+                    });
+                }
+                if (actualRefundAmount > remainingRefundable + tol) {
+                    await t.rollback();
+                    return res.status(400).json({
+                        message: `Refund amount exceeds remaining refundable amount (${remainingRefundable.toFixed(2)}).`,
+                    });
+                }
+                finalStatus =
+                    alreadyRefunded + actualRefundAmount >= paidSoFar - tol ? 'refund' : 'partial_refund';
             } else {
-                actualRefundAmount = parseFloat(payment.amount) - parseFloat(payment.refundedAmount || 0);
+                actualRefundAmount = remainingRefundable;
+                if (actualRefundAmount <= tol) {
+                    await t.rollback();
+                    return res.status(400).json({ message: 'Nothing left to refund on this payment.' });
+                }
                 finalStatus = 'refund';
             }
 
-            if (parseFloat(payment.refundedAmount || 0) + actualRefundAmount > parseFloat(payment.amount)) {
+            if (alreadyRefunded + actualRefundAmount > paidSoFar + tol) {
                 await t.rollback();
-                return res.status(400).json({ message: 'Refund amount exceeds payment amount' });
-            }
-            if (parseFloat(payment.refundedAmount || 0) + actualRefundAmount === parseFloat(payment.amount)) {
-                finalStatus = 'refund';
+                return res.status(400).json({ message: 'Refund amount exceeds payment amount.' });
             }
         } else if (status) {
             finalStatus = status;
         }
 
-        const newRefundedAmount = is_refund == 1
+        const newRefundedAmount = isRefund
             ? parseFloat(payment.refundedAmount || 0) + actualRefundAmount
             : parseFloat(payment.refundedAmount || 0);
 
         await payment.update({
             status: finalStatus,
-            ...(is_refund == 1 && { refundedAmount: newRefundedAmount })
+            ...(isRefund && { refundedAmount: newRefundedAmount })
         }, { transaction: t });
 
-        if (payment.paymentMethod === 'cash' && is_refund == 1 && actualRefundAmount > 0) {
+        if (payment.paymentMethod === 'cash' && isRefund && actualRefundAmount > 0) {
             const session = await Session.findOne({
                 where: { userId: req.user?.id, status: 'open' },
                 transaction: t,
@@ -330,6 +399,10 @@ exports.updatePaymentStatus = async (req, res) => {
 
         const orderId = payment.orderId;
         const ord = await Order.findByPk(orderId, { transaction: t });
+        if (!ord) {
+            await t.rollback();
+            return res.status(404).json({ message: 'Order not found for this payment' });
+        }
         await syncBalanceDuePayment(orderId, ord.totalAmount, t);
         await persistOrderPaymentAggregate(orderId, t);
 
@@ -337,19 +410,26 @@ exports.updatePaymentStatus = async (req, res) => {
 
         await payment.reload();
 
+        const orderWithPayments = await Order.findByPk(orderId, {
+            include: [{ model: Payment, as: 'payments', attributes: PAYMENT_LIST_ATTRIBUTES }],
+        });
+        const derived = orderWithPayments
+            ? attachDerivedPaymentFieldsToOrderJson(orderWithPayments.toJSON())
+            : { paymentStatus: null, balanceDue: null };
+
         const userDetail = await UserDetail.findOne({ where: { userId: req.user.id } });
         await logActivity({
             userId: req.user.id,
             branchId: userDetail?.branchId || 1,
-            activityType: is_refund == 1 ? 'Order Refunded' : 'Payment Updated',
-            description: is_refund == 1
+            activityType: isRefund ? 'Order Refunded' : 'Payment Updated',
+            description: isRefund
                 ? `Refund of Rs.${actualRefundAmount} processed for Payment #${id} (Order #${payment.orderId})`
                 : `Payment #${id} status updated to ${finalStatus}`,
             orderId: payment.orderId,
-            amount: is_refund == 1 ? actualRefundAmount : null,
+            amount: isRefund ? actualRefundAmount : null,
             metadata: { paymentId: id, status: finalStatus, is_refund, refund_type, actualRefundAmount }
         });
-        if (is_refund == 1) {
+        if (isRefund) {
             auditLog('refund', { ip: req.ip, userId: req.user.id, metadata: { paymentId: id, orderId: payment.orderId, amount: actualRefundAmount } });
         } else {
             auditLog('payment_status_updated', {
@@ -359,7 +439,12 @@ exports.updatePaymentStatus = async (req, res) => {
             });
         }
 
-        res.json({ message: 'Payment status updated', payment });
+        res.json({
+            message: 'Payment status updated',
+            payment: formatPaymentRowForClient(payment),
+            orderPaymentStatus: derived.paymentStatus,
+            balanceDue: derived.balanceDue,
+        });
     } catch (error) {
         await t.rollback();
         res.status(500).json({ message: error.message });
@@ -369,8 +454,28 @@ exports.updatePaymentStatus = async (req, res) => {
 exports.getPaymentsByOrder = async (req, res) => {
     try {
         const { orderId } = req.params;
-        const payments = await Payment.findAll({ where: { orderId } });
-        res.json(payments);
+        const oid = parseInt(orderId, 10);
+        if (!Number.isFinite(oid) || oid < 1) {
+            return res.status(400).json({ message: 'Invalid order id' });
+        }
+
+        let whereOrder = { id: oid };
+        whereOrder = await applyBranchFilter(req, whereOrder);
+        const order = await Order.findOne({ where: whereOrder });
+        if (!order) {
+            return res.status(404).json({ message: 'Order not found' });
+        }
+
+        const payments = await Payment.findAll({
+            where: { orderId: oid },
+            order: [['id', 'ASC']],
+        });
+
+        const rows = payments.map((p) => formatPaymentRowForClient(p));
+        if (req.query.wrap === '1' || req.query.wrap === 'true') {
+            return res.json({ data: rows });
+        }
+        res.json(rows);
     } catch (error) {
         res.status(500).json({ message: error.message });
     }

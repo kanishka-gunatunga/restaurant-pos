@@ -241,8 +241,9 @@ exports.getAllOrders = async (req, res) => {
         where = await applyBranchFilter(req, where);
 
         const orders = await Order.findAll({
+            where,
             include: [customerOrderInclude, paymentsOrderInclude, orderItemsFullInclude],
-            order: [['createdAt', 'DESC']]
+            order: [['createdAt', 'DESC']],
         });
 
         const processedOrders = await Promise.all(
