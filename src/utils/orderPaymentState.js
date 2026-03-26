@@ -2,7 +2,16 @@
 
 const Payment = require('../models/Payment');
 const Order = require('../models/Order');
-const { roundMoney, amountsRoughlyEqual } = require('./orderTotals');
+const OrderItem = require('../models/OrderItem');
+const OrderItemModification = require('../models/OrderItemModification');
+const { roundMoney, amountsRoughlyEqual, computeOrderTotalsFromLines } = require('./orderTotals');
+
+const orderItemsForBalanceInclude = {
+    model: OrderItem,
+    as: 'items',
+    attributes: ['quantity', 'unitPrice', 'productDiscount'],
+    include: [{ model: OrderItemModification, as: 'modifications', attributes: ['price'] }],
+};
 
 const DEFAULT_TOLERANCE = 0.02;
 
@@ -23,18 +32,31 @@ function getTolerance() {
 }
 
 function normalizePaymentRole(role) {
-    if (role === 'balance_due') return 'balance_due';
+    if (role == null || role === '') return 'sale';
+    const s = String(role).trim().toLowerCase();
+    if (s === 'balance_due') return 'balance_due';
     return 'sale';
+}
+
+function normalizePaymentRoleFromPlain(p) {
+    const plain = typeof p === 'object' && p != null ? p : {};
+    return normalizePaymentRole(plain.paymentRole ?? plain.payment_role);
 }
 
 function toPlainPayments(payments) {
     return (payments || []).map((p) => (typeof p.toJSON === 'function' ? p.toJSON() : { ...p }));
 }
 
+function parseRefundedOnPayment(p) {
+    const plain = typeof p === 'object' && p != null ? p : {};
+    const v = plain.refundedAmount ?? plain.refunded_amount;
+    return Math.max(0, parseFloat(v) || 0);
+}
+
 function effectiveCollected(p) {
     const plain = typeof p.toJSON === 'function' ? p.toJSON() : p;
     const amount = parseFloat(plain.amount) || 0;
-    const refunded = parseFloat(plain.refundedAmount) || 0;
+    const refunded = parseRefundedOnPayment(plain);
     const status = plain.status;
     if (status === 'pending') return 0;
     if (status === 'paid' || status === 'partial_refund' || status === 'refund') {
@@ -53,6 +75,21 @@ function computeOutstanding(orderTotal, payments) {
     return Math.max(0, roundMoney(total - net));
 }
 
+function resolveOrderTotalForBalanceFromOrderLike(orderLike) {
+    if (!orderLike || orderLike.status === 'cancel') {
+        return roundMoney(parseFloat(orderLike?.totalAmount) || 0);
+    }
+    const stored = roundMoney(parseFloat(orderLike.totalAmount) || 0);
+    const items = orderLike.items;
+    if (!items?.length) return stored;
+    const disc = Math.max(0, parseFloat(orderLike.orderDiscount) || 0);
+    const lineBased = computeOrderTotalsFromLines(items, disc).totalAmount;
+    const tol = getTolerance();
+    const centTol = Math.max(2, Math.ceil(tol * 100));
+    if (amountsRoughlyEqual(lineBased, stored, centTol)) return stored;
+    return roundMoney(lineBased);
+}
+
 function deriveCancelledAggregatePaymentStatus(payments) {
     const list = toPlainPayments(payments);
     const tol = getTolerance();
@@ -68,7 +105,7 @@ function deriveCancelledAggregatePaymentStatus(payments) {
             (p) =>
                 p.status === 'refund' ||
                 p.status === 'partial_refund' ||
-                parseFloat(p.refundedAmount || 0) > tol
+                parseRefundedOnPayment(p) > tol
         )
             ? 'refund'
             : 'paid';
@@ -91,17 +128,31 @@ function deriveAggregatePaymentStatus(orderTotal, payments) {
         return 'refund';
     }
 
+    const hasPendingBalanceDue = list.some(
+        (p) => p.status === 'pending' && normalizePaymentRoleFromPlain(p) === 'balance_due'
+    );
     const outstanding = computeOutstanding(total, list);
-    if (outstanding > tol) {
+    if (hasPendingBalanceDue || outstanding > tol) {
         return 'pending';
     }
 
-    const hasPartialRefundSale = list.some(
+    const overCollected = roundMoney(net - total);
+    if (overCollected > tol) {
+        return 'partial_refund';
+    }
+
+    const salePaidOrPartial = list.filter(
         (p) =>
-            p.status === 'partial_refund' &&
-            normalizePaymentRole(p.paymentRole) !== 'balance_due'
+            (p.status === 'paid' || p.status === 'partial_refund') &&
+            normalizePaymentRoleFromPlain(p) !== 'balance_due'
     );
-    if (hasPartialRefundSale) {
+    const saleTenderCount = salePaidOrPartial.length;
+    const hasPartialRefundAudit = salePaidOrPartial.some(
+        (p) =>
+            p.status === 'partial_refund' ||
+            (p.status === 'paid' && parseRefundedOnPayment(p) > tol)
+    );
+    if (hasPartialRefundAudit && saleTenderCount === 1) {
         return 'partial_refund';
     }
 
@@ -112,30 +163,52 @@ function attachDerivedPaymentFieldsToOrderJson(orderData) {
     if (!orderData || typeof orderData !== 'object') return orderData;
     const total = orderData.totalAmount;
     const payments = orderData.payments || [];
+    const tol = getTolerance();
     if (orderData.status === 'cancel') {
         orderData.balanceDue = 0;
+        orderData.balance_due = 0;
         orderData.paymentStatus = deriveCancelledAggregatePaymentStatus(payments);
+        orderData.requiresAdditionalPayment = false;
+        orderData.requires_additional_payment = false;
         return orderData;
     }
-    orderData.paymentStatus = deriveAggregatePaymentStatus(total, payments);
-    orderData.balanceDue = computeOutstanding(total, payments);
+    const totalForBalance = resolveOrderTotalForBalanceFromOrderLike(orderData);
+    const balanceDue = computeOutstanding(totalForBalance, payments);
+    orderData.balanceDue = balanceDue;
+    orderData.balance_due = balanceDue;
+    orderData.paymentStatus = deriveAggregatePaymentStatus(totalForBalance, payments);
+    const hasPendingBalanceDue = payments.some(
+        (p) => p.status === 'pending' && normalizePaymentRoleFromPlain(p) === 'balance_due'
+    );
+    orderData.requiresAdditionalPayment = balanceDue > tol || hasPendingBalanceDue;
+    orderData.requires_additional_payment = orderData.requiresAdditionalPayment;
     return orderData;
 }
 
 async function persistOrderPaymentAggregate(orderId, transaction) {
-    const order = await Order.findByPk(orderId, { transaction });
+    await syncBalanceDuePayment(orderId, transaction);
+    const order = await Order.findByPk(orderId, {
+        transaction,
+        include: [orderItemsForBalanceInclude],
+    });
     if (!order) return;
     const payments = await Payment.findAll({ where: { orderId }, transaction });
+    const financialTotal = resolveOrderTotalForBalanceFromOrderLike(order);
     const status =
         order.status === 'cancel'
             ? deriveCancelledAggregatePaymentStatus(payments)
-            : deriveAggregatePaymentStatus(order.totalAmount, payments);
+            : deriveAggregatePaymentStatus(financialTotal, payments);
     await order.update({ paymentStatus: status }, { transaction });
 }
 
-async function syncBalanceDuePayment(orderId, orderTotal, transaction) {
-    const order = await Order.findByPk(orderId, { transaction });
-    if (order && order.status === 'cancel') {
+async function syncBalanceDuePayment(orderId, transaction) {
+    const order = await Order.findByPk(orderId, {
+        transaction,
+        attributes: ['id', 'status', 'totalAmount', 'orderDiscount'],
+        include: [orderItemsForBalanceInclude],
+    });
+    if (!order) return;
+    if (order.status === 'cancel') {
         const pendings = await Payment.findAll({
             where: { orderId, status: 'pending' },
             transaction,
@@ -146,8 +219,25 @@ async function syncBalanceDuePayment(orderId, orderTotal, transaction) {
         return;
     }
 
+    const disc = Math.max(0, parseFloat(order.orderDiscount) || 0);
+    if (order.items?.length) {
+        const computed = computeOrderTotalsFromLines(order.items, disc);
+        const lineBased = roundMoney(computed.totalAmount);
+        const stored = roundMoney(parseFloat(order.totalAmount) || 0);
+        const tolHeal = getTolerance();
+        if (lineBased + tolHeal < stored) {
+            await order.update(
+                { totalAmount: computed.totalAmount, tax: computed.tax },
+                { transaction }
+            );
+            order.setDataValue('totalAmount', computed.totalAmount);
+            order.setDataValue('tax', computed.tax);
+        }
+    }
+
     const payments = await Payment.findAll({ where: { orderId }, transaction });
-    const outstanding = computeOutstanding(orderTotal, payments);
+    const financialTotal = resolveOrderTotalForBalanceFromOrderLike(order);
+    const outstanding = computeOutstanding(financialTotal, payments);
     const tol = getTolerance();
 
     const balanceRows = await Payment.findAll({
@@ -205,6 +295,9 @@ async function trySettleExistingPendingPayment({
     userId,
     transaction,
 }) {
+    const order = await Order.findByPk(orderId, { transaction });
+    if (!order) return { settled: false };
+
     const requested = roundMoney(parseFloat(amount) || 0);
     const centsTolerance = Math.max(2, Math.ceil(getTolerance() * 100));
 
@@ -215,31 +308,52 @@ async function trySettleExistingPendingPayment({
     });
 
     const sorted = pendingRows.slice().sort((a, b) => {
-        const ad = normalizePaymentRole(a.paymentRole) === 'balance_due' ? 0 : 1;
-        const bd = normalizePaymentRole(b.paymentRole) === 'balance_due' ? 0 : 1;
+        const ad = normalizePaymentRoleFromPlain(a) === 'balance_due' ? 0 : 1;
+        const bd = normalizePaymentRoleFromPlain(b) === 'balance_due' ? 0 : 1;
         if (ad !== bd) return ad - bd;
         return a.id - b.id;
     });
 
-    const matchRow = sorted.find((row) => amountsRoughlyEqual(row.amount, requested, centsTolerance));
+    const applySettle = async (row) => {
+        await row.update(
+            {
+                paymentMethod,
+                amount: requested,
+                status: 'paid',
+                transactionId: transactionId !== undefined ? transactionId : row.transactionId,
+                userId: userId !== undefined ? userId : row.userId,
+                paymentRole: 'sale',
+            },
+            { transaction }
+        );
+        return { settled: true, payment: row };
+    };
 
-    if (!matchRow) {
-        return { settled: false };
+    const matchByLineAmount = sorted.find((row) =>
+        amountsRoughlyEqual(row.amount, requested, centsTolerance)
+    );
+    if (matchByLineAmount) {
+        return applySettle(matchByLineAmount);
     }
 
-    await matchRow.update(
-        {
-            paymentMethod,
-            amount: requested,
-            status: 'paid',
-            transactionId: transactionId !== undefined ? transactionId : matchRow.transactionId,
-            userId: userId !== undefined ? userId : matchRow.userId,
-            paymentRole: 'sale',
-        },
-        { transaction }
-    );
+    const bdOnly = sorted.filter((r) => normalizePaymentRoleFromPlain(r) === 'balance_due');
+    if (bdOnly.length === 1) {
+        const allPayments = await Payment.findAll({ where: { orderId }, transaction });
+        const orderForTotal = await Order.findByPk(orderId, {
+            transaction,
+            attributes: ['id', 'totalAmount', 'orderDiscount', 'status'],
+            include: [orderItemsForBalanceInclude],
+        });
+        const financialTotal = orderForTotal
+            ? resolveOrderTotalForBalanceFromOrderLike(orderForTotal)
+            : roundMoney(parseFloat(order.totalAmount) || 0);
+        const outstanding = computeOutstanding(financialTotal, allPayments);
+        if (amountsRoughlyEqual(requested, outstanding, centsTolerance)) {
+            return applySettle(bdOnly[0]);
+        }
+    }
 
-    return { settled: true, payment: matchRow };
+    return { settled: false };
 }
 
 function wouldDoubleCoverOrder(orderTotal, payments, newPaidAmount) {
@@ -253,10 +367,12 @@ function wouldDoubleCoverOrder(orderTotal, payments, newPaidAmount) {
 module.exports = {
     getTolerance,
     PAYMENT_LIST_ATTRIBUTES,
+    orderItemsForBalanceInclude,
     normalizePaymentRole,
     effectiveCollected,
     sumNetCollected,
     computeOutstanding,
+    resolveOrderTotalForBalanceFromOrderLike,
     deriveAggregatePaymentStatus,
     deriveCancelledAggregatePaymentStatus,
     attachDerivedPaymentFieldsToOrderJson,
