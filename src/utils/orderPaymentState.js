@@ -96,7 +96,15 @@ function deriveAggregatePaymentStatus(orderTotal, payments) {
         return 'pending';
     }
 
-    // Balance satisfied: POS treats as paid even if a row stays partial_refund (historical refund on a line).
+    const hasPartialRefundSale = list.some(
+        (p) =>
+            p.status === 'partial_refund' &&
+            normalizePaymentRole(p.paymentRole) !== 'balance_due'
+    );
+    if (hasPartialRefundSale) {
+        return 'partial_refund';
+    }
+
     return 'paid';
 }
 
