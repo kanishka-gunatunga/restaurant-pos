@@ -24,7 +24,9 @@ const {
     syncBalanceDuePayment,
     persistOrderPaymentAggregate,
     deriveAggregatePaymentStatus,
+    resolveOrderTotalForBalanceFromOrderLike,
     PAYMENT_LIST_ATTRIBUTES,
+    orderItemsForBalanceInclude,
     attachDerivedPaymentFieldsToOrderJson,
     normalizePaymentRole,
     getTolerance,
@@ -55,17 +57,75 @@ function isRefundBodyFlag(val) {
     return val === 1 || val === '1' || val === true || val === 'true';
 }
 
+function logPaymentConsistency(event, data) {
+    if (!['1', 'true', 'yes'].includes(String(process.env.LOG_PAYMENT_CONSISTENCY || '').toLowerCase())) {
+        return;
+    }
+    console.log(JSON.stringify({ ts: new Date().toISOString(), event, ...data }));
+}
+
+/**
+ * Same derivation as GET /orders (attachDerived). Includes DB column before derive for debugging drift.
+ * Call only after the transaction that updated payments + persistOrderPaymentAggregate has committed.
+ */
+function buildOrderPaymentSnapshot(orderWithPayments) {
+    if (!orderWithPayments) {
+        return {
+            orderId: null,
+            orderTotalAmount: null,
+            order_total_amount: null,
+            orderPaymentStatus: null,
+            order_payment_status: null,
+            balanceDue: null,
+            balance_due: null,
+            requiresAdditionalPayment: null,
+            requires_additional_payment: null,
+            totalRefundedOnOrder: null,
+            total_refunded_on_order: null,
+            orderDbPaymentStatus: null,
+            order_db_payment_status: null,
+        };
+    }
+    const plain = orderWithPayments.get({ plain: true });
+    const dbPaymentStatus = plain.paymentStatus;
+    attachDerivedPaymentFieldsToOrderJson(plain);
+    const payments = plain.payments || [];
+    const totalRefundedOnOrder = roundMoney(
+        payments.reduce((s, p) => s + (parseFloat(p.refundedAmount) || 0), 0)
+    );
+    return {
+        orderId: plain.id,
+        orderTotalAmount: plain.totalAmount != null ? Number(plain.totalAmount) : null,
+        order_total_amount: plain.totalAmount != null ? Number(plain.totalAmount) : null,
+        orderPaymentStatus: plain.paymentStatus,
+        order_payment_status: plain.paymentStatus,
+        balanceDue: plain.balanceDue,
+        balance_due: plain.balanceDue,
+        requiresAdditionalPayment: plain.requiresAdditionalPayment,
+        requires_additional_payment: plain.requires_additional_payment,
+        totalRefundedOnOrder,
+        total_refunded_on_order: totalRefundedOnOrder,
+        orderDbPaymentStatus: dbPaymentStatus,
+        order_db_payment_status: dbPaymentStatus,
+    };
+}
+
 async function jsonPaymentWithOrderSummary(orderId, paymentRecord, res, statusCode) {
     const orderWithPayments = await Order.findByPk(orderId, {
-        include: [{ model: Payment, as: 'payments', attributes: PAYMENT_LIST_ATTRIBUTES }],
+        include: [
+            { model: Payment, as: 'payments', attributes: PAYMENT_LIST_ATTRIBUTES },
+            orderItemsForBalanceInclude,
+        ],
     });
-    const summary = orderWithPayments
-        ? attachDerivedPaymentFieldsToOrderJson(orderWithPayments.toJSON())
-        : { balanceDue: null, paymentStatus: null };
+    const snapshot = buildOrderPaymentSnapshot(orderWithPayments);
+    logPaymentConsistency('payment_create_read_after_commit', {
+        orderId,
+        derivedPaymentStatus: snapshot.orderPaymentStatus,
+        dbPaymentStatus: snapshot.orderDbPaymentStatus,
+    });
     return res.status(statusCode).json({
-        ...paymentRecord.toJSON(),
-        balanceDue: summary.balanceDue,
-        paymentStatus: summary.paymentStatus,
+        ...formatPaymentRowForClient(paymentRecord),
+        ...snapshot,
     });
 }
 
@@ -90,6 +150,11 @@ exports.createPayment = async (req, res) => {
     const t = await sequelize.transaction();
     try {
         const { orderId, paymentMethod, amount, transactionId, status } = req.body;
+        const rawPaymentRole = req.body.paymentRole ?? req.body.payment_role;
+        const clientPaymentRole =
+            rawPaymentRole !== undefined && rawPaymentRole !== null && String(rawPaymentRole).trim() !== ''
+                ? normalizePaymentRole(rawPaymentRole)
+                : null;
 
         if (!orderId || !paymentMethod || amount === undefined || amount === null) {
             await t.rollback();
@@ -126,6 +191,13 @@ exports.createPayment = async (req, res) => {
             let paymentRecord = settled.settled ? settled.payment : null;
 
             if (!settled.settled) {
+                if (clientPaymentRole === 'balance_due') {
+                    await t.rollback();
+                    return res.status(400).json({
+                        message:
+                            'No pending balance-due line matches this amount. Save the order first, then pay exactly the additional amount (see GET order balanceDue or pending balance_due payment row).',
+                    });
+                }
                 const existing = await Payment.findAll({ where: { orderId }, transaction: t });
                 if (wouldDoubleCoverOrder(order.totalAmount, existing, amountNum)) {
                     await t.rollback();
@@ -148,7 +220,7 @@ exports.createPayment = async (req, res) => {
                 );
             }
 
-            await syncBalanceDuePayment(orderId, order.totalAmount, t);
+            await syncBalanceDuePayment(orderId, t);
             await persistOrderPaymentAggregate(orderId, t);
 
             if (paymentMethod === 'cash') {
@@ -214,12 +286,12 @@ exports.createPayment = async (req, res) => {
                 transactionId,
                 status: effectiveStatus,
                 userId: req.user?.id,
-                paymentRole: 'sale',
+                paymentRole: clientPaymentRole === 'balance_due' ? 'balance_due' : 'sale',
             },
             { transaction: t }
         );
 
-        await syncBalanceDuePayment(orderId, order.totalAmount, t);
+        await syncBalanceDuePayment(orderId, t);
         await persistOrderPaymentAggregate(orderId, t);
 
         await t.commit();
@@ -403,7 +475,7 @@ exports.updatePaymentStatus = async (req, res) => {
             await t.rollback();
             return res.status(404).json({ message: 'Order not found for this payment' });
         }
-        await syncBalanceDuePayment(orderId, ord.totalAmount, t);
+        await syncBalanceDuePayment(orderId, t);
         await persistOrderPaymentAggregate(orderId, t);
 
         await t.commit();
@@ -411,11 +483,18 @@ exports.updatePaymentStatus = async (req, res) => {
         await payment.reload();
 
         const orderWithPayments = await Order.findByPk(orderId, {
-            include: [{ model: Payment, as: 'payments', attributes: PAYMENT_LIST_ATTRIBUTES }],
+            include: [
+                { model: Payment, as: 'payments', attributes: PAYMENT_LIST_ATTRIBUTES },
+                orderItemsForBalanceInclude,
+            ],
         });
-        const derived = orderWithPayments
-            ? attachDerivedPaymentFieldsToOrderJson(orderWithPayments.toJSON())
-            : { paymentStatus: null, balanceDue: null };
+        const snapshot = buildOrderPaymentSnapshot(orderWithPayments);
+        logPaymentConsistency('payment_status_update_read_after_commit', {
+            orderId,
+            derivedPaymentStatus: snapshot.orderPaymentStatus,
+            dbPaymentStatus: snapshot.orderDbPaymentStatus,
+            totalAmount: snapshot.orderTotalAmount,
+        });
 
         const userDetail = await UserDetail.findOne({ where: { userId: req.user.id } });
         await logActivity({
@@ -442,8 +521,9 @@ exports.updatePaymentStatus = async (req, res) => {
         res.json({
             message: 'Payment status updated',
             payment: formatPaymentRowForClient(payment),
-            orderPaymentStatus: derived.paymentStatus,
-            balanceDue: derived.balanceDue,
+            refundAmountThisRequest: isRefund ? roundMoney(actualRefundAmount) : undefined,
+            refund_amount_this_request: isRefund ? roundMoney(actualRefundAmount) : undefined,
+            ...snapshot,
         });
     } catch (error) {
         await t.rollback();
@@ -498,7 +578,8 @@ exports.getAllPaymentDetails = async (req, res) => {
                     model: Payment,
                     as: 'payments',
                     attributes: PAYMENT_LIST_ATTRIBUTES,
-                }
+                },
+                orderItemsForBalanceInclude,
             ],
             order: [['createdAt', 'DESC']]
         });
@@ -507,6 +588,8 @@ exports.getAllPaymentDetails = async (req, res) => {
             const payments = order.payments || [];
             const primary = payments.find((p) => p.status !== 'refund') || payments[0] || null;
             const refundedSum = payments.reduce((s, p) => s + (parseFloat(p.refundedAmount) || 0), 0);
+            const plain = order.get({ plain: true });
+            const totalForAgg = resolveOrderTotalForBalanceFromOrderLike(plain);
             return {
                 id: order.id,
                 orderNo: order.id,
@@ -514,7 +597,7 @@ exports.getAllPaymentDetails = async (req, res) => {
                 customerMobile: order.customer ? order.customer.mobile : '-',
                 dateTime: order.createdAt,
                 method: primary ? primary.paymentMethod : null,
-                paymentStatus: deriveAggregatePaymentStatus(order.totalAmount, payments),
+                paymentStatus: deriveAggregatePaymentStatus(totalForAgg, payments),
                 amount: order.totalAmount,
                 refundedAmount: refundedSum,
             };
@@ -553,7 +636,8 @@ exports.searchPaymentDetails = async (req, res) => {
                     model: Payment,
                     as: 'payments',
                     attributes: PAYMENT_LIST_ATTRIBUTES,
-                }
+                },
+                orderItemsForBalanceInclude,
             ],
             order: [['createdAt', 'DESC']]
         });
@@ -562,6 +646,8 @@ exports.searchPaymentDetails = async (req, res) => {
             const payments = order.payments || [];
             const primary = payments.find((p) => p.status !== 'refund') || payments[0] || null;
             const refundedSum = payments.reduce((s, p) => s + (parseFloat(p.refundedAmount) || 0), 0);
+            const plain = order.get({ plain: true });
+            const totalForAgg = resolveOrderTotalForBalanceFromOrderLike(plain);
             return {
                 id: order.id,
                 orderNo: order.id,
@@ -569,7 +655,7 @@ exports.searchPaymentDetails = async (req, res) => {
                 customerMobile: order.customer ? order.customer.mobile : '-',
                 dateTime: order.createdAt,
                 method: primary ? primary.paymentMethod : null,
-                paymentStatus: deriveAggregatePaymentStatus(order.totalAmount, payments),
+                paymentStatus: deriveAggregatePaymentStatus(totalForAgg, payments),
                 amount: order.totalAmount,
                 refundedAmount: refundedSum,
             };
@@ -600,7 +686,8 @@ exports.filterPaymentsByStatus = async (req, res) => {
                     model: Payment,
                     as: 'payments',
                     attributes: PAYMENT_LIST_ATTRIBUTES,
-                }
+                },
+                orderItemsForBalanceInclude,
             ],
             order: [['createdAt', 'DESC']]
         });
@@ -609,6 +696,8 @@ exports.filterPaymentsByStatus = async (req, res) => {
             const payments = order.payments || [];
             const primary = payments.find((p) => p.status !== 'refund') || payments[0] || null;
             const refundedSum = payments.reduce((s, p) => s + (parseFloat(p.refundedAmount) || 0), 0);
+            const plain = order.get({ plain: true });
+            const totalForAgg = resolveOrderTotalForBalanceFromOrderLike(plain);
             return {
                 id: order.id,
                 orderNo: order.id,
@@ -616,7 +705,7 @@ exports.filterPaymentsByStatus = async (req, res) => {
                 customerMobile: order.customer ? order.customer.mobile : '-',
                 dateTime: order.createdAt,
                 method: primary ? primary.paymentMethod : null,
-                paymentStatus: deriveAggregatePaymentStatus(order.totalAmount, payments),
+                paymentStatus: deriveAggregatePaymentStatus(totalForAgg, payments),
                 amount: order.totalAmount,
                 refundedAmount: refundedSum,
             };

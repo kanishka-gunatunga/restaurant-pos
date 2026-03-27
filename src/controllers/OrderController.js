@@ -373,7 +373,7 @@ exports.createOrder = async (req, res) => {
             { transaction: t }
         );
 
-        await syncBalanceDuePayment(order.id, finalTotals.totalAmount, t);
+        await syncBalanceDuePayment(order.id, t);
         await persistOrderPaymentAggregate(order.id, t);
 
         await t.commit();
@@ -522,7 +522,7 @@ exports.updateOrderStatus = async (req, res) => {
 
                 await orderLocked.update({ status: 'cancel' }, { transaction: t });
 
-                await syncBalanceDuePayment(id, orderLocked.totalAmount, t);
+                await syncBalanceDuePayment(id, t);
                 await persistOrderPaymentAggregate(id, t);
 
                 await t.commit();
@@ -695,8 +695,9 @@ exports.updateOrder = async (req, res) => {
             },
             { transaction: t }
         );
+        await order.reload({ transaction: t });
 
-        await syncBalanceDuePayment(id, finalTotals.totalAmount, t);
+        await syncBalanceDuePayment(id, t);
         await persistOrderPaymentAggregate(id, t);
 
         if (order_products) {
@@ -720,8 +721,23 @@ exports.updateOrder = async (req, res) => {
 
         const payload = attachDerivedPaymentFieldsToOrderJson(fullOrder.toJSON());
         await enrichOrderJsonItemsForDetail(payload);
+        payload.payment_status = payload.paymentStatus;
         const clientPayStatus = bodyPaymentStatus !== undefined ? bodyPaymentStatus : bodyPaymentStatusSnake;
         logIgnoredClientPaymentStatus(id, clientPayStatus, payload.paymentStatus);
+
+        if (['1', 'true', 'yes'].includes(String(process.env.LOG_PAYMENT_CONSISTENCY || '').toLowerCase())) {
+            console.log(
+                JSON.stringify({
+                    ts: new Date().toISOString(),
+                    event: 'order_put_read_after_commit',
+                    orderId: Number(id),
+                    paymentStatus: payload.paymentStatus,
+                    totalAmount: payload.totalAmount,
+                    balanceDue: payload.balanceDue,
+                    requiresAdditionalPayment: payload.requiresAdditionalPayment,
+                })
+            );
+        }
 
         res.json(payload);
     } catch (error) {

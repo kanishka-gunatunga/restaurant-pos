@@ -93,22 +93,78 @@ exports.startSession = async (req, res) => {
     }
 };
 
+const activeSessionTransactionInclude = {
+    model: SessionTransaction,
+    as: 'transactions',
+    separate: true,
+    order: [['createdAt', 'ASC']],
+};
+
+async function resolveActiveSessionTargetUserId(req) {
+    const raw =
+        req.query.cashierUserId ??
+        req.query.cashierId ??
+        req.query.userId;
+    if (raw === undefined || raw === null || String(raw).trim() === '') {
+        return req.user.id;
+    }
+    if (!['admin', 'manager'].includes(req.user.role)) {
+        const err = new Error('FORBIDDEN_OTHER_SESSION');
+        err.statusCode = 403;
+        throw err;
+    }
+    const parsed = parseInt(String(raw), 10);
+    if (!Number.isFinite(parsed)) {
+        const err = new Error('INVALID_CASHIER_USER_ID');
+        err.statusCode = 400;
+        throw err;
+    }
+    if (req.user.role === 'manager') {
+        const [requesterDetail, cashierDetail] = await Promise.all([
+            UserDetail.findOne({ where: { userId: req.user.id } }),
+            UserDetail.findOne({ where: { userId: parsed } }),
+        ]);
+        if (!cashierDetail) {
+            const err = new Error('CASHIER_NOT_FOUND');
+            err.statusCode = 404;
+            throw err;
+        }
+        if (!requesterDetail || cashierDetail.branchId !== requesterDetail.branchId) {
+            const err = new Error('FORBIDDEN_BRANCH');
+            err.statusCode = 403;
+            throw err;
+        }
+    }
+    return parsed;
+}
+
 exports.getActiveSession = async (req, res) => {
     try {
-        const userId = req.user.id;
+        let targetUserId;
+        try {
+            targetUserId = await resolveActiveSessionTargetUserId(req);
+        } catch (e) {
+            if (e.message === 'FORBIDDEN_OTHER_SESSION') {
+                return res.status(403).json({ message: 'Insufficient permissions to view another user\'s session' });
+            }
+            if (e.message === 'INVALID_CASHIER_USER_ID') {
+                return res.status(400).json({ message: 'Invalid cashierUserId' });
+            }
+            if (e.message === 'CASHIER_NOT_FOUND') {
+                return res.status(404).json({ message: 'Cashier not found' });
+            }
+            if (e.message === 'FORBIDDEN_BRANCH') {
+                return res.status(403).json({ message: 'Cannot view sessions outside your branch' });
+            }
+            throw e;
+        }
+
         const session = await Session.findOne({
             where: {
-                userId,
-                status: 'open'
+                userId: targetUserId,
+                status: 'open',
             },
-            include: [
-                {
-                    model: SessionTransaction,
-                    as: 'transactions',
-                    limit: 10,
-                    order: [['createdAt', 'DESC']]
-                }
-            ]
+            include: [activeSessionTransactionInclude],
         });
 
         if (!session) {
@@ -188,13 +244,17 @@ exports.cashAction = async (req, res) => {
             metadata: { sessionId: session.id, type, description }
         });
 
-        res.json({ session, transaction });
+        const sessionWithLedger = await Session.findByPk(session.id, {
+            include: [activeSessionTransactionInclude],
+        });
+
+        res.json({ session: sessionWithLedger, transaction });
     } catch (error) {
         if (t && !t.finished) await t.rollback();
         if (isConnectionAcquireTimeout(error)) {
             return res.status(503).json({
                 message:
-                    'Database is temporarily busy (connection pool timeout). Try again in a moment. If this persists, set DB_POOL_MAX higher and avoid many parallel API calls.',
+                    'Database is temporarily busy (connection pool timeout). Try again in a moment. If this persists, avoid many parallel API calls or contact support.',
             });
         }
         res.status(500).json({ message: error.message });
@@ -263,7 +323,7 @@ exports.closeSession = async (req, res) => {
         if (isConnectionAcquireTimeout(error)) {
             return res.status(503).json({
                 message:
-                    'Database is temporarily busy (connection pool timeout). Try again in a moment. If this persists, set DB_POOL_MAX higher and avoid many parallel API calls.',
+                    'Database is temporarily busy (connection pool timeout). Try again in a moment. If this persists, avoid many parallel API calls or contact support.',
             });
         }
         res.status(500).json({ message: error.message });
