@@ -87,7 +87,7 @@ exports.generateReceiptHtml = (order, payment, branch) => {
 
             <div style="text-align: center; margin-top: 10px;">
                 <div style="font-weight: bold; margin-bottom: 2px;">THANK YOU COME AGAIN</div>
-                <div style="font-size: 0.85em;">SOFTWARE BY KODETECH | kodetech.co</div>
+                <div style="font-size: 0.85em;">SOFTWARE BY SLTMobitel</div>
             </div>
         </div>
     `;
