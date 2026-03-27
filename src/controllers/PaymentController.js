@@ -333,7 +333,7 @@ exports.createPayment = async (req, res) => {
                 await PrintJob.create({
                     order_id: fullOrder.id,
                     payment_id: payment.id,
-                    printer_name: 'Main_Counter_Printer',
+                    printer_name: 'XP-80',
                     content,
                     type: 'receipt',
                     status: 'pending'

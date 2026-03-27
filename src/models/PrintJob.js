@@ -31,7 +31,7 @@ const PrintJob = sequelize.define('PrintJob', {
         defaultValue: 'pending',
     },
     type: {
-        type: DataTypes.ENUM('receipt'),
+        type: DataTypes.ENUM('receipt', 'kitchen'),
         defaultValue: 'receipt',
     },
     createdAt: {
