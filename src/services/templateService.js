@@ -9,7 +9,7 @@ exports.generateReceiptHtml = (order, payment, branch) => {
         return right ? padding + str : str + padding;
     };
 
-    const width = 42; // Standard thermal printer width
+    const width = 48; // Updated for 80mm thermal printer (typical 48/56 chars)
 
     const itemsHtml = order.items.map(item => {
         let modificationsHtml = '';
@@ -25,12 +25,12 @@ exports.generateReceiptHtml = (order, payment, branch) => {
             }).join('');
         }
 
-        const name = (item.product?.name || 'Item').substring(0, 18);
+        const name = (item.product?.name || 'Item').substring(0, 22);
         const variation = item.variation?.name ? `(${item.variation.name})` : '';
-        const fullName = `${name} ${variation}`.padEnd(20);
-        const price = parseFloat(item.unitPrice).toFixed(2).padStart(9);
+        const fullName = `${name} ${variation}`.padEnd(24);
+        const price = parseFloat(item.unitPrice).toFixed(2).padStart(8);
         const qty = parseFloat(item.quantity).toFixed(2).padStart(5);
-        const amount = (item.quantity * item.unitPrice).toFixed(2).padStart(10);
+        const amount = (item.quantity * item.unitPrice).toFixed(2).padStart(11);
 
         return `
             <div style="margin-bottom: 2px;">
@@ -46,7 +46,7 @@ exports.generateReceiptHtml = (order, payment, branch) => {
     const date = new Date(order.createdAt);
 
     return `
-        <div style="width: 380px; font-family: 'Courier New', Courier, monospace; font-size: 13px; line-height: 1.2; color: #000; background: #fff; padding: 10px; white-space: pre-wrap;">
+        <div style="width: 550px; font-family: 'Courier New', Courier, monospace; font-size: 14px; line-height: 1.2; color: #000; background: #fff; padding: 10px; white-space: pre-wrap;">
             <div style="text-align: center; margin-bottom: 10px; font-weight: bold;">
                 <div style="font-size: 1.25em; text-transform: uppercase;">${branch?.name || 'CATERING BY AHAS GAWWA'}</div>
                 <div>${branch?.location || 'No. 226, Arakawila, Handapangoda'}</div>
@@ -57,7 +57,7 @@ exports.generateReceiptHtml = (order, payment, branch) => {
 
             <div style="display: flex; justify-content: space-between; margin-bottom: 5px; white-space: pre;"><span>CASHIER: ${order.user?.name || 'Staff'}                </span><span>UNIT: ${branch?.id || '1'}</span></div>
 
-            <div style="display: flex; justify-content: space-between; border-top: 1px dashed #000; border-bottom: 1px dashed #000; padding: 2px 0; font-weight: bold; text-transform: uppercase; white-space: pre;"><span style="flex: 2;">PRODUCT               </span> <span style="flex: 1; text-align: right;">PRICE  </span> <span style="flex: 1; text-align: right;">QTY   </span> <span style="flex: 1; text-align: right;">AMOUNT</span></div>
+            <div style="display: flex; justify-content: space-between; border-top: 1px dashed #000; border-bottom: 1px dashed #000; padding: 2px 0; font-weight: bold; text-transform: uppercase; white-space: pre;"><span style="flex: 2;">PRODUCT                 </span> <span style="flex: 1; text-align: right;"> PRICE  </span> <span style="flex: 1; text-align: right;"> QTY </span> <span style="flex: 1; text-align: right;"> AMOUNT    </span></div>
 
             <div style="text-align: center; margin: 4px 0; font-weight: bold;">Original</div>
 
@@ -69,14 +69,14 @@ exports.generateReceiptHtml = (order, payment, branch) => {
             </div>
 
             <div style="margin-bottom: 10px; font-weight: bold;">
-                <div style="display: flex; justify-content: space-between; font-size: 1.1em; white-space: pre;"><span>SUB TOTAL                                     </span><span>${subTotal.padStart(8)}</span></div>
+                <div style="display: flex; justify-content: space-between; font-size: 1.1em; white-space: pre;"><span>SUB TOTAL                                     </span><span>${subTotal.padStart(10)}</span></div>
             </div>
 
             <div style="margin-bottom: 10px;">
-                <div style="display: flex; justify-content: space-between; white-space: pre;"><span>CASH                                          </span><span>${subTotal.padStart(8)}</span></div>
-                <div style="display: flex; justify-content: space-between; font-weight: bold; white-space: pre;"><span>BALANCE                                       </span><span>${(0).toFixed(2).padStart(8)}</span></div>
+                <div style="display: flex; justify-content: space-between; white-space: pre;"><span>CASH                                          </span><span>${subTotal.padStart(10)}</span></div>
+                <div style="display: flex; justify-content: space-between; font-weight: bold; white-space: pre;"><span>BALANCE                                       </span><span>${(0).toFixed(2).padStart(10)}</span></div>
                 ${totalDiscount > 0 ? `
-                <div style="display: flex; justify-content: space-between; margin-top: 4px; white-space: pre;"><span>Your savings                    Rs.           </span><span>${totalDiscount.toFixed(2).padStart(8)}</span></div>` : ''}
+                <div style="display: flex; justify-content: space-between; margin-top: 4px; white-space: pre;"><span>Your savings                    Rs.           </span><span>${totalDiscount.toFixed(2).padStart(10)}</span></div>` : ''}
                 <div style="border-top: 1px dashed #000; margin: 5px 0;"></div>
             </div>
 
@@ -121,7 +121,7 @@ exports.generateKitchenReceiptHtml = (order, branch) => {
     }).join('');
 
     return `
-        <div style="width: 380px; font-family: 'Courier New', Courier, monospace; line-height: 1.2; color: #000; background: #fff; padding: 10px;">
+        <div style="width: 550px; font-family: 'Courier New', Courier, monospace; line-height: 1.2; color: #000; background: #fff; padding: 10px;">
             <div style="text-align: center; border: 2px solid #000; padding: 5px; margin-bottom: 10px;">
                 <div style="font-size: 1.8em; font-weight: bold; text-transform: uppercase;">KITCHEN COPY</div>
                 <div style="font-size: 1.2em;">Order #${order.id.toString().padStart(8, '0')}</div>
