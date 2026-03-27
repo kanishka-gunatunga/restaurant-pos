@@ -104,7 +104,7 @@ app.use((err, req, res, next) => {
     if (sqlCode === 'ER_TOO_MANY_USER_CONNECTIONS') {
         return res.status(503).json({
             message:
-                'Database connection limit reached for this user. Use DB_POOL_MAX=1, run only one server process, and ask the DBA to free or raise max_user_connections.',
+                'Database connection limit reached for this user. Run a single server process if possible, and ask the DBA to free or raise max_user_connections.',
         });
     }
     res.status(err.status || 500).json({
@@ -115,7 +115,7 @@ app.use((err, req, res, next) => {
 const runAlterSync = ['1', 'true', 'yes'].includes(String(process.env.DB_SYNC_ALTER || '').toLowerCase());
 
 sequelize
-    .connectWithRetry()
+    .authenticate()
     .then(async () => {
         console.log('Database connection OK');
         if (!runAlterSync) {
