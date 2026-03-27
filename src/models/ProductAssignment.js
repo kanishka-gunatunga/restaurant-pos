@@ -46,7 +46,8 @@ const ProductAssignment = sequelize.define('ProductAssignment', {
         type: DataTypes.JSON,
         allowNull: true,
         defaultValue: [],
-        comment: 'Array of { materialId, materialName?, qtyValue, qtyUnit }',
+        comment:
+            'Array of { materialId, materialName?, stockId?, qtyValue, qtyUnit, stockBatchNo?, stockExpiryDate? } — stockId = StockItem.id for batch-level deduction',
     },
     isActive: {
         type: DataTypes.BOOLEAN,
