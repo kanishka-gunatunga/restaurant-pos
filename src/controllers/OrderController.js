@@ -3,6 +3,7 @@ const OrderItem = require('../models/OrderItem');
 const OrderItemModification = require('../models/OrderItemModification');
 const Product = require('../models/Product');
 const Variation = require('../models/Variation');
+const VariationOption = require('../models/VariationOption');
 const ModificationItem = require('../models/ModificationItem');
 const Customer = require('../models/Customer');
 const User = require('../models/User');
@@ -70,7 +71,7 @@ const orderItemsBasicInclude = {
     as: 'items',
     include: [
         { model: Product, as: 'product' },
-        { model: Variation, as: 'variation' },
+        { model: VariationOption, as: 'variation' },
         {
             model: OrderItemModification,
             as: 'modifications',
@@ -421,7 +422,7 @@ exports.createOrder = async (req, res) => {
                         as: 'items',
                         include: [
                             { model: Product, as: 'product' },
-                            { model: Variation, as: 'variation' },
+                            { model: VariationOption, as: 'variation' },
                             {
                                 model: OrderItemModification,
                                 as: 'modifications',
@@ -830,7 +831,7 @@ exports.updateOrderItemStatus = async (req, res) => {
             const updatedItem = await OrderItem.findByPk(itemId, {
                 include: [
                     { model: Product, as: 'product' },
-                    { model: Variation, as: 'variation' },
+                    { model: VariationOption, as: 'variation' },
                     {
                         model: OrderItemModification,
                         as: 'modifications',

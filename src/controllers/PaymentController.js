@@ -14,7 +14,7 @@ const OrderItem = require('../models/OrderItem');
 const OrderItemModification = require('../models/OrderItemModification');
 const ModificationItem = require('../models/ModificationItem');
 const Product = require('../models/Product');
-const Variation = require('../models/Variation');
+const VariationOption = require('../models/VariationOption');
 const Branch = require('../models/Branch');
 const templateService = require('../services/templateService');
 const { roundMoney } = require('../utils/orderTotals');
@@ -63,6 +63,50 @@ function logPaymentConsistency(event, data) {
         return;
     }
     console.log(JSON.stringify({ ts: new Date().toISOString(), event, ...data }));
+}
+
+async function queueReceiptPrintJob(orderId, paymentRecord, requestedStatus, userId) {
+    try {
+        if (requestedStatus === 'paid' || !requestedStatus) {
+            const fullOrder = await Order.findByPk(orderId, {
+                include: [
+                    { model: Customer, as: 'customer' },
+                    { model: User, as: 'user', attributes: ['name', 'username'] },
+                    {
+                        model: OrderItem,
+                        as: 'items',
+                        include: [
+                            { model: Product, as: 'product' },
+                            { model: VariationOption, as: 'variation' },
+                            {
+                                model: OrderItemModification,
+                                as: 'modifications',
+                                include: [{ model: ModificationItem, as: 'modification' }]
+                            }
+                        ]
+                    }
+                ]
+            });
+
+            if (!fullOrder) return;
+
+            const userDetail = await UserDetail.findOne({ where: { userId } });
+            const branchId = userDetail?.branchId || 1;
+            const branch = await Branch.findByPk(branchId);
+            const content = templateService.generateReceiptHtml(fullOrder, paymentRecord, branch);
+
+            await PrintJob.create({
+                order_id: fullOrder.id,
+                payment_id: paymentRecord.id,
+                printer_name: 'XP-80',
+                content,
+                type: 'receipt',
+                status: 'pending'
+            });
+        }
+    } catch (printError) {
+        console.error('[PaymentController] Failed to queue print job for order', orderId, ':', printError);
+    }
 }
 
 /**
@@ -260,6 +304,8 @@ exports.createPayment = async (req, res) => {
                 metadata: { paymentMethod, transactionId, status: paymentRecord.status, settled: settled.settled },
             });
 
+            await queueReceiptPrintJob(orderId, paymentRecord, status, req.user.id);
+
             if (settled.settled) {
                 return jsonPaymentWithOrderSummary(orderId, paymentRecord, res, 200);
             }
@@ -290,47 +336,7 @@ exports.createPayment = async (req, res) => {
             metadata: { orderId, paymentId: payment.id, amount: payment.amount, status: payment.status },
         });
 
-        // Queue Receipt Print Job after successful payment
-        try {
-            if (status === 'paid' || !status) {
-                const fullOrder = await Order.findByPk(orderId, {
-                    include: [
-                        { model: Customer, as: 'customer' },
-                        { model: User, as: 'user', attributes: ['name', 'username'] },
-                        {
-                            model: OrderItem,
-                            as: 'items',
-                            include: [
-                                { model: Product, as: 'product' },
-                                { model: Variation, as: 'variation' },
-                                {
-                                    model: OrderItemModification,
-                                    as: 'modifications',
-                                    include: [{ model: ModificationItem, as: 'modification' }]
-                                }
-                            ]
-                        }
-                    ]
-                });
-
-                const userDetail = await UserDetail.findOne({ where: { userId: req.user.id } });
-                const branchId = userDetail?.branchId || 1;
-                const branch = await Branch.findByPk(branchId);
-                const content = templateService.generateReceiptHtml(fullOrder, payment, branch);
-
-                await PrintJob.create({
-                    order_id: fullOrder.id,
-                    payment_id: payment.id,
-                    printer_name: 'XP-80',
-                    content,
-                    type: 'receipt',
-                    status: 'pending'
-                });
-            }
-        } catch (printError) {
-            console.error('[PaymentController] Failed to queue print job for order', orderId, ':', printError);
-            // Don't fail the payment if printing fails
-        }
+        await queueReceiptPrintJob(orderId, payment, status, req.user.id);
 
         const userDetail = await UserDetail.findOne({ where: { userId: req.user.id } });
         await logActivity({
