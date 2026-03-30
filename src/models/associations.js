@@ -67,6 +67,10 @@ SessionTransaction.belongsTo(User, { foreignKey: 'userId', as: 'user' });
 Payment.hasOne(SessionTransaction, { foreignKey: 'paymentId', as: 'sessionTransaction' });
 SessionTransaction.belongsTo(Payment, { foreignKey: 'paymentId', as: 'payment' });
 
+// Order <-> Branch
+Branch.hasMany(Order, { foreignKey: 'branchId', as: 'orders' });
+Order.belongsTo(Branch, { foreignKey: 'branchId', as: 'branch' });
+
 // Order <-> Customer: Many orders can belong to one customer
 Order.belongsTo(Customer, { foreignKey: 'customerId', as: 'customer' });
 Customer.hasMany(Order, { foreignKey: 'customerId', as: 'orders' });

@@ -55,7 +55,7 @@ function corsOrigin(origin, cb) {
             try {
                 const host = new URL(origin).hostname;
                 if (host === suffix || host.endsWith('.' + suffix)) return cb(null, true);
-            } catch (_) {}
+            } catch (_) { }
         } else if (origin === allowed) {
             return cb(null, true);
         }
@@ -143,10 +143,10 @@ sequelize
         if (code === 'ER_TOO_MANY_USER_CONNECTIONS') {
             console.error(
                 '\n>>> Fix: MySQL user has no free connection slots (shared across ALL clients).\n' +
-                    '    1) Disconnect MySQL Workbench (and any other tools using the same DB user).\n' +
-                    '    2) Task Manager: end every extra "Node.js" process for this project.\n' +
-                    '    3) Ask DBA: SHOW PROCESSLIST; KILL sleeping connections for this user, or raise\n' +
-                    '       max_user_connections (e.g. ALTER USER ... WITH MAX_USER_CONNECTIONS 20).\n'
+                '    1) Disconnect MySQL Workbench (and any other tools using the same DB user).\n' +
+                '    2) Task Manager: end every extra "Node.js" process for this project.\n' +
+                '    3) Ask DBA: SHOW PROCESSLIST; KILL sleeping connections for this user, or raise\n' +
+                '       max_user_connections (e.g. ALTER USER ... WITH MAX_USER_CONNECTIONS 20).\n'
             );
         }
     });

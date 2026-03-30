@@ -5,6 +5,6 @@ const { authenticate } = require('../middleware/auth');
 
 router.get('/pending', PrintController.getPendingJobs);
 router.patch('/:id/status', PrintController.updateStatus);
-router.post('/manual', PrintController.createManualPrintJob);
+router.post('/manual', authenticate, PrintController.createManualPrintJob);
 
 module.exports = router;
