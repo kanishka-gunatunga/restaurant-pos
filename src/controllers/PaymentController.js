@@ -31,6 +31,9 @@ const {
     attachDerivedPaymentFieldsToOrderJson,
     normalizePaymentRole,
     getTolerance,
+    computeOutstandingCents,
+    getOutstandingToleranceCents,
+    sumNetCollected,
 } = require('../utils/orderPaymentState');
 
 /** Single payment row shape for clients (status + paymentStatus + snake_case mirrors). */
@@ -189,9 +192,17 @@ exports.createPayment = async (req, res) => {
                 const existing = await Payment.findAll({ where: { orderId }, transaction: t });
                 if (wouldDoubleCoverOrder(order.totalAmount, existing, amountNum)) {
                     await t.rollback();
+                    const orderTotalAmt = roundMoney(parseFloat(order.totalAmount) || 0);
+                    const netBefore = sumNetCollected(existing);
                     return res.status(409).json({
                         message:
-                            'This payment would over-cover the order (possible duplicate charge). POST the same amount as an open pending line to settle it, or verify balanceDue on the order.',
+                            'This payment would over-cover the order (possible duplicate charge). Use order.totalAmount from the API for the charge amount, or POST the same amount as an open pending line to settle it.',
+                        orderTotalAmount: orderTotalAmt,
+                        order_total_amount: orderTotalAmt,
+                        paymentAmount: amountNum,
+                        payment_amount: amountNum,
+                        netCollectedBeforeThisPayment: netBefore,
+                        net_collected_before_this_payment: netBefore,
                     });
                 }
                 paymentRecord = await Payment.create(
@@ -210,6 +221,31 @@ exports.createPayment = async (req, res) => {
 
             await syncBalanceDuePayment(orderId, t);
             await persistOrderPaymentAggregate(orderId, t);
+
+            const logUnderpay =
+                process.env.NODE_ENV !== 'production' ||
+                ['1', 'true', 'yes'].includes(String(process.env.LOG_PAY_UNDERPAY || '').toLowerCase());
+            if (logUnderpay) {
+                await order.reload({ attributes: ['id', 'totalAmount', 'status'], transaction: t });
+                const pays = await Payment.findAll({ where: { orderId }, transaction: t });
+                const fin = resolveOrderTotalForBalanceFromOrderLike(order);
+                const oc = computeOutstandingCents(fin, pays);
+                const tolC = getOutstandingToleranceCents(fin);
+                if (oc > tolC) {
+                    console.warn('[payments] Paid capture but order still owes (check amount vs order.totalAmount / tax)', {
+                        orderId,
+                        orderTotal: fin,
+                        rawOutstandingCents: oc,
+                        toleranceCents: tolC,
+                        paymentRows: pays.map((p) => ({
+                            id: p.id,
+                            amount: p.amount,
+                            status: p.status,
+                            role: p.paymentRole,
+                        })),
+                    });
+                }
+            }
 
             if (paymentMethod === 'cash') {
                 const session = await Session.findOne({
@@ -608,17 +644,17 @@ exports.searchPaymentDetails = async (req, res) => {
 
         const where = query
             ? {
-                  [Op.and]: [
-                      branchWhere,
-                      {
-                          [Op.or]: [
-                              { id: { [Op.like]: `%${query}%` } },
-                              { '$customer.name$': { [Op.like]: `%${query}%` } },
-                              { '$customer.mobile$': { [Op.like]: `%${query}%` } },
-                          ],
-                      },
-                  ],
-              }
+                [Op.and]: [
+                    branchWhere,
+                    {
+                        [Op.or]: [
+                            { id: { [Op.like]: `%${query}%` } },
+                            { '$customer.name$': { [Op.like]: `%${query}%` } },
+                            { '$customer.mobile$': { [Op.like]: `%${query}%` } },
+                        ],
+                    },
+                ],
+            }
             : branchWhere;
 
         const orders = await Order.findAll({
