@@ -291,46 +291,46 @@ exports.createPayment = async (req, res) => {
         });
 
         // Queue Receipt Print Job after successful payment
-        // try {
-        //     if (status === 'paid' || !status) {
-        //         const fullOrder = await Order.findByPk(orderId, {
-        //             include: [
-        //                 { model: Customer, as: 'customer' },
-        //                 { model: User, as: 'user', attributes: ['name', 'username'] },
-        //                 {
-        //                     model: OrderItem,
-        //                     as: 'items',
-        //                     include: [
-        //                         { model: Product, as: 'product' },
-        //                         { model: Variation, as: 'variation' },
-        //                         {
-        //                             model: OrderItemModification,
-        //                             as: 'modifications',
-        //                             include: [{ model: ModificationItem, as: 'modification' }]
-        //                         }
-        //                     ]
-        //                 }
-        //             ]
-        //         });
+        try {
+            if (status === 'paid' || !status) {
+                const fullOrder = await Order.findByPk(orderId, {
+                    include: [
+                        { model: Customer, as: 'customer' },
+                        { model: User, as: 'user', attributes: ['name', 'username'] },
+                        {
+                            model: OrderItem,
+                            as: 'items',
+                            include: [
+                                { model: Product, as: 'product' },
+                                { model: Variation, as: 'variation' },
+                                {
+                                    model: OrderItemModification,
+                                    as: 'modifications',
+                                    include: [{ model: ModificationItem, as: 'modification' }]
+                                }
+                            ]
+                        }
+                    ]
+                });
 
-        //         const userDetail = await UserDetail.findOne({ where: { userId: req.user.id } });
-        //         const branchId = userDetail?.branchId || 1;
-        //         const branch = await Branch.findByPk(branchId);
-        //         const content = templateService.generateReceiptHtml(fullOrder, payment, branch);
+                const userDetail = await UserDetail.findOne({ where: { userId: req.user.id } });
+                const branchId = userDetail?.branchId || 1;
+                const branch = await Branch.findByPk(branchId);
+                const content = templateService.generateReceiptHtml(fullOrder, payment, branch);
 
-        //         await PrintJob.create({
-        //             order_id: fullOrder.id,
-        //             payment_id: payment.id,
-        //             printer_name: 'XP-80',
-        //             content,
-        //             type: 'receipt',
-        //             status: 'pending'
-        //         });
-        //     }
-        // } catch (printError) {
-        //     console.error('[PaymentController] Failed to queue print job for order', orderId, ':', printError);
-        //     // Don't fail the payment if printing fails
-        // }
+                await PrintJob.create({
+                    order_id: fullOrder.id,
+                    payment_id: payment.id,
+                    printer_name: 'XP-80',
+                    content,
+                    type: 'receipt',
+                    status: 'pending'
+                });
+            }
+        } catch (printError) {
+            console.error('[PaymentController] Failed to queue print job for order', orderId, ':', printError);
+            // Don't fail the payment if printing fails
+        }
 
         const userDetail = await UserDetail.findOne({ where: { userId: req.user.id } });
         await logActivity({
