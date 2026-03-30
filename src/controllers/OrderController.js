@@ -24,22 +24,7 @@ const pusher = new Pusher({
     useTLS: true,
 });
 
-const applyBranchFilter = async (req, whereClause) => {
-    if (req.user && req.user.role !== 'admin') {
-        const userDetail = await UserDetail.findOne({ where: { userId: req.user.id } });
-        if (userDetail) {
-            const usersInBranch = await UserDetail.findAll({
-                where: { branchId: userDetail.branchId },
-                attributes: ['userId']
-            });
-            whereClause.userId = { [Op.in]: usersInBranch.map(u => u.userId) };
-        } else {
-            whereClause.userId = req.user.id;
-        }
-    }
-    return whereClause;
-};
-
+const { resolveOrderBranchWhereClause, orderBelongsToRequesterBranch } = require('../utils/orderBranchScope');
 const { computeOrderTotalsFromLines, logTotalsMismatchIfAny, roundMoney } = require('../utils/orderTotals');
 const { auditLog } = require('../utils/auditLogger');
 const {
@@ -52,6 +37,18 @@ const {
 } = require('../utils/orderPaymentState');
 const { invalidManagerPasscode } = require('../utils/managerPasscodeResponse');
 const { enrichOrderJsonItemsForDetail } = require('../utils/orderItemDetailPayload');
+const {
+    parseOrderListPagination,
+    mergePlacedByMeFilter,
+    normalizePaymentStatusForSql,
+    findOrdersPage,
+} = require('../utils/orderListQuery');
+
+async function enrichOrderListItem(json) {
+    const out = attachDerivedPaymentFieldsToOrderJson({ ...json });
+    await enrichOrderJsonItemsForDetail(out);
+    return out;
+}
 
 const customerOrderInclude = {
     model: Customer,
@@ -113,38 +110,44 @@ function buildOrderItemModificationRows(orderItemId, modifications) {
 exports.searchOrders = async (req, res) => {
     try {
         const { q, orderId, customerName, phone } = req.query;
-        let where = {};
-        where = await applyBranchFilter(req, where);
+        const branchWhere = await resolveOrderBranchWhereClause(req);
 
+        let where;
         if (q) {
             where = {
-                [Op.or]: [
-                    { id: { [Op.like]: `%${q}%` } },
-                    { '$customer.name$': { [Op.like]: `%${q}%` } },
-                    { '$customer.mobile$': { [Op.like]: `%${q}%` } }
-                ]
+                [Op.and]: [
+                    branchWhere,
+                    {
+                        [Op.or]: [
+                            { id: { [Op.like]: `%${q}%` } },
+                            { '$customer.name$': { [Op.like]: `%${q}%` } },
+                            { '$customer.mobile$': { [Op.like]: `%${q}%` } },
+                        ],
+                    },
+                ],
             };
         } else {
-            if (orderId) where.id = { [Op.like]: `%${orderId}%` };
-            if (customerName) where['$customer.name$'] = { [Op.like]: `%${customerName}%` };
-            if (phone) where['$customer.mobile$'] = { [Op.like]: `%${phone}%` };
+            const extra = {};
+            if (orderId) extra.id = { [Op.like]: `%${orderId}%` };
+            if (customerName) extra['$customer.name$'] = { [Op.like]: `%${customerName}%` };
+            if (phone) extra['$customer.mobile$'] = { [Op.like]: `%${phone}%` };
+            where =
+                Object.keys(extra).length > 0 ? { [Op.and]: [branchWhere, extra] } : branchWhere;
         }
 
-        const orders = await Order.findAll({
-            where,
+        const { where: scopedWhere, placedByMe } = mergePlacedByMeFilter(req, where);
+        const { page, pageSize, offset } = parseOrderListPagination(req);
+        const result = await findOrdersPage({
+            where: scopedWhere,
             include: [customerOrderInclude, paymentsOrderInclude, orderItemsBasicInclude],
-            order: [['createdAt', 'DESC']]
+            order: [['createdAt', 'DESC']],
+            page,
+            pageSize,
+            offset,
+            processRow: enrichOrderListItem,
         });
 
-        const processedOrders = await Promise.all(
-            orders.map(async (order) => {
-                const json = attachDerivedPaymentFieldsToOrderJson(order.toJSON());
-                await enrichOrderJsonItemsForDetail(json);
-                return json;
-            })
-        );
-
-        res.json(processedOrders);
+        res.json({ data: result.data, meta: { ...result.meta, placedByMe } });
     } catch (error) {
         res.status(500).json({ message: error.message });
     }
@@ -154,31 +157,30 @@ exports.filterOrdersByStatus = async (req, res) => {
     try {
         const { status, paymentStatus } = req.query;
 
-        let where = {};
-        where = await applyBranchFilter(req, where);
-        if (status) {
-            where.status = status;
+        const branchWhere = await resolveOrderBranchWhereClause(req);
+        let where =
+            status != null && String(status).trim() !== ''
+                ? { [Op.and]: [branchWhere, { status }] }
+                : branchWhere;
+
+        const psSql = normalizePaymentStatusForSql(paymentStatus);
+        if (psSql) {
+            where = { [Op.and]: [where, { paymentStatus: psSql }] };
         }
 
-        const orders = await Order.findAll({
-            where,
+        const { where: scopedWhere, placedByMe } = mergePlacedByMeFilter(req, where);
+        const { page, pageSize, offset } = parseOrderListPagination(req);
+        const result = await findOrdersPage({
+            where: scopedWhere,
             include: [customerOrderInclude, paymentsOrderInclude, orderItemsBasicInclude],
-            order: [['createdAt', 'DESC']]
+            order: [['createdAt', 'DESC']],
+            page,
+            pageSize,
+            offset,
+            processRow: enrichOrderListItem,
         });
 
-        let processedOrders = await Promise.all(
-            orders.map(async (order) => {
-                const json = attachDerivedPaymentFieldsToOrderJson(order.toJSON());
-                await enrichOrderJsonItemsForDetail(json);
-                return json;
-            })
-        );
-
-        if (paymentStatus) {
-            processedOrders = processedOrders.filter(order => order.paymentStatus === paymentStatus);
-        }
-
-        res.json(processedOrders);
+        res.json({ data: result.data, meta: { ...result.meta, placedByMe } });
     } catch (error) {
         res.status(500).json({ message: error.message });
     }
@@ -188,31 +190,30 @@ exports.getOrdersExcludeStatus = async (req, res) => {
     try {
         const { status, paymentStatus } = req.query;
 
-        let where = {};
-        where = await applyBranchFilter(req, where);
-        if (status) {
-            where.status = { [Op.ne]: status };
+        const branchWhere = await resolveOrderBranchWhereClause(req);
+        let where =
+            status != null && String(status).trim() !== ''
+                ? { [Op.and]: [branchWhere, { status: { [Op.ne]: status } }] }
+                : branchWhere;
+
+        const psSql = normalizePaymentStatusForSql(paymentStatus);
+        if (psSql) {
+            where = { [Op.and]: [where, { paymentStatus: psSql }] };
         }
 
-        const orders = await Order.findAll({
-            where,
+        const { where: scopedWhere, placedByMe } = mergePlacedByMeFilter(req, where);
+        const { page, pageSize, offset } = parseOrderListPagination(req);
+        const result = await findOrdersPage({
+            where: scopedWhere,
             include: [customerOrderInclude, paymentsOrderInclude, orderItemsFullInclude],
-            order: [['createdAt', 'DESC']]
+            order: [['createdAt', 'DESC']],
+            page,
+            pageSize,
+            offset,
+            processRow: enrichOrderListItem,
         });
 
-        let processedOrders = await Promise.all(
-            orders.map(async (order) => {
-                const json = attachDerivedPaymentFieldsToOrderJson(order.toJSON());
-                await enrichOrderJsonItemsForDetail(json);
-                return json;
-            })
-        );
-
-        if (paymentStatus) {
-            processedOrders = processedOrders.filter(order => order.paymentStatus === paymentStatus);
-        }
-
-        res.json(processedOrders);
+        res.json({ data: result.data, meta: { ...result.meta, placedByMe } });
     } catch (error) {
         res.status(500).json({ message: error.message });
     }
@@ -237,24 +238,20 @@ const verifyManagerPasscode = async (passcode) => {
 
 exports.getAllOrders = async (req, res) => {
     try {
-        let where = {};
-        where = await applyBranchFilter(req, where);
-
-        const orders = await Order.findAll({
-            where,
+        const branchWhere = await resolveOrderBranchWhereClause(req);
+        const { where: scopedWhere, placedByMe } = mergePlacedByMeFilter(req, branchWhere);
+        const { page, pageSize, offset } = parseOrderListPagination(req);
+        const result = await findOrdersPage({
+            where: scopedWhere,
             include: [customerOrderInclude, paymentsOrderInclude, orderItemsFullInclude],
             order: [['createdAt', 'DESC']],
+            page,
+            pageSize,
+            offset,
+            processRow: enrichOrderListItem,
         });
 
-        const processedOrders = await Promise.all(
-            orders.map(async (order) => {
-                const json = attachDerivedPaymentFieldsToOrderJson(order.toJSON());
-                await enrichOrderJsonItemsForDetail(json);
-                return json;
-            })
-        );
-
-        res.json(processedOrders);
+        res.json({ data: result.data, meta: { ...result.meta, placedByMe } });
     } catch (error) {
         res.status(500).json({ message: error.message });
     }
@@ -267,6 +264,9 @@ exports.getOrderById = async (req, res) => {
             include: [customerOrderInclude, paymentsOrderInclude, orderItemsFullInclude],
         });
         if (!order) {
+            return res.status(404).json({ message: 'Order not found' });
+        }
+        if (!(await orderBelongsToRequesterBranch(req, order))) {
             return res.status(404).json({ message: 'Order not found' });
         }
 
@@ -316,6 +316,8 @@ exports.createOrder = async (req, res) => {
             }
         }
 
+        const userDetail = await UserDetail.findOne({ where: { userId: req.user.id }, transaction: t });
+
         const preliminaryTotals = computeOrderTotalsFromLines(order_products || [], parsedOrderDiscount);
 
         const order = await Order.create({
@@ -333,7 +335,8 @@ exports.createOrder = async (req, res) => {
             zipcode,
             deliveryInstructions,
             status: 'pending',
-            userId: req.user?.id
+            userId: req.user?.id,
+            branchId: userDetail?.branchId ?? null,
         }, { transaction: t });
 
 
@@ -382,7 +385,6 @@ exports.createOrder = async (req, res) => {
             include: [customerOrderInclude, paymentsOrderInclude, orderItemsFullInclude],
         });
 
-        const userDetail = await UserDetail.findOne({ where: { userId: req.user.id } });
         await logActivity({
             userId: req.user.id,
             branchId: userDetail?.branchId || 1,
@@ -432,6 +434,9 @@ exports.updateOrderStatus = async (req, res) => {
             if (!order) {
                 return res.status(404).json({ message: 'Order not found' });
             }
+            if (!(await orderBelongsToRequesterBranch(req, order))) {
+                return res.status(404).json({ message: 'Order not found' });
+            }
 
             if (order.status === 'cancel') {
                 const payload = await loadOrderWithDerivedFields(id);
@@ -453,6 +458,10 @@ exports.updateOrderStatus = async (req, res) => {
                     lock: Transaction.LOCK.UPDATE,
                 });
                 if (!orderLocked) {
+                    await t.rollback();
+                    return res.status(404).json({ message: 'Order not found' });
+                }
+                if (!(await orderBelongsToRequesterBranch(req, orderLocked))) {
                     await t.rollback();
                     return res.status(404).json({ message: 'Order not found' });
                 }
@@ -558,6 +567,9 @@ exports.updateOrderStatus = async (req, res) => {
         if (!order) {
             return res.status(404).json({ message: 'Order not found' });
         }
+        if (!(await orderBelongsToRequesterBranch(req, order))) {
+            return res.status(404).json({ message: 'Order not found' });
+        }
 
         const updateData = { status };
         if (status === 'hold') {
@@ -613,6 +625,15 @@ exports.updateOrder = async (req, res) => {
             await t.rollback();
             return res.status(404).json({ message: 'Order not found' });
         }
+        if (!(await orderBelongsToRequesterBranch(req, order))) {
+            await t.rollback();
+            return res.status(404).json({ message: 'Order not found' });
+        }
+
+        const editorUserDetail = await UserDetail.findOne({
+            where: { userId: req.user.id },
+            transaction: t,
+        });
 
         if (order.status !== 'pending') {
             const isVerified = await verifyManagerPasscode(passcode);
@@ -677,24 +698,26 @@ exports.updateOrder = async (req, res) => {
         const finalTotals = computeOrderTotalsFromLines(savedItems, effectiveOrderDiscount);
         logTotalsMismatchIfAny(id, tax, totalAmount, finalTotals, 'updateOrder');
 
-        await order.update(
-            {
-                customerId,
-                orderType,
-                tableNumber,
-                orderDiscount: effectiveOrderDiscount,
-                tax: finalTotals.tax,
-                totalAmount: finalTotals.totalAmount,
-                orderNote,
-                kitchenNote,
-                orderTimer,
-                deliveryAddress,
-                landmark,
-                zipcode,
-                deliveryInstructions
-            },
-            { transaction: t }
-        );
+        const updatePayload = {
+            customerId,
+            orderType,
+            tableNumber,
+            orderDiscount: effectiveOrderDiscount,
+            tax: finalTotals.tax,
+            totalAmount: finalTotals.totalAmount,
+            orderNote,
+            kitchenNote,
+            orderTimer,
+            deliveryAddress,
+            landmark,
+            zipcode,
+            deliveryInstructions,
+        };
+
+        if (order.branchId == null && editorUserDetail?.branchId != null) {
+            updatePayload.branchId = editorUserDetail.branchId;
+        }
+        await order.update(updatePayload, { transaction: t });
         await order.reload({ transaction: t });
 
         await syncBalanceDuePayment(id, t);
@@ -750,6 +773,15 @@ exports.updateOrderItemStatus = async (req, res) => {
     try {
         const { itemId } = req.params;
         const { status } = req.body;
+
+        const itemForScope = await OrderItem.findByPk(itemId);
+        if (!itemForScope) {
+            return res.status(404).json({ message: 'Order item not found' });
+        }
+        const parentOrder = await Order.findByPk(itemForScope.orderId);
+        if (!parentOrder || !(await orderBelongsToRequesterBranch(req, parentOrder))) {
+            return res.status(404).json({ message: 'Order item not found' });
+        }
 
         const [updated] = await OrderItem.update({ status }, { where: { id: itemId } });
 

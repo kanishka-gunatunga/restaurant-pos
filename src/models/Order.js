@@ -71,6 +71,14 @@ const Order = sequelize.define('Order', {
         type: DataTypes.INTEGER,
         allowNull: true,
     },
+    branchId: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+        field: 'branch_id',
+        references: { model: 'branches', key: 'id' },
+        onDelete: 'SET NULL',
+        comment: 'Branch where the order was placed; used to scope lists without relying on userId alone',
+    },
     paymentStatus: {
         type: DataTypes.ENUM('pending', 'paid', 'partial_refund', 'refund'),
         defaultValue: 'pending',

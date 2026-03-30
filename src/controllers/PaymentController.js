@@ -18,6 +18,7 @@ const Variation = require('../models/Variation');
 const Branch = require('../models/Branch');
 const templateService = require('../services/templateService');
 const { roundMoney } = require('../utils/orderTotals');
+const { resolveOrderBranchWhereClause, orderBelongsToRequesterBranch } = require('../utils/orderBranchScope');
 const {
     trySettleExistingPendingPayment,
     wouldDoubleCoverOrder,
@@ -129,23 +130,6 @@ async function jsonPaymentWithOrderSummary(orderId, paymentRecord, res, statusCo
     });
 }
 
-const applyBranchFilter = async (req, whereClause) => {
-    if (req.user && req.user.role !== 'admin') {
-        const userDetail = await UserDetail.findOne({ where: { userId: req.user.id } });
-        if (userDetail) {
-            const usersInBranch = await UserDetail.findAll({
-                where: { branchId: userDetail.branchId },
-                attributes: ['userId']
-            });
-            whereClause.userId = { [Op.in]: usersInBranch.map(u => u.userId) };
-        } else {
-            whereClause.userId = req.user.id;
-        }
-    }
-    return whereClause;
-};
-
-
 exports.createPayment = async (req, res) => {
     const t = await sequelize.transaction();
     try {
@@ -172,6 +156,10 @@ exports.createPayment = async (req, res) => {
             lock: Transaction.LOCK.UPDATE,
         });
         if (!order) {
+            await t.rollback();
+            return res.status(404).json({ message: 'Order not found' });
+        }
+        if (!(await orderBelongsToRequesterBranch(req, order))) {
             await t.rollback();
             return res.status(404).json({ message: 'Order not found' });
         }
@@ -374,6 +362,12 @@ exports.updatePaymentStatus = async (req, res) => {
             return res.status(404).json({ message: 'Payment not found' });
         }
 
+        const orderForScope = await Order.findByPk(payment.orderId, { transaction: t });
+        if (!orderForScope || !(await orderBelongsToRequesterBranch(req, orderForScope))) {
+            await t.rollback();
+            return res.status(404).json({ message: 'Payment not found' });
+        }
+
         const isRefund = isRefundBodyFlag(is_refund);
         let finalStatus = payment.status;
         let actualRefundAmount = 0;
@@ -539,8 +533,8 @@ exports.getPaymentsByOrder = async (req, res) => {
             return res.status(400).json({ message: 'Invalid order id' });
         }
 
-        let whereOrder = { id: oid };
-        whereOrder = await applyBranchFilter(req, whereOrder);
+        const branchWhere = await resolveOrderBranchWhereClause(req);
+        const whereOrder = { [Op.and]: [branchWhere, { id: oid }] };
         const order = await Order.findOne({ where: whereOrder });
         if (!order) {
             return res.status(404).json({ message: 'Order not found' });
@@ -563,8 +557,7 @@ exports.getPaymentsByOrder = async (req, res) => {
 
 exports.getAllPaymentDetails = async (req, res) => {
     try {
-        let where = {};
-        where = await applyBranchFilter(req, where);
+        const where = await resolveOrderBranchWhereClause(req);
 
         const orders = await Order.findAll({
             where,
@@ -611,18 +604,22 @@ exports.getAllPaymentDetails = async (req, res) => {
 exports.searchPaymentDetails = async (req, res) => {
     try {
         const { query } = req.query;
-        let where = {};
-        where = await applyBranchFilter(req, where);
+        const branchWhere = await resolveOrderBranchWhereClause(req);
 
-        if (query) {
-            where = {
-                [Op.or]: [
-                    { id: { [Op.like]: `%${query}%` } },
-                    { '$customer.name$': { [Op.like]: `%${query}%` } },
-                    { '$customer.mobile$': { [Op.like]: `%${query}%` } }
-                ]
-            };
-        }
+        const where = query
+            ? {
+                  [Op.and]: [
+                      branchWhere,
+                      {
+                          [Op.or]: [
+                              { id: { [Op.like]: `%${query}%` } },
+                              { '$customer.name$': { [Op.like]: `%${query}%` } },
+                              { '$customer.mobile$': { [Op.like]: `%${query}%` } },
+                          ],
+                      },
+                  ],
+              }
+            : branchWhere;
 
         const orders = await Order.findAll({
             where,
@@ -671,8 +668,7 @@ exports.filterPaymentsByStatus = async (req, res) => {
     try {
         const { status } = req.query;
 
-        let where = {};
-        where = await applyBranchFilter(req, where);
+        const where = await resolveOrderBranchWhereClause(req);
 
         const orders = await Order.findAll({
             where,
@@ -726,9 +722,22 @@ exports.filterPaymentsByStatus = async (req, res) => {
 
 exports.getPaymentStats = async (req, res) => {
     try {
-        let where = {};
-        where = await applyBranchFilter(req, where);
-        const payments = await Payment.findAll({ where });
+        const branchWhere = await resolveOrderBranchWhereClause(req);
+        const orderRows = await Order.findAll({
+            where: branchWhere,
+            attributes: ['id'],
+            raw: true,
+        });
+        const orderIds = orderRows.map((o) => o.id);
+        if (orderIds.length === 0) {
+            return res.json({
+                totalCollectedAmount: 0,
+                pendingPaymentAmount: 0,
+                totalRefundAmount: 0,
+                refundRate: '0%',
+            });
+        }
+        const payments = await Payment.findAll({ where: { orderId: { [Op.in]: orderIds } } });
 
         let totalCollectedAmount = 0;
         let pendingPaymentAmount = 0;
