@@ -8,6 +8,7 @@ const OrderItem = require('../models/OrderItem');
 const OrderItemModification = require('../models/OrderItemModification');
 const ModificationItem = require('../models/ModificationItem');
 const Branch = require('../models/Branch');
+const { orderBelongsToRequesterBranch } = require('../utils/orderBranchScope');
 
 exports.getPendingJobs = async (req, res) => {
     try {
@@ -64,6 +65,9 @@ exports.createManualPrintJob = async (req, res) => {
         });
 
         if (!order) return res.status(404).json({ message: 'Order not found' });
+        if (!(await orderBelongsToRequesterBranch(req, order))) {
+            return res.status(404).json({ message: 'Order not found' });
+        }
         const payment = paymentId ? await Payment.findByPk(paymentId) : null;
 
         const UserDetail = require('../models/UserDetail');
