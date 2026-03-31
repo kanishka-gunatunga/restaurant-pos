@@ -22,6 +22,8 @@ const { resolveOrderBranchWhereClause, orderBelongsToRequesterBranch } = require
 const {
     trySettleExistingPendingPayment,
     wouldDoubleCoverOrder,
+    reconcileOrderTotalAgainstLineItems,
+    removeStaleBalanceDueRowsIfFullyPaid,
     syncBalanceDuePayment,
     persistOrderPaymentAggregate,
     deriveAggregatePaymentStatus,
@@ -29,19 +31,25 @@ const {
     PAYMENT_LIST_ATTRIBUTES,
     orderItemsForBalanceInclude,
     attachDerivedPaymentFieldsToOrderJson,
+    normalizeStoredPaymentStatus,
     normalizePaymentRole,
     getTolerance,
+    computeOutstandingCents,
+    getOutstandingToleranceCents,
+    sumNetCollected,
 } = require('../utils/orderPaymentState');
 
-/** Single payment row shape for clients (status + paymentStatus + snake_case mirrors). */
+/**
+ * Single payment row for clients. Line settlement is `status` / `linePaymentStatus`.
+ */
 function formatPaymentRowForClient(p) {
     const row = typeof p.toJSON === 'function' ? p.toJSON() : { ...p };
     const status = row.status;
     const role = row.paymentRole ?? row.payment_role;
     return {
         ...row,
-        paymentStatus: status,
-        payment_status: status,
+        linePaymentStatus: status,
+        line_payment_status: status,
         paymentRole: role,
         payment_role: role,
         orderId: row.orderId ?? row.order_id,
@@ -112,6 +120,7 @@ async function queueReceiptPrintJob(orderId, paymentRecord, requestedStatus, use
 /**
  * Same derivation as GET /orders (attachDerived). Includes DB column before derive for debugging drift.
  * Call only after the transaction that updated payments + persistOrderPaymentAggregate has committed.
+ * (attachDerived keeps orders.paymentStatus from DB on read.)
  */
 function buildOrderPaymentSnapshot(orderWithPayments) {
     if (!orderWithPayments) {
@@ -121,6 +130,8 @@ function buildOrderPaymentSnapshot(orderWithPayments) {
             order_total_amount: null,
             orderPaymentStatus: null,
             order_payment_status: null,
+            paymentStatus: null,
+            payment_status: null,
             balanceDue: null,
             balance_due: null,
             requiresAdditionalPayment: null,
@@ -144,6 +155,8 @@ function buildOrderPaymentSnapshot(orderWithPayments) {
         order_total_amount: plain.totalAmount != null ? Number(plain.totalAmount) : null,
         orderPaymentStatus: plain.paymentStatus,
         order_payment_status: plain.paymentStatus,
+        paymentStatus: plain.paymentStatus,
+        payment_status: plain.paymentStatus,
         balanceDue: plain.balanceDue,
         balance_due: plain.balanceDue,
         requiresAdditionalPayment: plain.requiresAdditionalPayment,
@@ -198,6 +211,7 @@ exports.createPayment = async (req, res) => {
         const order = await Order.findByPk(orderId, {
             transaction: t,
             lock: Transaction.LOCK.UPDATE,
+            include: [orderItemsForBalanceInclude],
         });
         if (!order) {
             await t.rollback();
@@ -211,7 +225,14 @@ exports.createPayment = async (req, res) => {
         const effectiveStatus = status || 'pending';
 
         if (effectiveStatus === 'paid') {
-            const settled = await trySettleExistingPendingPayment({
+            await reconcileOrderTotalAgainstLineItems(order, t);
+            await syncBalanceDuePayment(orderId, t);
+            await order.reload({
+                transaction: t,
+                include: [orderItemsForBalanceInclude],
+            });
+
+            let settled = await trySettleExistingPendingPayment({
                 orderId,
                 paymentMethod,
                 amount: amountNum,
@@ -219,6 +240,30 @@ exports.createPayment = async (req, res) => {
                 userId: req.user?.id,
                 transaction: t,
             });
+
+            if (!settled.settled) {
+                await order.reload({
+                    transaction: t,
+                    include: [orderItemsForBalanceInclude],
+                });
+                await reconcileOrderTotalAgainstLineItems(order, t);
+                const clearedStaleBd = await removeStaleBalanceDueRowsIfFullyPaid(orderId, order, t);
+                if (clearedStaleBd) {
+                    await syncBalanceDuePayment(orderId, t);
+                    await order.reload({
+                        transaction: t,
+                        include: [orderItemsForBalanceInclude],
+                    });
+                    settled = await trySettleExistingPendingPayment({
+                        orderId,
+                        paymentMethod,
+                        amount: amountNum,
+                        transactionId,
+                        userId: req.user?.id,
+                        transaction: t,
+                    });
+                }
+            }
 
             let paymentRecord = settled.settled ? settled.payment : null;
 
@@ -233,9 +278,17 @@ exports.createPayment = async (req, res) => {
                 const existing = await Payment.findAll({ where: { orderId }, transaction: t });
                 if (wouldDoubleCoverOrder(order.totalAmount, existing, amountNum)) {
                     await t.rollback();
+                    const orderTotalAmt = roundMoney(parseFloat(order.totalAmount) || 0);
+                    const netBefore = sumNetCollected(existing);
                     return res.status(409).json({
                         message:
-                            'This payment would over-cover the order (possible duplicate charge). POST the same amount as an open pending line to settle it, or verify balanceDue on the order.',
+                            'This payment would over-cover the order (possible duplicate charge). Use order.totalAmount from the API for the charge amount, or POST the same amount as an open pending line to settle it.',
+                        orderTotalAmount: orderTotalAmt,
+                        order_total_amount: orderTotalAmt,
+                        paymentAmount: amountNum,
+                        payment_amount: amountNum,
+                        netCollectedBeforeThisPayment: netBefore,
+                        net_collected_before_this_payment: netBefore,
                     });
                 }
                 paymentRecord = await Payment.create(
@@ -254,6 +307,31 @@ exports.createPayment = async (req, res) => {
 
             await syncBalanceDuePayment(orderId, t);
             await persistOrderPaymentAggregate(orderId, t);
+
+            const logUnderpay =
+                process.env.NODE_ENV !== 'production' ||
+                ['1', 'true', 'yes'].includes(String(process.env.LOG_PAY_UNDERPAY || '').toLowerCase());
+            if (logUnderpay) {
+                await order.reload({ attributes: ['id', 'totalAmount', 'status'], transaction: t });
+                const pays = await Payment.findAll({ where: { orderId }, transaction: t });
+                const fin = resolveOrderTotalForBalanceFromOrderLike(order);
+                const oc = computeOutstandingCents(fin, pays);
+                const tolC = getOutstandingToleranceCents(fin);
+                if (oc > tolC) {
+                    console.warn('[payments] Paid capture but order still owes (check amount vs order.totalAmount / tax)', {
+                        orderId,
+                        orderTotal: fin,
+                        rawOutstandingCents: oc,
+                        toleranceCents: tolC,
+                        paymentRows: pays.map((p) => ({
+                            id: p.id,
+                            amount: p.amount,
+                            status: p.status,
+                            role: p.paymentRole,
+                        })),
+                    });
+                }
+            }
 
             if (paymentMethod === 'cash') {
                 const session = await Session.findOne({
@@ -552,10 +630,26 @@ exports.getPaymentsByOrder = async (req, res) => {
         });
 
         const rows = payments.map((p) => formatPaymentRowForClient(p));
-        if (req.query.wrap === '1' || req.query.wrap === 'true') {
-            return res.json({ data: rows });
+        const legacy = ['1', 'true', 'yes'].includes(String(req.query.legacy ?? '').toLowerCase());
+        if (legacy) {
+            if (req.query.wrap === '1' || req.query.wrap === 'true') {
+                return res.json({ data: rows });
+            }
+            return res.json(rows);
         }
-        res.json(rows);
+
+        const envelope = {
+            orderId: oid,
+            orderPaymentStatus: order.paymentStatus,
+            order_payment_status: order.paymentStatus,
+            paymentStatus: order.paymentStatus,
+            payment_status: order.paymentStatus,
+            payments: rows,
+        };
+        if (req.query.wrap === '1' || req.query.wrap === 'true') {
+            return res.json({ data: envelope });
+        }
+        return res.json(envelope);
     } catch (error) {
         res.status(500).json({ message: error.message });
     }
@@ -596,7 +690,9 @@ exports.getAllPaymentDetails = async (req, res) => {
                 customerMobile: order.customer ? order.customer.mobile : '-',
                 dateTime: order.createdAt,
                 method: primary ? primary.paymentMethod : null,
-                paymentStatus: deriveAggregatePaymentStatus(totalForAgg, payments),
+                paymentStatus:
+                    normalizeStoredPaymentStatus(order.paymentStatus) ??
+                    deriveAggregatePaymentStatus(totalForAgg, payments),
                 amount: order.totalAmount,
                 refundedAmount: refundedSum,
             };
@@ -614,17 +710,17 @@ exports.searchPaymentDetails = async (req, res) => {
 
         const where = query
             ? {
-                  [Op.and]: [
-                      branchWhere,
-                      {
-                          [Op.or]: [
-                              { id: { [Op.like]: `%${query}%` } },
-                              { '$customer.name$': { [Op.like]: `%${query}%` } },
-                              { '$customer.mobile$': { [Op.like]: `%${query}%` } },
-                          ],
-                      },
-                  ],
-              }
+                [Op.and]: [
+                    branchWhere,
+                    {
+                        [Op.or]: [
+                            { id: { [Op.like]: `%${query}%` } },
+                            { '$customer.name$': { [Op.like]: `%${query}%` } },
+                            { '$customer.mobile$': { [Op.like]: `%${query}%` } },
+                        ],
+                    },
+                ],
+            }
             : branchWhere;
 
         const orders = await Order.findAll({
@@ -658,7 +754,9 @@ exports.searchPaymentDetails = async (req, res) => {
                 customerMobile: order.customer ? order.customer.mobile : '-',
                 dateTime: order.createdAt,
                 method: primary ? primary.paymentMethod : null,
-                paymentStatus: deriveAggregatePaymentStatus(totalForAgg, payments),
+                paymentStatus:
+                    normalizeStoredPaymentStatus(order.paymentStatus) ??
+                    deriveAggregatePaymentStatus(totalForAgg, payments),
                 amount: order.totalAmount,
                 refundedAmount: refundedSum,
             };
@@ -707,7 +805,9 @@ exports.filterPaymentsByStatus = async (req, res) => {
                 customerMobile: order.customer ? order.customer.mobile : '-',
                 dateTime: order.createdAt,
                 method: primary ? primary.paymentMethod : null,
-                paymentStatus: deriveAggregatePaymentStatus(totalForAgg, payments),
+                paymentStatus:
+                    normalizeStoredPaymentStatus(order.paymentStatus) ??
+                    deriveAggregatePaymentStatus(totalForAgg, payments),
                 amount: order.totalAmount,
                 refundedAmount: refundedSum,
             };
@@ -716,7 +816,10 @@ exports.filterPaymentsByStatus = async (req, res) => {
         let filteredResult = result;
         if (status) {
             filteredResult = result.filter(
-                (item) => item.paymentStatus.toLowerCase() === status.toLowerCase()
+                (item) =>
+                    String(item.paymentStatus || '')
+                        .toLowerCase()
+                        .trim() === String(status).toLowerCase().trim()
             );
         }
 
