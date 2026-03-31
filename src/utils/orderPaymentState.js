@@ -124,6 +124,32 @@ function resolveOrderTotalForBalanceFromOrderLike(orderLike) {
     return roundMoney(parseFloat(orderLike.totalAmount) || 0);
 }
 
+async function reconcileOrderTotalAgainstLineItems(order, transaction) {
+    if (!order || order.status === 'cancel') return;
+    const disc = Math.max(0, parseFloat(order.orderDiscount) || 0);
+    if (!order.items?.length) return;
+    const computed = computeOrderTotalsFromLines(order.items, disc);
+    const lineBased = roundMoney(computed.totalAmount);
+    const stored = roundMoney(parseFloat(order.totalAmount) || 0);
+    const tolHeal = getTolerance();
+    if (lineBased + tolHeal < stored || lineBased > stored + tolHeal) {
+        await order.update(
+            { totalAmount: computed.totalAmount, tax: computed.tax },
+            { transaction }
+        );
+        order.setDataValue('totalAmount', computed.totalAmount);
+        order.setDataValue('tax', computed.tax);
+    }
+}
+
+const ORDER_PAYMENT_STATUS_ENUM = new Set(['pending', 'paid', 'partial_refund', 'refund']);
+
+function normalizeStoredPaymentStatus(value) {
+    if (value == null || value === '') return null;
+    const s = String(value).trim().toLowerCase();
+    return ORDER_PAYMENT_STATUS_ENUM.has(s) ? s : null;
+}
+
 function deriveCancelledAggregatePaymentStatus(payments) {
     const list = toPlainPayments(payments);
     const tol = getTolerance();
@@ -160,7 +186,11 @@ function deriveAggregatePaymentStatus(orderTotal, payments) {
 
     const fullRefundOnly = list.every((p) => p.status === 'refund');
     if (fullRefundOnly && net <= tol) {
-        return 'refund';
+        const invoiceEffectivelyZero = roundMoney(parseFloat(orderTotal) || 0) <= getTolerance();
+        if (invoiceEffectivelyZero) {
+            return 'refund';
+        }
+        return 'partial_refund';
     }
 
     const outstandingC = computeOutstandingCents(total, list);
@@ -180,18 +210,20 @@ function deriveAggregatePaymentStatus(orderTotal, payments) {
         return 'partial_refund';
     }
 
-    const salePaidOrPartial = list.filter(
+    const saleTenders = list.filter(
         (p) =>
             (p.status === 'paid' || p.status === 'partial_refund') &&
             normalizePaymentRoleFromPlain(p) !== 'balance_due'
     );
-    const saleTenderCount = salePaidOrPartial.length;
-    const hasPartialRefundAudit = salePaidOrPartial.some(
+    const hasRefundRecordedOnSale = saleTenders.some(
         (p) =>
             p.status === 'partial_refund' ||
             (p.status === 'paid' && parseRefundedOnPayment(p) > tol)
     );
-    if (hasPartialRefundAudit && saleTenderCount === 1) {
+    const hasCleanSettlingPaidSale = saleTenders.some(
+        (p) => p.status === 'paid' && parseRefundedOnPayment(p) <= tol
+    );
+    if (hasRefundRecordedOnSale && !hasCleanSettlingPaidSale) {
         return 'partial_refund';
     }
 
@@ -201,11 +233,19 @@ function deriveAggregatePaymentStatus(orderTotal, payments) {
 function attachDerivedPaymentFieldsToOrderJson(orderData) {
     if (!orderData || typeof orderData !== 'object') return orderData;
     const payments = orderData.payments || [];
-    const tol = getTolerance();
+    const storedFromRow = normalizeStoredPaymentStatus(
+        orderData.paymentStatus ?? orderData.payment_status
+    );
     if (orderData.status === 'cancel') {
         orderData.balanceDue = 0;
         orderData.balance_due = 0;
-        orderData.paymentStatus = deriveCancelledAggregatePaymentStatus(payments);
+        if (storedFromRow != null) {
+            orderData.paymentStatus = storedFromRow;
+            orderData.payment_status = storedFromRow;
+        } else {
+            orderData.paymentStatus = deriveCancelledAggregatePaymentStatus(payments);
+            orderData.payment_status = orderData.paymentStatus;
+        }
         orderData.requiresAdditionalPayment = false;
         orderData.requires_additional_payment = false;
         return orderData;
@@ -216,7 +256,16 @@ function attachDerivedPaymentFieldsToOrderJson(orderData) {
     const rawOC = computeOutstandingCents(totalForBalance, payments);
     orderData.balanceDue = balanceDue;
     orderData.balance_due = balanceDue;
-    orderData.paymentStatus = deriveAggregatePaymentStatus(totalForBalance, payments);
+    // orders.paymentStatus is the only source of truth on read. Derivation runs only on write
+    // (persistOrderPaymentAggregate) and for legacy rows with no valid stored value.
+    if (storedFromRow != null) {
+        orderData.paymentStatus = storedFromRow;
+        orderData.payment_status = storedFromRow;
+    } else {
+        const derivedStatus = deriveAggregatePaymentStatus(totalForBalance, payments);
+        orderData.paymentStatus = derivedStatus;
+        orderData.payment_status = derivedStatus;
+    }
     orderData.requiresAdditionalPayment = rawOC > tolC;
     orderData.requires_additional_payment = orderData.requiresAdditionalPayment;
     return orderData;
@@ -256,21 +305,7 @@ async function syncBalanceDuePayment(orderId, transaction) {
         return;
     }
 
-    const disc = Math.max(0, parseFloat(order.orderDiscount) || 0);
-    if (order.items?.length) {
-        const computed = computeOrderTotalsFromLines(order.items, disc);
-        const lineBased = roundMoney(computed.totalAmount);
-        const stored = roundMoney(parseFloat(order.totalAmount) || 0);
-        const tolHeal = getTolerance();
-        if (lineBased + tolHeal < stored) {
-            await order.update(
-                { totalAmount: computed.totalAmount, tax: computed.tax },
-                { transaction }
-            );
-            order.setDataValue('totalAmount', computed.totalAmount);
-            order.setDataValue('tax', computed.tax);
-        }
-    }
+    await reconcileOrderTotalAgainstLineItems(order, transaction);
 
     const payments = await Payment.findAll({ where: { orderId }, transaction });
     const financialTotal = resolveOrderTotalForBalanceFromOrderLike(order);
@@ -313,15 +348,33 @@ async function syncBalanceDuePayment(orderId, transaction) {
     await keep.update({ amount: targetAmount }, { transaction });
 }
 
-function logIgnoredClientPaymentStatus(orderId, clientVal, derived) {
+function logIgnoredClientPaymentStatus(orderId, clientVal, appliedStatus) {
     if (clientVal === undefined || clientVal === null || clientVal === '') return;
     const c = String(clientVal).toLowerCase();
-    const d = String(derived).toLowerCase();
+    const d = String(appliedStatus).toLowerCase();
     if (c !== d) {
         console.warn(
-            `[orderPaymentState] order ${orderId}: ignoring client paymentStatus "${clientVal}" (derived "${derived}")`
+            `[orderPaymentState] order ${orderId}: ignoring client paymentStatus "${clientVal}" (server used "${appliedStatus}")`
         );
     }
+}
+
+async function removeStaleBalanceDueRowsIfFullyPaid(orderId, order, transaction) {
+    const payments = await Payment.findAll({ where: { orderId }, transaction });
+    const fin = resolveOrderTotalForBalanceFromOrderLike(order);
+    const outC = computeOutstandingCents(fin, payments);
+    const tightTolC = Math.max(2, Math.ceil(getTolerance() * 100));
+    const hasBd = payments.some(
+        (p) => p.status === 'pending' && normalizePaymentRoleFromPlain(p) === 'balance_due'
+    );
+    if (!hasBd || outC > tightTolC) {
+        return false;
+    }
+    await Payment.destroy({
+        where: { orderId, status: 'pending', paymentRole: 'balance_due' },
+        transaction,
+    });
+    return true;
 }
 
 async function trySettleExistingPendingPayment({
@@ -332,8 +385,13 @@ async function trySettleExistingPendingPayment({
     userId,
     transaction,
 }) {
-    const order = await Order.findByPk(orderId, { transaction });
+    const order = await Order.findByPk(orderId, {
+        transaction,
+        attributes: ['id', 'totalAmount', 'orderDiscount', 'status'],
+        include: [orderItemsForBalanceInclude],
+    });
     if (!order) return { settled: false };
+    await reconcileOrderTotalAgainstLineItems(order, transaction);
 
     const requested = roundMoney(parseFloat(amount) || 0);
     const centsTolerance = Math.max(2, Math.ceil(getTolerance() * 100));
@@ -381,16 +439,9 @@ async function trySettleExistingPendingPayment({
     }
 
     const bdOnly = sorted.filter((r) => normalizePaymentRoleFromPlain(r) === 'balance_due');
-    if (bdOnly.length === 1) {
+    if (bdOnly.length >= 1) {
         const allPayments = await Payment.findAll({ where: { orderId }, transaction });
-        const orderForTotal = await Order.findByPk(orderId, {
-            transaction,
-            attributes: ['id', 'totalAmount', 'orderDiscount', 'status'],
-            include: [orderItemsForBalanceInclude],
-        });
-        const financialTotal = orderForTotal
-            ? resolveOrderTotalForBalanceFromOrderLike(orderForTotal)
-            : roundMoney(parseFloat(order.totalAmount) || 0);
+        const financialTotal = resolveOrderTotalForBalanceFromOrderLike(order);
         const outC = computeOutstandingCents(financialTotal, allPayments);
         const settleTol = Math.max(matchTolC, centsTolerance);
         if (Math.abs(reqC - outC) <= settleTol) {
@@ -402,29 +453,26 @@ async function trySettleExistingPendingPayment({
 }
 
 function wouldDoubleCoverOrder(orderTotal, payments, newPaidAmount) {
+    const orderTotalNum = roundMoney(parseFloat(orderTotal) || 0);
     const totalC = toMoneyCents(orderTotal);
     const netC = (payments || []).reduce((s, p) => s + toMoneyCents(effectiveCollected(p)), 0);
     const addC = toMoneyCents(newPaidAmount);
-    const tolC = getOutstandingToleranceCents(orderTotal);
-    const sum = netC + addC;
-    const threshold = totalC + tolC;
+    const tightTolC = Math.max(2, Math.ceil(getTolerance() * 100));
+    const rawOutstandingC = Math.max(0, totalC - netC);
 
-    if (sum <= threshold) {
+    if (rawOutstandingC > tightTolC) {
+        const overpaySlackC = firstPaymentOverpayAllowedCents(orderTotalNum) + tightTolC;
+        return addC > rawOutstandingC + overpaySlackC;
+    }
+
+    if (addC <= tightTolC) {
         return false;
     }
 
-    const alreadyFullyPaid = netC >= totalC - tolC;
-    if (alreadyFullyPaid && addC > tolC) {
-        return true;
-    }
-
-    const fullyUnpaid = netC === 0;
-    if (fullyUnpaid) {
-        const excessCents = sum - totalC;
-        const maxExcess = firstPaymentOverpayAllowedCents(orderTotal) + tolC;
-        if (excessCents <= maxExcess) {
-            return false;
-        }
+    if (netC === 0) {
+        const excessCents = addC - totalC;
+        const maxExcess = firstPaymentOverpayAllowedCents(orderTotalNum) + tightTolC;
+        return excessCents > maxExcess;
     }
 
     return true;
@@ -436,6 +484,7 @@ module.exports = {
     computeOutstandingCents,
     PAYMENT_LIST_ATTRIBUTES,
     orderItemsForBalanceInclude,
+    normalizeStoredPaymentStatus,
     normalizePaymentRole,
     effectiveCollected,
     sumNetCollected,
@@ -449,4 +498,6 @@ module.exports = {
     logIgnoredClientPaymentStatus,
     trySettleExistingPendingPayment,
     wouldDoubleCoverOrder,
+    reconcileOrderTotalAgainstLineItems,
+    removeStaleBalanceDueRowsIfFullyPaid,
 };
