@@ -409,42 +409,42 @@ exports.createOrder = async (req, res) => {
         }
 
         // Queue Kitchen Print Job
-        // try {
-        //     const userDetail = await UserDetail.findOne({ where: { userId: req.user.id } });
-        //     const branchId = userDetail?.branchId || 1;
-        //     const branch = await Branch.findByPk(branchId);
+        try {
+            const userDetail = await UserDetail.findOne({ where: { userId: req.user.id } });
+            const branchId = userDetail?.branchId || 1;
+            const branch = await Branch.findByPk(branchId);
 
-        //     // Fetch full order with all necessary includes for the template
-        //     const printOrder = await Order.findByPk(order.id, {
-        //         include: [
-        //             {
-        //                 model: OrderItem,
-        //                 as: 'items',
-        //                 include: [
-        //                     { model: Product, as: 'product' },
-        //                     { model: VariationOption, as: 'variation' },
-        //                     {
-        //                         model: OrderItemModification,
-        //                         as: 'modifications',
-        //                         include: [{ model: ModificationItem, as: 'modification' }]
-        //                     }
-        //                 ]
-        //             }
-        //         ]
-        //     });
+            // Fetch full order with all necessary includes for the template
+            const printOrder = await Order.findByPk(order.id, {
+                include: [
+                    {
+                        model: OrderItem,
+                        as: 'items',
+                        include: [
+                            { model: Product, as: 'product' },
+                            { model: VariationOption, as: 'variation' },
+                            {
+                                model: OrderItemModification,
+                                as: 'modifications',
+                                include: [{ model: ModificationItem, as: 'modification' }]
+                            }
+                        ]
+                    }
+                ]
+            });
 
-        //     const content = templateService.generateKitchenReceiptHtml(printOrder, branch);
+            const content = templateService.generateKitchenReceiptHtml(printOrder, branch);
 
-        //     await PrintJob.create({
-        //         order_id: order.id,
-        //         printer_name: 'XP-80',
-        //         content,
-        //         type: 'kitchen',
-        //         status: 'pending'
-        //     });
-        // } catch (printError) {
-        //     console.error('[OrderController] Failed to queue kitchen print job for order', order.id, ':', printError);
-        // }
+            await PrintJob.create({
+                order_id: order.id,
+                printer_name: 'XP-80',
+                content,
+                type: 'kitchen',
+                status: 'pending'
+            });
+        } catch (printError) {
+            console.error('[OrderController] Failed to queue kitchen print job for order', order.id, ':', printError);
+        }
 
         const createdPayload = attachDerivedPaymentFieldsToOrderJson(fullOrder.toJSON());
         await enrichOrderJsonItemsForDetail(createdPayload);
