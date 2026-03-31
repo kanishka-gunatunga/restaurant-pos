@@ -29,6 +29,8 @@ const MaterialBranch = require('./MaterialBranch');
 const StockItem = require('./StockItem');
 const ProductAssignment = require('./ProductAssignment');
 const PrintJob = require('./PrintJob');
+const DeliveryCharge = require('./DeliveryCharge');
+const DeliveryChargeBranch = require('./DeliveryChargeBranch');
 
 // User <-> UserDetail: One-to-One
 User.hasOne(UserDetail, { foreignKey: 'userId', as: 'UserDetail' });
@@ -211,3 +213,11 @@ PrintJob.belongsTo(Order, { foreignKey: 'order_id', as: 'order' });
 
 Payment.hasMany(PrintJob, { foreignKey: 'payment_id', as: 'printJobs' });
 PrintJob.belongsTo(Payment, { foreignKey: 'payment_id', as: 'payment' });
+
+// DeliveryCharge - DeliveryChargeBranch Association
+DeliveryCharge.hasMany(DeliveryChargeBranch, { foreignKey: 'deliveryChargeId', as: 'branches', onDelete: 'CASCADE', hooks: true });
+DeliveryChargeBranch.belongsTo(DeliveryCharge, { foreignKey: 'deliveryChargeId' });
+
+// DeliveryChargeBranch - Branch Association
+DeliveryChargeBranch.belongsTo(Branch, { foreignKey: 'branchId', as: 'branch' });
+Branch.hasMany(DeliveryChargeBranch, { foreignKey: 'branchId' });
