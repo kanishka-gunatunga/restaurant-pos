@@ -79,7 +79,7 @@ async function queueReceiptPrintJob(orderId, paymentRecord, requestedStatus, use
             const fullOrder = await Order.findByPk(orderId, {
                 include: [
                     { model: Customer, as: 'customer' },
-                    { model: User, as: 'user', attributes: ['name', 'username'] },
+                    { model: User, as: 'user' },
                     {
                         model: OrderItem,
                         as: 'items',
@@ -101,6 +101,11 @@ async function queueReceiptPrintJob(orderId, paymentRecord, requestedStatus, use
             const userDetail = await UserDetail.findOne({ where: { userId } });
             const branchId = userDetail?.branchId || 1;
             const branch = await Branch.findByPk(branchId);
+
+            if (fullOrder.user && userDetail) {
+                fullOrder.user.name = userDetail.name;
+            }
+
             const content = templateService.generateReceiptHtml(fullOrder, paymentRecord, branch);
 
             await PrintJob.create({
