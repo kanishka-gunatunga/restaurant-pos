@@ -8,13 +8,17 @@ const UserDetail = require('../models/UserDetail');
 
 exports.findOrCreate = async (req, res) => {
     try {
-        const { mobile, name, address, email } = req.body;
-        if (!mobile || !name) {
-            return res.status(400).json({ message: 'Mobile and name are required' });
-        }
-        let customer = await Customer.findOne({ where: { mobile } });
-        if (customer) {
-            return res.json(customer);
+        let { mobile, name, address, email } = req.body;
+        
+        mobile = mobile ? mobile.trim() : null;
+        name = name ? name.trim() : '';
+
+        let customer = null;
+        if (mobile) {
+            customer = await Customer.findOne({ where: { mobile } });
+            if (customer) {
+                return res.json(customer);
+            }
         }
         customer = await Customer.create({ mobile, name, address, email, status: 'active' });
 
@@ -23,7 +27,7 @@ exports.findOrCreate = async (req, res) => {
             userId: req.user.id,
             branchId: userDetail?.branchId || 1,
             activityType: 'Customer Created',
-            description: `Customer ${name} (${mobile}) created`,
+            description: `Customer ${name || 'Unknown'} (${mobile || 'N/A'}) created`,
             metadata: { customerId: customer.id, name, mobile }
         });
 
@@ -36,13 +40,16 @@ exports.findOrCreate = async (req, res) => {
 
 exports.createCustomer = async (req, res) => {
     try {
-        const { mobile, name, address, email, promotions_enabled } = req.body;
-        if (!mobile || !name) {
-            return res.status(400).json({ message: 'Mobile and name are required' });
-        }
-        const existing = await Customer.findOne({ where: { mobile } });
-        if (existing) {
-            return res.status(400).json({ message: 'Customer with this mobile already exists' });
+        let { mobile, name, address, email, promotions_enabled } = req.body;
+        
+        mobile = mobile ? mobile.trim() : null;
+        name = name ? name.trim() : '';
+
+        if (mobile) {
+            const existing = await Customer.findOne({ where: { mobile } });
+            if (existing) {
+                return res.status(400).json({ message: 'Customer with this mobile already exists' });
+            }
         }
         const customer = await Customer.create({
             mobile,
@@ -58,7 +65,7 @@ exports.createCustomer = async (req, res) => {
             userId: req.user.id,
             branchId: userDetail?.branchId || 1,
             activityType: 'Customer Created',
-            description: `Customer ${name} (${mobile}) created`,
+            description: `Customer ${name || 'Unknown'} (${mobile || 'N/A'}) created`,
             metadata: { customerId: customer.id, name, mobile }
         });
 
@@ -188,8 +195,8 @@ exports.updateCustomer = async (req, res) => {
         if (!customer) {
             return res.status(404).json({ message: 'Customer not found' });
         }
-        if (name !== undefined) customer.name = name;
-        if (mobile !== undefined) customer.mobile = mobile;
+        if (name !== undefined) customer.name = name ? name.trim() : '';
+        if (mobile !== undefined) customer.mobile = mobile ? mobile.trim() : null;
         if (address !== undefined) customer.address = address;
         if (email !== undefined) customer.email = email;
         await customer.save();
@@ -199,7 +206,7 @@ exports.updateCustomer = async (req, res) => {
             userId: req.user.id,
             branchId: userDetail?.branchId || 1,
             activityType: 'Customer Updated',
-            description: `Customer ${customer.name} (${customer.mobile}) updated`,
+            description: `Customer ${customer.name || 'Unknown'} (${customer.mobile || 'N/A'}) updated`,
             metadata: { customerId: id, updatedFields: { name, mobile, address, email } }
         });
 
