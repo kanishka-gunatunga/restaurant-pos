@@ -124,6 +124,7 @@ sequelize
         }
         try {
             await Supplier.sync({ alter: true });
+            await Customer.sync({ alter: true });
             await Material.sync({ alter: true });
             await MaterialBranch.sync({ alter: true });
             await StockItem.sync({ alter: true });

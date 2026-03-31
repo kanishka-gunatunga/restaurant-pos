@@ -9,12 +9,13 @@ const Customer = sequelize.define('Customer', {
     },
     mobile: {
         type: DataTypes.STRING,
-        allowNull: false,
+        allowNull: true,
         unique: true,
     },
     name: {
         type: DataTypes.STRING,
-        allowNull: false,
+        allowNull: true,
+        defaultValue: 'guest',
     },
     promotions_enabled: {
         type: DataTypes.BOOLEAN,
