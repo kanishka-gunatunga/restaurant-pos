@@ -410,7 +410,7 @@ exports.getKitchenDashboard = async (req, res) => {
                     as: 'items',
                     include: [
                         { model: Product, as: 'product', attributes: ['id', 'name'] },
-                        { model: Variation, as: 'variation', attributes: ['id', 'name'] },
+                        { model: VariationOption, as: 'variation', attributes: ['id', 'name'] },
                         {
                             model: OrderItemModification,
                             as: 'modifications',

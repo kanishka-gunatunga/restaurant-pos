@@ -79,7 +79,7 @@ Customer.hasMany(Order, { foreignKey: 'customerId', as: 'orders' });
 Order.hasMany(OrderItem, { foreignKey: 'orderId', as: 'items', onDelete: 'CASCADE', hooks: true });
 OrderItem.belongsTo(Order, { foreignKey: 'orderId' });
 OrderItem.belongsTo(Product, { foreignKey: 'productId', as: 'product' });
-OrderItem.belongsTo(Variation, { foreignKey: 'variationId', as: 'variation' });
+OrderItem.belongsTo(VariationOption, { foreignKey: 'variationId', as: 'variation' });
 
 // OrderItem - OrderItemModification Association
 OrderItem.hasMany(OrderItemModification, { foreignKey: 'orderItemId', as: 'modifications', onDelete: 'CASCADE', hooks: true });
