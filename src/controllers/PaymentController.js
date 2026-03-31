@@ -304,7 +304,7 @@ exports.createPayment = async (req, res) => {
                 metadata: { paymentMethod, transactionId, status: paymentRecord.status, settled: settled.settled },
             });
 
-            await queueReceiptPrintJob(orderId, paymentRecord, status, req.user.id);
+            // await queueReceiptPrintJob(orderId, paymentRecord, status, req.user.id);
 
             if (settled.settled) {
                 return jsonPaymentWithOrderSummary(orderId, paymentRecord, res, 200);
@@ -336,7 +336,7 @@ exports.createPayment = async (req, res) => {
             metadata: { orderId, paymentId: payment.id, amount: payment.amount, status: payment.status },
         });
 
-        await queueReceiptPrintJob(orderId, payment, status, req.user.id);
+        // await queueReceiptPrintJob(orderId, payment, status, req.user.id);
 
         const userDetail = await UserDetail.findOne({ where: { userId: req.user.id } });
         await logActivity({
