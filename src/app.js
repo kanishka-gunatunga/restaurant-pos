@@ -34,6 +34,7 @@ const cronRoutes = require('./routes/cronRoutes');
 const { validatePositiveInt } = require('./middleware/validate');
 const printRoutes = require('./routes/printRoutes');
 const deliveryChargeRoutes = require('./routes/deliveryChargeRoutes');
+const productBundleRoutes = require('./routes/productBundleRoutes');
 
 const app = express();
 
@@ -98,6 +99,7 @@ app.use('/api/supply/assignments', assignmentRoutes);
 app.use('/api/cron', cronRoutes);
 app.use('/api/print', printRoutes);
 app.use('/api/delivery-charges', deliveryChargeRoutes);
+app.use('/api/product-bundles', productBundleRoutes);
 
 // Global error handler (do not log request body to avoid leaking tokens/passwords)
 app.use((err, req, res, next) => {
@@ -138,6 +140,12 @@ sequelize
             const DeliveryChargeBranch = require('./models/DeliveryChargeBranch');
             await DeliveryCharge.sync({ alter: true });
             await DeliveryChargeBranch.sync({ alter: true });
+            const ProductBundle = require('./models/ProductBundle');
+            const ProductBundleBranch = require('./models/ProductBundleBranch');
+            const ProductBundleItem = require('./models/ProductBundleItem');
+            await ProductBundle.sync({ alter: true });
+            await ProductBundleBranch.sync({ alter: true });
+            await ProductBundleItem.sync({ alter: true });
             console.log('Database schema alter sync finished');
         } catch (err) {
             console.error('Schema alter sync failed:', err);

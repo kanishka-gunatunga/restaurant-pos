@@ -31,6 +31,9 @@ const ProductAssignment = require('./ProductAssignment');
 const PrintJob = require('./PrintJob');
 const DeliveryCharge = require('./DeliveryCharge');
 const DeliveryChargeBranch = require('./DeliveryChargeBranch');
+const ProductBundle = require('./ProductBundle');
+const ProductBundleBranch = require('./ProductBundleBranch');
+const ProductBundleItem = require('./ProductBundleItem');
 
 // User <-> UserDetail: One-to-One
 User.hasOne(UserDetail, { foreignKey: 'userId', as: 'UserDetail' });
@@ -221,3 +224,19 @@ DeliveryChargeBranch.belongsTo(DeliveryCharge, { foreignKey: 'deliveryChargeId' 
 // DeliveryChargeBranch - Branch Association
 DeliveryChargeBranch.belongsTo(Branch, { foreignKey: 'branchId', as: 'branch' });
 Branch.hasMany(DeliveryChargeBranch, { foreignKey: 'branchId' });
+
+// ProductBundle - ProductBundleBranch Association
+ProductBundle.hasMany(ProductBundleBranch, { foreignKey: 'productBundleId', as: 'branches', onDelete: 'CASCADE', hooks: true });
+ProductBundleBranch.belongsTo(ProductBundle, { foreignKey: 'productBundleId' });
+
+// ProductBundleBranch - Branch Association
+ProductBundleBranch.belongsTo(Branch, { foreignKey: 'branchId', as: 'branch' });
+Branch.hasMany(ProductBundleBranch, { foreignKey: 'branchId', as: 'productBundles' });
+
+// ProductBundle - ProductBundleItem Association
+ProductBundle.hasMany(ProductBundleItem, { foreignKey: 'productBundleId', as: 'items', onDelete: 'CASCADE', hooks: true });
+ProductBundleItem.belongsTo(ProductBundle, { foreignKey: 'productBundleId' });
+
+// ProductBundleItem - Product Association
+ProductBundleItem.belongsTo(Product, { foreignKey: 'productId', as: 'product' });
+Product.hasMany(ProductBundleItem, { foreignKey: 'productId' });
