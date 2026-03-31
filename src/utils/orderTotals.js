@@ -1,18 +1,9 @@
-// Line totals → order discount → optional tax → totalAmount.
-// Tax is opt-in only: set ORDER_TAX_RATE in env (e.g. 0.1 = 10%). If unset or empty,
-// no tax is added — totalAmount is subtotal minus order discount. That matches UIs that
-// already show tax-inclusive prices or do not add VAT as a separate server line (avoids
-// “paid subtotal but server total includes tax” mismatches).
 
-const DEFAULT_TAX_RATE = 0;
+
+const SERVER_COMPUTED_ORDER_TAX = 0;
 
 function getTaxRate() {
-    const raw = process.env.ORDER_TAX_RATE;
-    if (raw === undefined || raw === null || String(raw).trim() === '') {
-        return DEFAULT_TAX_RATE;
-    }
-    const r = parseFloat(raw);
-    return Number.isFinite(r) && r >= 0 ? r : DEFAULT_TAX_RATE;
+    return SERVER_COMPUTED_ORDER_TAX;
 }
 
 function roundMoney(value) {
@@ -92,8 +83,7 @@ function computeOrderTotalsFromLines(items, orderDiscountRaw) {
     );
     const orderDisc = Math.max(0, parseFloat(orderDiscountRaw) || 0);
     const subtotalAfterOrderDiscount = Math.max(0, roundMoney(lineSubtotalSum - orderDisc));
-    const rate = getTaxRate();
-    const tax = roundMoney(subtotalAfterOrderDiscount * rate);
+    const tax = SERVER_COMPUTED_ORDER_TAX;
     const totalAmount = roundMoney(subtotalAfterOrderDiscount + tax);
     return {
         lineSubtotalSum,
