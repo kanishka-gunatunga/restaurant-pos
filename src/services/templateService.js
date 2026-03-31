@@ -46,7 +46,7 @@ exports.generateReceiptHtml = (order, payment, branch) => {
     return `
         <div style="width: 550px; font-family: 'Courier New', Courier, monospace; font-size: 15px; line-height: 1.3; color: #000; background: #fff; padding: 10px;">
             <div style="text-align: center; margin-bottom: 10px;">
-                <div style="font-size: 1.6em; font-weight: bold; text-transform: uppercase;">${branch?.name || 'CATERING BY AHAS GAWWA'}</div>
+                <div style="font-size: 1.6em; font-weight: bold; text-transform: uppercase;">CATERING BY AHAS GAWWA</div>
                 <div style="font-size: 1.1em;">${branch?.location || 'No. 226, Arakawila, Handapangoda'}</div>
                 <div style="font-size: 1.1em;">${branch?.mobile || '0112175275'}</div>
             </div>
