@@ -14,6 +14,7 @@ const OrderItem = require('../models/OrderItem');
 const OrderItemModification = require('../models/OrderItemModification');
 const ModificationItem = require('../models/ModificationItem');
 const Product = require('../models/Product');
+const Variation = require('../models/Variation');
 const VariationOption = require('../models/VariationOption');
 const Branch = require('../models/Branch');
 const templateService = require('../services/templateService');
