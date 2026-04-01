@@ -54,7 +54,11 @@ exports.createManualPrintJob = async (req, res) => {
                     as: 'items',
                     include: [
                         { model: Product, as: 'product' },
-                        { model: VariationOption, as: 'variation' },
+                        {
+                            model: VariationOption,
+                            as: 'variation',
+                            include: [{ model: Variation, as: 'Variation' }]
+                        },
                         {
                             model: OrderItemModification,
                             as: 'modifications',

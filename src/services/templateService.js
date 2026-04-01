@@ -21,7 +21,8 @@ exports.generateReceiptHtml = (order, payment, branch) => {
         }
 
         const name = (item.product?.name || 'Item');
-        const variation = item.variation?.name ? `(${item.variation.name})` : '';
+        const variationName = item.variationOption?.name || item.variation_option?.name || item.variation?.name;
+        const variation = variationName ? `(${variationName})` : '';
         const fullName = `${name} ${variation}`;
         const price = parseFloat(item.unitPrice).toFixed(2);
         const qty = parseFloat(item.quantity).toFixed(2);
@@ -136,7 +137,8 @@ exports.generateKitchenReceiptHtml = (order, branch) => {
         }
 
         const name = (item.product?.name || 'Item').substring(0, 25);
-        const variation = item.variation?.name ? `(${item.variation.name})` : '';
+        const variationName = item.variationOption?.name || item.variation_option?.name || item.variation?.name;
+        const variation = variationName ? `(${variationName})` : '';
         const qty = parseFloat(item.quantity).toFixed(2);
 
         return `
