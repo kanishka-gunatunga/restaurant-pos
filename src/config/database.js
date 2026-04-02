@@ -10,7 +10,14 @@ const sequelize = new Sequelize(
         dialect: 'mysql',
         dialectModule: require('mysql2'),
         logging: false,
-        timezone: '+05:30', // Set timezone for DB connections
+        timezone: '+05:30',
+        pool: {
+            max: parseInt(process.env.DB_POOL_MAX) || 5, // Per app instance max
+            min: 0,
+            acquire: 30000,
+            idle: 10000, // Release idle connections after 10s
+            evict: 5000,  // Proactively evict stale connections every 5s
+        }
     }
 );
 
