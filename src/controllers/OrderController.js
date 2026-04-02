@@ -442,14 +442,14 @@ exports.createOrder = async (req, res) => {
             });
 
             const content = templateService.generateKitchenReceiptHtml(printOrder, branch);
-
-            await PrintJob.create({
-                order_id: order.id,
-                printer_name: 'XP-80',
-                content,
-                type: 'kitchen',
-                status: 'pending'
-            });
+            console.log(content);
+            // await PrintJob.create({
+            //     order_id: order.id,
+            //     printer_name: 'XP-80',
+            //     content,
+            //     type: 'kitchen',
+            //     status: 'pending'
+            // });
         } catch (printError) {
             console.error('[OrderController] Failed to queue kitchen print job for order', order.id, ':', printError);
         }
