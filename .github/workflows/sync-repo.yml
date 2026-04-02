@@ -1,0 +1,48 @@
+name: Sync to Ahas Gawwa V2 Backend
+
+on:
+  push:
+    branches:
+      - v2
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Checkout Source Repo
+      - name: Checkout Source Repo
+        uses: actions/checkout@v4
+        with:
+          ref: v2
+          path: repo-a
+          persist-credentials: false
+
+      # 2. Checkout Destination Repo
+      - name: Checkout Destination Repo
+        uses: actions/checkout@v4
+        with:
+          repository: kanishka-gunatunga/ahas-gawwa-v2-backend
+          token: ${{ secrets.REPO_ACCESS_TOKEN }}
+          path: repo-b
+          ref: main
+          persist-credentials: false
+
+      # 3. Sync & Push
+      - name: Copy files, Commit, and Push
+        run: |
+          rsync -av --exclude='.git' --exclude='.github' repo-a/ repo-b/
+
+          cd repo-b
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add .
+
+          if git diff --staged --quiet; then
+            echo "No changes to commit."
+          else
+            git commit -m "Auto-sync from restaurant-pos-backend (v2 branch)"
+            git push https://x-access-token:${{ secrets.REPO_ACCESS_TOKEN }}@github.com/kanishka-gunatunga/ahas-gawwa-v2-backend.git main
+          fi
