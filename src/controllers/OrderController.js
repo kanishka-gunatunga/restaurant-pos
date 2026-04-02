@@ -71,7 +71,11 @@ const orderItemsBasicInclude = {
     as: 'items',
     include: [
         { model: Product, as: 'product' },
-        { model: VariationOption, as: 'variation' },
+        { 
+            model: VariationOption, 
+            as: 'variationOption',
+            include: [{ model: Variation, as: 'Variation' }]
+        },
         {
             model: OrderItemModification,
             as: 'modifications',
@@ -346,11 +350,11 @@ exports.createOrder = async (req, res) => {
 
         if (order_products && order_products.length > 0) {
             for (const item of order_products) {
-                const variationId = item.variationId ?? item.variation_id ?? null;
+                const variationOptionId = item.variationId ?? item.variation_id ?? item.variationOptionId ?? null;
                 const orderItem = await OrderItem.create({
                     orderId: order.id,
                     productId: item.productId,
-                    variationId,
+                    variationOptionId,
                     quantity: item.quantity,
                     unitPrice: item.unitPrice,
                     productDiscount: item.productDiscount,
@@ -424,7 +428,7 @@ exports.createOrder = async (req, res) => {
                             { model: Product, as: 'product' },
                             {
                                 model: VariationOption,
-                                as: 'variation',
+                                as: 'variationOption',
                                 include: [{ model: Variation, as: 'Variation' }]
                             },
                             {
@@ -717,11 +721,11 @@ exports.updateOrder = async (req, res) => {
 
             if (order_products.length > 0) {
                 for (const item of order_products) {
-                    const variationId = item.variationId ?? item.variation_id ?? null;
+                    const variationOptionId = item.variationId ?? item.variation_id ?? item.variationOptionId ?? null;
                     const orderItem = await OrderItem.create({
                         orderId: order.id,
                         productId: item.productId,
-                        variationId,
+                        variationOptionId,
                         quantity: item.quantity,
                         unitPrice: item.unitPrice,
                         productDiscount: item.productDiscount,

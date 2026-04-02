@@ -21,8 +21,9 @@ exports.generateReceiptHtml = (order, payment, branch) => {
         }
 
         const name = (item.product?.name || 'Item');
-        const variationName = item.variationOption?.name || item.variation_option?.name || item.variation?.name;
-        const variation = variationName ? `(${variationName})` : '';
+        const vOpt = item.variationOption || item.variation_option;
+        const variationSummary = vOpt ? (vOpt.Variation?.name ? `${vOpt.Variation.name}: ${vOpt.name}` : vOpt.name) : '';
+        const variation = variationSummary ? `(${variationSummary})` : '';
         const fullName = `${name} ${variation}`;
         const price = parseFloat(item.unitPrice).toFixed(2);
         const qty = parseFloat(item.quantity).toFixed(2);
@@ -137,8 +138,9 @@ exports.generateKitchenReceiptHtml = (order, branch) => {
         }
 
         const name = (item.product?.name || 'Item').substring(0, 25);
-        const variationName = item.variationOption?.name || item.variation_option?.name || item.variation?.name;
-        const variation = variationName ? `(${variationName})` : '';
+        const vOpt = item.variationOption || item.variation_option;
+        const variationSummary = vOpt ? (vOpt.Variation?.name ? `${vOpt.Variation.name}: ${vOpt.name}` : vOpt.name) : '';
+        const variation = variationSummary ? `(${variationSummary})` : '';
         const qty = parseFloat(item.quantity).toFixed(2);
 
         return `

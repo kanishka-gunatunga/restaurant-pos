@@ -109,8 +109,8 @@ async function enrichOrderJsonItemsForDetail(orderJson) {
         const hasExplicit =
             item.variationOption &&
             (item.variationOption.id != null || item.variationOption.name != null);
-        if (!hasExplicit && item.variationId != null) {
-            idsToCheck.add(item.variationId);
+        if (!hasExplicit && item.variationOptionId != null) {
+            idsToCheck.add(item.variationOptionId);
         }
     }
 
@@ -134,13 +134,14 @@ async function enrichOrderJsonItemsForDetail(orderJson) {
             item.variationOption &&
             (item.variationOption.id != null || item.variationOption.name != null);
 
-        if (!hasExplicit && item.variationId != null) {
-            const opt = optionById.get(item.variationId);
+        if (!hasExplicit && item.variationOptionId != null) {
+            const opt = optionById.get(item.variationOptionId);
             if (opt) {
-                item.variationOption = { id: opt.id, name: opt.name };
+                const optJson = opt.toJSON();
+                item.variationOption = optJson;
                 const parent = variationById.get(opt.variationId);
                 if (parent) {
-                    item.variation = parent;
+                    item.variationOption.Variation = parent;
                 }
             }
         }

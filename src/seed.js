@@ -105,7 +105,7 @@ async function seed() {
         await OrderItem.create({
             orderId: order.id,
             productId: burger.id,
-            variationId: regularOpt.id,
+            variationOptionId: regularOpt.id,
             quantity: 2,
             unitPrice: 10.00,
             status: 'complete'

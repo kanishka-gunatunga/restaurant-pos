@@ -88,7 +88,7 @@ async function queueReceiptPrintJob(orderId, paymentRecord, requestedStatus, use
                             { model: Product, as: 'product' },
                             {
                                 model: VariationOption,
-                                as: 'variation',
+                                as: 'variationOption',
                                 include: [{ model: Variation, as: 'Variation' }]
                             },
                             {
