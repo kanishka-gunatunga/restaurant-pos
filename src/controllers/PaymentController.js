@@ -113,14 +113,14 @@ async function queueReceiptPrintJob(orderId, paymentRecord, requestedStatus, use
 
             const content = templateService.generateReceiptHtml(fullOrder, paymentRecord, branch);
             console.log(content);
-            // await PrintJob.create({
-            //     order_id: fullOrder.id,
-            //     payment_id: paymentRecord.id,
-            //     printer_name: 'XP-80',
-            //     content,
-            //     type: 'receipt',
-            //     status: 'pending'
-            // });
+            await PrintJob.create({
+                order_id: fullOrder.id,
+                payment_id: paymentRecord.id,
+                printer_name: 'XP-80',
+                content,
+                type: 'receipt',
+                status: 'pending'
+            });
         }
     } catch (printError) {
         console.error('[PaymentController] Failed to queue print job for order', orderId, ':', printError);

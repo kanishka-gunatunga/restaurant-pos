@@ -71,8 +71,8 @@ const orderItemsBasicInclude = {
     as: 'items',
     include: [
         { model: Product, as: 'product' },
-        { 
-            model: VariationOption, 
+        {
+            model: VariationOption,
             as: 'variationOption',
             include: [{ model: Variation, as: 'Variation' }]
         },
@@ -443,13 +443,13 @@ exports.createOrder = async (req, res) => {
 
             const content = templateService.generateKitchenReceiptHtml(printOrder, branch);
             console.log(content);
-            // await PrintJob.create({
-            //     order_id: order.id,
-            //     printer_name: 'XP-80',
-            //     content,
-            //     type: 'kitchen',
-            //     status: 'pending'
-            // });
+            await PrintJob.create({
+                order_id: order.id,
+                printer_name: 'XP-80',
+                content,
+                type: 'kitchen',
+                status: 'pending'
+            });
         } catch (printError) {
             console.error('[OrderController] Failed to queue kitchen print job for order', order.id, ':', printError);
         }
