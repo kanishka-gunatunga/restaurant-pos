@@ -34,6 +34,7 @@ const DeliveryChargeBranch = require('./DeliveryChargeBranch');
 const ProductBundle = require('./ProductBundle');
 const ProductBundleBranch = require('./ProductBundleBranch');
 const ProductBundleItem = require('./ProductBundleItem');
+const ServiceCharge = require('./ServiceCharge');
 
 // User <-> UserDetail: One-to-One
 User.hasOne(UserDetail, { foreignKey: 'userId', as: 'UserDetail' });
