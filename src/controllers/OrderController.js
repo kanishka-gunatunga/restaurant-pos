@@ -304,12 +304,15 @@ exports.createOrder = async (req, res) => {
             landmark,
             zipcode,
             deliveryInstructions,
-            order_products,
-            serviceCharge,
-            deliveryChargeAmount,
-            deliveryChargeId,
-            deliveryChargeSelectedId
         } = req.body;
+
+        const order_products =
+            req.body.order_products ?? req.body.orderProducts ?? req.body.order_lines;
+        const serviceChargeNorm = req.body.serviceCharge ?? req.body.service_charge;
+        const deliveryChargeAmountNorm = req.body.deliveryChargeAmount ?? req.body.delivery_charge_amount;
+        const deliveryChargeIdNorm = req.body.deliveryChargeId ?? req.body.delivery_charge_id;
+        const deliveryChargeSelectedIdNorm =
+            req.body.deliveryChargeSelectedId ?? req.body.delivery_charge_selected_id;
 
         let { customerId } = req.body;
 
@@ -318,9 +321,9 @@ exports.createOrder = async (req, res) => {
                 ? Math.max(0, parseFloat(orderDiscount) || 0)
                 : 0;
 
-        const effectiveServiceCharge = parseFloat(serviceCharge) || 0;
-        const effectiveDeliveryChargeAmount = parseFloat(deliveryChargeAmount) || 0;
-        const effectiveDeliveryChargeId = deliveryChargeId || deliveryChargeSelectedId || null;
+        const effectiveServiceCharge = parseFloat(serviceChargeNorm) || 0;
+        const effectiveDeliveryChargeAmount = parseFloat(deliveryChargeAmountNorm) || 0;
+        const effectiveDeliveryChargeId = deliveryChargeIdNorm || deliveryChargeSelectedIdNorm || null;
 
         if (customerMobile) {
             let customer = await Customer.findOne({ where: { mobile: customerMobile }, transaction: t });
@@ -677,15 +680,19 @@ exports.updateOrder = async (req, res) => {
             landmark,
             zipcode,
             deliveryInstructions,
-            order_products,
             passcode,
             paymentStatus: bodyPaymentStatus,
             payment_status: bodyPaymentStatusSnake,
-            serviceCharge,
-            deliveryChargeAmount,
-            deliveryChargeId,
-            deliveryChargeSelectedId
         } = req.body;
+
+        const order_products =
+            req.body.order_products ?? req.body.orderProducts ?? req.body.order_lines;
+        const serviceChargeFromBody = req.body.serviceCharge ?? req.body.service_charge;
+        const deliveryChargeAmountFromBody =
+            req.body.deliveryChargeAmount ?? req.body.delivery_charge_amount;
+        const deliveryChargeIdFromBody = req.body.deliveryChargeId ?? req.body.delivery_charge_id;
+        const deliveryChargeSelectedIdFromBody =
+            req.body.deliveryChargeSelectedId ?? req.body.delivery_charge_selected_id;
 
         const order = await Order.findByPk(id, { transaction: t });
         if (!order) {
@@ -729,9 +736,18 @@ exports.updateOrder = async (req, res) => {
                 ? Math.max(0, parseFloat(orderDiscount) || 0)
                 : Math.max(0, parseFloat(order.orderDiscount) || 0);
 
-        const effectiveServiceCharge = serviceCharge !== undefined ? (parseFloat(serviceCharge) || 0) : (parseFloat(order.serviceCharge) || 0);
-        const effectiveDeliveryChargeAmount = deliveryChargeAmount !== undefined ? (parseFloat(deliveryChargeAmount) || 0) : (parseFloat(order.deliveryChargeAmount) || 0);
-        const effectiveDeliveryChargeId = (deliveryChargeId || deliveryChargeSelectedId) !== undefined ? (deliveryChargeId || deliveryChargeSelectedId || null) : order.deliveryChargeId;
+        const effectiveServiceCharge =
+            serviceChargeFromBody !== undefined
+                ? parseFloat(serviceChargeFromBody) || 0
+                : parseFloat(order.serviceCharge) || 0;
+        const effectiveDeliveryChargeAmount =
+            deliveryChargeAmountFromBody !== undefined
+                ? parseFloat(deliveryChargeAmountFromBody) || 0
+                : parseFloat(order.deliveryChargeAmount) || 0;
+        const effectiveDeliveryChargeId =
+            deliveryChargeIdFromBody !== undefined || deliveryChargeSelectedIdFromBody !== undefined
+                ? deliveryChargeIdFromBody || deliveryChargeSelectedIdFromBody || null
+                : order.deliveryChargeId;
 
         if (order_products) {
             const orderItems = await OrderItem.findAll({ where: { orderId: id }, transaction: t });
