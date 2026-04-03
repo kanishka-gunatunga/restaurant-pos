@@ -89,12 +89,12 @@ exports.generateReceiptHtml = (order, payment, branch) => {
 
             <div style="margin-bottom: 15px; border-top: 1px dashed #000; padding-top: 8px;">
                 <div style="display: flex; justify-content: space-between; font-size: 1.2em;">
-                    <span>CASH</span>
-                    <span>${subTotal}</span>
+                    <span>${(payment?.paymentMethod || 'CASH').toUpperCase()}</span>
+                    <span>${parseFloat(payment?.paidAmount || payment?.amount || subTotal).toFixed(2)}</span>
                 </div>
                 <div style="display: flex; justify-content: space-between; font-weight: bold; font-size: 1.3em; margin-top: 4px;">
                     <span>BALANCE</span>
-                    <span>${(0).toFixed(2)}</span>
+                    <span>${(parseFloat(payment?.paidAmount || payment?.amount || subTotal) - parseFloat(subTotal)).toFixed(2)}</span>
                 </div>
                 ${totalDiscount > 0 ? `
                 <div style="display: flex; justify-content: space-between; margin-top: 8px; font-weight: bold;">
@@ -251,8 +251,9 @@ exports.generateReceiptStructuredData = (order, payment, branch) => {
         },
         payment: {
             method: capitalize(payment?.paymentMethod || 'Cash'),
+            paidAmount: parseFloat(payment?.paidAmount || payment?.amount || order.totalAmount).toFixed(2),
             amount: parseFloat(payment?.amount || order.totalAmount).toFixed(2),
-            balance: (0).toFixed(2)
+            balance: (parseFloat(payment?.paidAmount || payment?.amount || order.totalAmount) - parseFloat(order.totalAmount || 0)).toFixed(2)
         }
     };
 };
