@@ -10,8 +10,13 @@ exports.findOrCreate = async (req, res) => {
     try {
         let { mobile, name, address, email } = req.body;
         
-        mobile = mobile ? mobile.trim() : null;
-        name = name ? name.trim() : '';
+        if (!name || name.trim() === '') {
+            name = 'guest';
+        }
+
+        if (mobile && mobile.trim() === '') {
+            mobile = null;
+        }
 
         let customer = null;
         if (mobile) {
@@ -20,6 +25,7 @@ exports.findOrCreate = async (req, res) => {
                 return res.json(customer);
             }
         }
+        
         customer = await Customer.create({ mobile, name, address, email, status: 'active' });
 
         const userDetail = await UserDetail.findOne({ where: { userId: req.user.id } });
@@ -27,7 +33,7 @@ exports.findOrCreate = async (req, res) => {
             userId: req.user.id,
             branchId: userDetail?.branchId || 1,
             activityType: 'Customer Created',
-            description: `Customer ${name || 'Unknown'} (${mobile || 'N/A'}) created`,
+            description: `Customer ${name} ${mobile ? '(' + mobile + ')' : ''} created`.replace(/\s+/g, ' ').trim(),
             metadata: { customerId: customer.id, name, mobile }
         });
 
@@ -42,8 +48,13 @@ exports.createCustomer = async (req, res) => {
     try {
         let { mobile, name, address, email, promotions_enabled } = req.body;
         
-        mobile = mobile ? mobile.trim() : null;
-        name = name ? name.trim() : '';
+        if (!name || name.trim() === '') {
+            name = 'guest';
+        }
+
+        if (mobile && mobile.trim() === '') {
+            mobile = null;
+        }
 
         if (mobile) {
             const existing = await Customer.findOne({ where: { mobile } });
@@ -51,6 +62,7 @@ exports.createCustomer = async (req, res) => {
                 return res.status(400).json({ message: 'Customer with this mobile already exists' });
             }
         }
+        
         const customer = await Customer.create({
             mobile,
             name,
@@ -65,7 +77,7 @@ exports.createCustomer = async (req, res) => {
             userId: req.user.id,
             branchId: userDetail?.branchId || 1,
             activityType: 'Customer Created',
-            description: `Customer ${name || 'Unknown'} (${mobile || 'N/A'}) created`,
+            description: `Customer ${name} ${mobile ? '(' + mobile + ')' : ''} created`.replace(/\s+/g, ' ').trim(),
             metadata: { customerId: customer.id, name, mobile }
         });
 
@@ -190,13 +202,18 @@ exports.getCustomerById = async (req, res) => {
 exports.updateCustomer = async (req, res) => {
     try {
         const { id } = req.params;
-        const { name, mobile, address, email } = req.body;
+        let { name, mobile, address, email } = req.body;
         const customer = await Customer.findByPk(id);
         if (!customer) {
             return res.status(404).json({ message: 'Customer not found' });
         }
-        if (name !== undefined) customer.name = name ? name.trim() : '';
-        if (mobile !== undefined) customer.mobile = mobile ? mobile.trim() : null;
+        
+        if (name !== undefined) {
+             customer.name = (!name || name.trim() === '') ? 'guest' : name;
+        }
+        if (mobile !== undefined) {
+             customer.mobile = (mobile && mobile.trim() !== '') ? mobile : null;
+        }
         if (address !== undefined) customer.address = address;
         if (email !== undefined) customer.email = email;
         await customer.save();
@@ -206,7 +223,7 @@ exports.updateCustomer = async (req, res) => {
             userId: req.user.id,
             branchId: userDetail?.branchId || 1,
             activityType: 'Customer Updated',
-            description: `Customer ${customer.name || 'Unknown'} (${customer.mobile || 'N/A'}) updated`,
+            description: `Customer ${customer.name} ${customer.mobile ? '(' + customer.mobile + ')' : ''} updated`.replace(/\s+/g, ' ').trim(),
             metadata: { customerId: id, updatedFields: { name, mobile, address, email } }
         });
 
@@ -247,7 +264,10 @@ exports.sendBulkPromotions = async (req, res) => {
             return res.status(400).json({ message: 'Message content is required' });
         }
         const customers = await Customer.findAll({
-            where: { promotions_enabled: true }
+            where: { 
+                promotions_enabled: true,
+                mobile: { [Op.not]: null }
+            }
         });
         if (customers.length === 0) {
             return res.status(404).json({ message: 'No customers found with promotions enabled' });

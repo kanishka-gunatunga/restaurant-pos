@@ -190,15 +190,6 @@ exports.generateKitchenReceiptHtml = (order, branch) => {
 };
 
 /**
- * Capitalize first letter helper
- */
-const capitalize = (str) => {
-    if (!str) return str;
-    const s = String(str).toLowerCase();
-    return s.charAt(0).toUpperCase() + s.slice(1);
-};
-
-/**
  * Generate structured JSON for payment receipts (for ESC/POS)
  */
 exports.generateReceiptStructuredData = (order, payment, branch) => {
@@ -235,7 +226,7 @@ exports.generateReceiptStructuredData = (order, payment, branch) => {
             total: (parseFloat(order.totalAmount || 0)).toFixed(2)
         },
         payment: {
-            method: capitalize(payment?.paymentMethod || 'Cash'),
+            method: (payment?.paymentMethod || 'CASH').toUpperCase(),
             amount: parseFloat(payment?.amount || order.totalAmount).toFixed(2),
             balance: (0).toFixed(2)
         }
@@ -250,7 +241,7 @@ exports.generateKitchenStructuredData = (order, branch) => {
         type: 'kitchen',
         orderId: order.id.toString().padStart(8, '0'),
         dateTime: order.createdAt,
-        orderType: capitalize(order.orderType || 'N/A'),
+        orderType: order.orderType || 'N/A',
         tableNumber: order.tableNumber || 'N/A',
         kitchenNote: order.kitchenNote,
         items: order.items.map(item => {

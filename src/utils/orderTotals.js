@@ -1,23 +1,44 @@
-// Line totals → order discount → tax (ORDER_TAX_RATE, default 0.1) → totalAmount.
 
-const DEFAULT_TAX_RATE = 0.1;
+
+const SERVER_COMPUTED_ORDER_TAX = 0;
 
 function getTaxRate() {
-    const r = parseFloat(process.env.ORDER_TAX_RATE);
-    return Number.isFinite(r) && r >= 0 ? r : DEFAULT_TAX_RATE;
+    return SERVER_COMPUTED_ORDER_TAX;
 }
 
 function roundMoney(value) {
     return Math.round((Number(value) + Number.EPSILON) * 100) / 100;
 }
 
+function modificationEntryQty(m) {
+    if (m == null) return 1;
+    const raw = m.quantity ?? m.qty;
+    if (raw == null || raw === '') return 1;
+    return Math.max(1, parseInt(raw, 10) || 1);
+}
+
+function modificationSum(mods) {
+    if (!Array.isArray(mods)) return 0;
+    return mods.reduce((sum, m) => {
+        const p = parseFloat(m.price) || 0;
+        return sum + p * modificationEntryQty(m);
+    }, 0);
+}
+
+function mapModificationsForNormalize(mods) {
+    return (mods || []).map((m) => ({
+        price: m.price,
+        quantity: m.quantity,
+        qty: m.qty,
+    }));
+}
+
 function lineSubtotal(item) {
     const qty = Math.max(0, parseInt(item.quantity, 10) || 0);
     const unit = parseFloat(item.unitPrice) || 0;
     const lineDisc = parseFloat(item.productDiscount) || 0;
-    const mods = item.modifications || [];
-    const modPerUnit = mods.reduce((sum, m) => sum + (parseFloat(m.price) || 0), 0);
-    const raw = unit * qty - lineDisc + modPerUnit * qty;
+    const modSum = modificationSum(item.modifications);
+    const raw = unit * qty - lineDisc + modSum;
     return Math.max(0, roundMoney(raw));
 }
 
@@ -28,26 +49,41 @@ function normalizeItem(item) {
             quantity: plain.quantity,
             unitPrice: plain.unitPrice,
             productDiscount: plain.productDiscount,
-            modifications: (plain.modifications || []).map((m) => ({ price: m.price })),
+            modifications: mapModificationsForNormalize(plain.modifications),
         };
     }
     return {
         quantity: item.quantity,
         unitPrice: item.unitPrice,
         productDiscount: item.productDiscount,
-        modifications: (item.modifications || []).map((m) => ({ price: m.price })),
+        modifications: mapModificationsForNormalize(item.modifications),
     };
 }
 
-function computeOrderTotalsFromLines(items, orderDiscountRaw) {
+function dedupeOrderItemsById(items) {
     const list = Array.isArray(items) ? items : [];
+    const seen = new Set();
+    const out = [];
+    for (const it of list) {
+        const plain = it && typeof it.toJSON === 'function' ? it.toJSON() : it;
+        const id = plain && plain.id;
+        if (id != null) {
+            if (seen.has(id)) continue;
+            seen.add(id);
+        }
+        out.push(it);
+    }
+    return out;
+}
+
+function computeOrderTotalsFromLines(items, orderDiscountRaw) {
+    const list = dedupeOrderItemsById(items);
     const lineSubtotalSum = roundMoney(
         list.reduce((sum, item) => sum + lineSubtotal(normalizeItem(item)), 0)
     );
     const orderDisc = Math.max(0, parseFloat(orderDiscountRaw) || 0);
     const subtotalAfterOrderDiscount = Math.max(0, roundMoney(lineSubtotalSum - orderDisc));
-    const rate = getTaxRate();
-    const tax = roundMoney(subtotalAfterOrderDiscount * rate);
+    const tax = SERVER_COMPUTED_ORDER_TAX;
     const totalAmount = roundMoney(subtotalAfterOrderDiscount + tax);
     return {
         lineSubtotalSum,

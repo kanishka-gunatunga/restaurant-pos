@@ -15,6 +15,7 @@ const Customer = sequelize.define('Customer', {
     name: {
         type: DataTypes.STRING,
         allowNull: true,
+        defaultValue: 'guest',
     },
     promotions_enabled: {
         type: DataTypes.BOOLEAN,

@@ -48,13 +48,17 @@ exports.createManualPrintJob = async (req, res) => {
         const order = await Order.findByPk(orderId, {
             include: [
                 { model: Customer, as: 'customer' },
-                { model: User, as: 'user', attributes: ['name', 'username'] },
+                { model: User, as: 'user' },
                 {
                     model: OrderItem,
                     as: 'items',
                     include: [
                         { model: Product, as: 'product' },
-                        { model: VariationOption, as: 'variation' },
+                        {
+                            model: VariationOption,
+                            as: 'variation',
+                            include: [{ model: Variation, as: 'Variation' }]
+                        },
                         {
                             model: OrderItemModification,
                             as: 'modifications',
@@ -75,6 +79,10 @@ exports.createManualPrintJob = async (req, res) => {
         const userDetail = await UserDetail.findOne({ where: { userId: req.user.id } });
         const branchId = userDetail?.branchId || 1;
         const branch = await Branch.findByPk(branchId);
+
+        if (order.user && userDetail) {
+            order.user.name = userDetail.name;
+        }
 
         const templateService = require('../services/templateService');
         const content = templateService.generateReceiptHtml(order, payment, branch);

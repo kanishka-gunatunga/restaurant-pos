@@ -15,7 +15,7 @@ const OrderItem = sequelize.define('OrderItem', {
         type: DataTypes.INTEGER,
         allowNull: false,
     },
-    variationId: {
+    variationOptionId: {
         type: DataTypes.INTEGER,
         allowNull: true,
     },
