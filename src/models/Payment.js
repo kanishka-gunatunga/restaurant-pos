@@ -13,7 +13,7 @@ const Payment = sequelize.define('Payment', {
     },
     paymentMethod: {
         type: DataTypes.ENUM('cash', 'card'),
-        allowNull: false,
+        allowNull: true,
     },
     amount: {
         type: DataTypes.DECIMAL(10, 2),
