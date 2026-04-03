@@ -342,6 +342,7 @@ exports.getPaymentsReport = async (req, res) => {
             include: [
                 {
                     model: Order,
+                    as: 'order',
                     where: orderWhere,
                     attributes: ['id', 'branchId']
                 }

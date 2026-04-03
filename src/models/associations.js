@@ -98,7 +98,7 @@ OrderItemModification.belongsTo(ModificationItem, { foreignKey: 'modificationId'
 
 // Order - Payment Association
 Order.hasMany(Payment, { foreignKey: 'orderId', as: 'payments', onDelete: 'CASCADE', hooks: true });
-Payment.belongsTo(Order, { foreignKey: 'orderId' });
+Payment.belongsTo(Order, { foreignKey: 'orderId', as: 'order' });
 
 // Product - Category Association (parentCategory)
 Category.hasMany(Product, { foreignKey: 'categoryId', as: 'products' });
