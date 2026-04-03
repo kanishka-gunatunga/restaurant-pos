@@ -42,7 +42,6 @@ const Payment = sequelize.define('Payment', {
     paidAmount: {
         type: DataTypes.DECIMAL(10, 2),
         allowNull: true,
-        defaultValue: 0.00,
     },
 }, {
     tableName: 'payments',
