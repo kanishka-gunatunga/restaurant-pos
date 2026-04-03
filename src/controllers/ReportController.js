@@ -121,7 +121,7 @@ exports.getSalesReport = async (req, res) => {
 
         const whereCondition = {
             createdAt: { [Op.between]: [start, end] },
-            status: 'complete'
+            status: { [Op.ne]: 'cancel' }
         };
 
         if (resolvedBranchId) {
@@ -410,7 +410,7 @@ exports.getProductPerformanceReport = async (req, res) => {
 
         const orderWhere = {
             createdAt: { [Op.between]: [start, end] },
-            status: 'complete'
+            status: { [Op.ne]: 'cancel' }
         };
 
         if (resolvedBranchId) {
