@@ -2,11 +2,6 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const sequelize = require('./config/database');
-const Supplier = require('./models/Supplier');
-const Material = require('./models/Material');
-const MaterialBranch = require('./models/MaterialBranch');
-const StockItem = require('./models/StockItem');
-const ProductAssignment = require('./models/ProductAssignment');
 require('dotenv').config();
 
 require('./models/associations');
@@ -127,27 +122,8 @@ sequelize
             return;
         }
         try {
-            await Supplier.sync({ alter: true });
-            await Customer.sync({ alter: true });
-            await Material.sync({ alter: true });
-            await MaterialBranch.sync({ alter: true });
-            await StockItem.sync({ alter: true });
-            await ProductAssignment.sync({ alter: true });
-            const Order = require('./models/Order');
-            const Payment = require('./models/Payment');
-            await Order.sync({ alter: true });
-            await Payment.sync({ alter: true });
-            const DeliveryCharge = require('./models/DeliveryCharge');
-            const DeliveryChargeBranch = require('./models/DeliveryChargeBranch');
-            await DeliveryCharge.sync({ alter: true });
-            await DeliveryChargeBranch.sync({ alter: true });
-            const ProductBundle = require('./models/ProductBundle');
-            const ProductBundleBranch = require('./models/ProductBundleBranch');
-            const ProductBundleItem = require('./models/ProductBundleItem');
-            await ProductBundle.sync({ alter: true });
-            await ProductBundleBranch.sync({ alter: true });
-            await ProductBundleItem.sync({ alter: true });
-            console.log('Database schema alter sync finished');
+            await sequelize.sync({ alter: true });
+            console.log('Database schema alter sync finished (all models)');
         } catch (err) {
             console.error('Schema alter sync failed:', err);
         }
