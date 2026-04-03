@@ -1,147 +1,485 @@
 const { Op } = require('sequelize');
+const sequelize = require('../config/database');
+
 const Order = require('../models/Order');
 const OrderItem = require('../models/OrderItem');
 const Payment = require('../models/Payment');
 const User = require('../models/User');
 const UserDetail = require('../models/UserDetail');
 const Product = require('../models/Product');
-const Variation = require('../models/Variation');
+const Category = require('../models/Category');
+const Branch = require('../models/Branch');
+const Customer = require('../models/Customer');
+const XLSX = require('xlsx');
+const PDFDocument = require('pdfkit-table');
 
+/**
+ * Helper to resolve branchId based on user role
+ */
+const getBranchFilter = async (req, requestedBranch) => {
+    // If user is admin and they requested 'all', return null (no filter)
+    if (req.user.role === 'admin' && (!requestedBranch || requestedBranch === 'all')) {
+        return null;
+    }
+
+    // If user is admin and requested a specific branch, return that
+    if (req.user.role === 'admin' && requestedBranch && requestedBranch !== 'all') {
+        return requestedBranch;
+    }
+
+    // For non-admin roles (manager, cashier, kitchen), force their assigned branch
+    const detail = await UserDetail.findOne({ where: { userId: req.user.id } });
+    return detail ? detail.branchId : -1; // -1 as fallback to return nothing if detail missing
+};
+
+/**
+ * Helper to export data to Excel
+ */
+const exportToExcel = (res, fileName, data, summary) => {
+    const wb = XLSX.utils.book_new();
+    
+    // Add Main Data Sheet
+    const ws = XLSX.utils.json_to_sheet(data);
+    XLSX.utils.book_append_sheet(wb, ws, "Report Data");
+
+    // Add Summary Sheet
+    if (summary) {
+        const summaryArr = Object.entries(summary).map(([key, value]) => ({ Metric: key, Value: value }));
+        const wsSum = XLSX.utils.json_to_sheet(summaryArr);
+        XLSX.utils.book_append_sheet(wb, wsSum, "Summary");
+    }
+
+    const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}.xlsx"`);
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.send(buf);
+};
+
+/**
+ * Helper to export data to PDF
+ */
+const exportToPDF = async (res, title, headerInfo, tableHeaders, tableRows, summary) => {
+    const doc = new PDFDocument({ margin: 30, size: 'A4' });
+    
+    res.setHeader('Content-Disposition', `attachment; filename="${title.replace(/\s+/g, '_')}.pdf"`);
+    res.setHeader('Content-Type', 'application/pdf');
+    doc.pipe(res);
+
+    doc.fontSize(18).text(title, { align: 'center' });
+    doc.moveDown();
+    
+    doc.fontSize(10).text(`Date Range: ${headerInfo.dateRange}`);
+    doc.text(`Generated On: ${new Date().toLocaleString()}`);
+    doc.moveDown();
+
+    const table = {
+        title: "Report Table",
+        headers: tableHeaders.map(h => ({ label: h, property: h.toLowerCase().replace(/\s+/g, ''), width: 50 })),
+        rows: tableRows.map(row => Object.values(row).map(v => String(v)))
+    };
+
+    // Since headers might be complex, we customize column width and labels
+    const mappedHeaders = tableHeaders.map(h => h); // Placeholder
+    
+    await doc.table({
+        title: title,
+        subtitle: `Date Range: ${headerInfo.dateRange}`,
+        headers: tableHeaders,
+        rows: tableRows.map(r => Object.values(r).map(v => String(v))),
+    }, {
+        prepareHeader: () => doc.font("Helvetica-Bold").fontSize(8),
+        prepareRow: (row, i) => doc.font("Helvetica").fontSize(8),
+    });
+
+    if (summary) {
+        doc.moveDown();
+        doc.fontSize(12).text("Summary", { underline: true });
+        Object.entries(summary).forEach(([key, value]) => {
+            doc.fontSize(10).text(`${key}: ${value}`);
+        });
+    }
+
+    doc.end();
+};
+
+/**
+ * 1. Sales Report (Item-wise)
+ */
 exports.getSalesReport = async (req, res) => {
     try {
-        const { startDate, endDate, reportType, reportSource, branch } = req.query;
-        // branchId corresponds to 'branch' parameter in request
-        const branchId = branch;
+        const { startDate, endDate, branch, product, export: exportType } = req.query;
 
-        if (!startDate || !endDate || !branchId || !reportType || !reportSource) {
-            return res.status(400).json({
-                message: 'Missing required parameters: startDate, endDate, branch, reportType, reportSource'
-            });
+        if (!startDate || !endDate) {
+            return res.status(400).json({ message: 'Missing required parameters: startDate, endDate' });
         }
 
-        // Normalize reportType and reportSource names to handle subtle variations
-        const rt = reportType.toLowerCase().replace(' ', '_');
-        const rs = reportSource.toLowerCase();
-
-        // Adjust endDate to include the full day
+        const resolvedBranchId = await getBranchFilter(req, branch);
+        
         const start = new Date(startDate);
         const end = new Date(endDate);
         end.setHours(23, 59, 59, 999);
 
-        const dateFilter = {
-            createdAt: {
-                [Op.between]: [start, end]
-            }
+        const whereCondition = {
+            createdAt: { [Op.between]: [start, end] },
+            status: 'complete'
         };
 
-        if (rs === 'order' || rs === 'orders') {
-            const orders = await Order.findAll({
-                where: dateFilter,
-                include: [
-                    {
-                        model: OrderItem,
-                        as: 'items',
-                        include: [{ model: Product, as: 'product' }]
-                    },
-                    {
-                        model: User,
-                        as: 'user',
-                        required: true,
-                        include: [{
-                            model: UserDetail,
-                            as: 'UserDetail',
-                            required: true,
-                            where: { branchId }
-                        }]
-                    }
-                ],
-                order: [['createdAt', 'DESC']]
-            });
-
-            if (rt === 'product_wise' || rt === 'item_wise' || rt === 'item' || rt === 'items_wise') {
-                // Aggregate sales by product for this branch
-                const productSales = {};
-                orders.forEach(order => {
-                    order.items.forEach(item => {
-                        const pid = item.productId;
-                        if (!productSales[pid]) {
-                            productSales[pid] = {
-                                productId: pid,
-                                productName: item.product?.name || 'Unknown Product',
-                                productSku: item.product?.sku || 'N/A',
-                                totalQuantity: 0,
-                                totalSales: 0
-                            };
-                        }
-                        productSales[pid].totalQuantity += (item.quantity || 0);
-                        productSales[pid].totalSales += (parseFloat(item.unitPrice || 0) * (item.quantity || 0));
-                    });
-                });
-                return res.json(Object.values(productSales));
-            }
-
-            // Default or branch_wise: Return order details
-            return res.json(orders);
-
-        } else if (rs === 'payment' || rs === 'payments') {
-            const payments = await Payment.findAll({
-                where: dateFilter,
-                include: [
-                    {
-                        model: Order,
-                        as: 'order',
-                        include: [{
-                            model: OrderItem,
-                            as: 'items',
-                            include: [{ model: Product, as: 'product' }]
-                        }]
-                    },
-                    {
-                        model: User,
-                        as: 'user',
-                        required: true,
-                        include: [{
-                            model: UserDetail,
-                            as: 'UserDetail',
-                            required: true,
-                            where: { branchId }
-                        }]
-                    }
-                ],
-                order: [['createdAt', 'DESC']]
-            });
-
-            if (rt === 'product_wise' || rt === 'item_wise' || rt === 'item' || rt === 'items_wise') {
-                // Aggregate product sales based on payments received
-                const productSales = {};
-                payments.forEach(payment => {
-                    if (payment.order && payment.order.items) {
-                        payment.order.items.forEach(item => {
-                            const pid = item.productId;
-                            if (!productSales[pid]) {
-                                productSales[pid] = {
-                                    productId: pid,
-                                    productName: item.product?.name || 'Unknown Product',
-                                    productSku: item.product?.sku || 'N/A',
-                                    totalQuantity: 0,
-                                    totalSales: 0
-                                };
-                            }
-                            productSales[pid].totalQuantity += (item.quantity || 0);
-                            productSales[pid].totalSales += (parseFloat(item.unitPrice || 0) * (item.quantity || 0));
-                        });
-                    }
-                });
-                return res.json(Object.values(productSales));
-            }
-
-            // Default or branch_wise: Return payment details
-            return res.json(payments);
-        } else {
-            return res.status(400).json({ message: 'Invalid report source. Use "order" or "payment".' });
+        if (resolvedBranchId) {
+            whereCondition.branchId = resolvedBranchId;
         }
 
+        const itemWhere = {};
+        if (product && product !== 'all') {
+            itemWhere.productId = product;
+        }
+
+        const orders = await Order.findAll({
+            where: whereCondition,
+            include: [
+                {
+                    model: OrderItem,
+                    as: 'items',
+                    where: itemWhere,
+                    include: [
+                        { 
+                            model: Product, 
+                            as: 'product',
+                            include: [{ model: Category, as: 'category' }]
+                        }
+                    ]
+                },
+                {
+                    model: Payment,
+                    as: 'payments',
+                    attributes: ['paymentMethod']
+                }
+            ],
+            order: [['createdAt', 'DESC']]
+        });
+
+        const reportData = [];
+        let totalSalesAmount = 0;
+        let totalDiscountsGiven = 0;
+        let totalTaxCollected = 0;
+
+        orders.forEach(order => {
+            const paymentType = order.payments.map(p => p.paymentMethod).join(', ') || 'N/A';
+            const orderSubtotal = order.items.reduce((sum, item) => sum + (parseFloat(item.unitPrice) * item.quantity), 0);
+            
+            order.items.forEach(item => {
+                const itemSubtotal = parseFloat(item.unitPrice) * item.quantity;
+                const itemDiscount = parseFloat(item.productDiscount || 0);
+                const itemTax = orderSubtotal > 0 ? (itemSubtotal / orderSubtotal) * parseFloat(order.tax || 0) : 0;
+                const totalAmount = itemSubtotal - itemDiscount + itemTax;
+
+                reportData.push({
+                    "Date": new Date(order.createdAt).toLocaleDateString(),
+                    "Invoice No": order.id,
+                    "Product No": item.product?.sku || item.product?.code || 'N/A',
+                    "Product Name": item.product?.name || 'Unknown',
+                    "Category": item.product?.category?.name || 'Uncategorized',
+                    "Qty Sold": item.quantity,
+                    "Unit Price": item.unitPrice,
+                    "Discount": itemDiscount,
+                    "Tax": itemTax.toFixed(2),
+                    "Total Amount": totalAmount.toFixed(2),
+                    "Payment Type": paymentType
+                });
+
+                totalSalesAmount += totalAmount;
+                totalDiscountsGiven += itemDiscount;
+                totalTaxCollected += itemTax;
+            });
+            totalDiscountsGiven += parseFloat(order.orderDiscount || 0);
+        });
+
+        const summary = {
+            "Total Sales Amount": totalSalesAmount.toFixed(2),
+            "Total Discounts Given": totalDiscountsGiven.toFixed(2),
+            "Total Tax Collected": totalTaxCollected.toFixed(2),
+            "Net Sales": (totalSalesAmount - totalTaxCollected).toFixed(2)
+        };
+
+        if (exportType === 'excel') {
+            return exportToExcel(res, "Sales_Report", reportData, summary);
+        } else if (exportType === 'pdf') {
+            const headers = ["Date", "Invoice No", "Product No", "Product Name", "Category", "Qty Sold", "Unit Price", "Discount", "Tax", "Total Amount", "Payment Type"];
+            return exportToPDF(res, "Sales Report", { dateRange: `${startDate} to ${endDate}` }, headers, reportData, summary);
+        }
+
+        res.json({
+            header: {
+                reportName: 'Sales Report',
+                dateRange: `${startDate} to ${endDate}`,
+                generatedOn: new Date()
+            },
+            data: reportData,
+            summary: summary
+        });
+
     } catch (error) {
+        console.error('Sales Report Error:', error);
+        res.status(500).json({ message: error.message });
+    }
+};
+
+/**
+ * 2. Orders Report
+ */
+exports.getOrdersReport = async (req, res) => {
+    try {
+        const { startDate, endDate, branch, export: exportType } = req.query;
+
+        if (!startDate || !endDate) {
+            return res.status(400).json({ message: 'Missing required parameters: startDate, endDate' });
+        }
+
+        const resolvedBranchId = await getBranchFilter(req, branch);
+
+        const start = new Date(startDate);
+        const end = new Date(endDate);
+        end.setHours(23, 59, 59, 999);
+
+        const whereCondition = {
+            createdAt: { [Op.between]: [start, end] }
+        };
+
+        if (resolvedBranchId) {
+            whereCondition.branchId = resolvedBranchId;
+        }
+
+        const orders = await Order.findAll({
+            where: whereCondition,
+            include: [
+                { model: Customer, as: 'customer' },
+                { model: OrderItem, as: 'items', attributes: ['id'] }
+            ],
+            order: [['createdAt', 'DESC']]
+        });
+
+        let totalOrders = orders.length;
+        let completedOrders = 0;
+        let cancelledOrders = 0;
+        let totalOrderValue = 0;
+
+        const reportData = orders.map(order => {
+            const subtotal = parseFloat(order.totalAmount) - parseFloat(order.tax || 0) + parseFloat(order.orderDiscount || 0);
+            if (order.status === 'complete') completedOrders++;
+            if (order.status === 'cancel') cancelledOrders++;
+            totalOrderValue += parseFloat(order.totalAmount);
+
+            return {
+                "Order ID": order.id,
+                "Order Date": new Date(order.createdAt).toLocaleDateString(),
+                "Customer Name": order.customer?.name || 'Guest',
+                "Order Type": order.orderType,
+                "Items Count": order.items?.length || 0,
+                "Order Status": order.status,
+                "Subtotal": subtotal.toFixed(2),
+                "Discount": order.orderDiscount,
+                "Tax": order.tax,
+                "Total Amount": order.totalAmount
+            };
+        });
+
+        const summary = {
+            "Total Orders": totalOrders,
+            "Completed Orders": completedOrders,
+            "Cancelled Orders": cancelledOrders,
+            "Total Order Value": totalOrderValue.toFixed(2),
+            "Average Order Value": totalOrders > 0 ? (totalOrderValue / totalOrders).toFixed(2) : 0
+        };
+
+        if (exportType === 'excel') {
+            return exportToExcel(res, "Orders_Report", reportData, summary);
+        } else if (exportType === 'pdf') {
+            const headers = ["Order ID", "Order Date", "Customer Name", "Order Type", "Items Count", "Order Status", "Subtotal", "Discount", "Tax", "Total Amount"];
+            return exportToPDF(res, "Orders Report", { dateRange: `${startDate} to ${endDate}` }, headers, reportData, summary);
+        }
+
+        res.json({
+            header: {
+                reportName: 'Orders Report',
+                dateRange: `${startDate} to ${endDate}`,
+                generatedOn: new Date()
+            },
+            data: reportData,
+            summary: summary
+        });
+
+    } catch (error) {
+        console.error('Orders Report Error:', error);
+        res.status(500).json({ message: error.message });
+    }
+};
+
+/**
+ * 3. Payment Report
+ */
+exports.getPaymentsReport = async (req, res) => {
+    try {
+        const { startDate, endDate, branch, export: exportType } = req.query;
+
+        if (!startDate || !endDate) {
+            return res.status(400).json({ message: 'Missing required parameters: startDate, endDate' });
+        }
+
+        const resolvedBranchId = await getBranchFilter(req, branch);
+
+        const start = new Date(startDate);
+        const end = new Date(endDate);
+        end.setHours(23, 59, 59, 999);
+
+        const orderWhere = {};
+        if (resolvedBranchId) {
+            orderWhere.branchId = resolvedBranchId;
+        }
+
+        const payments = await Payment.findAll({
+            where: {
+                createdAt: { [Op.between]: [start, end] }
+            },
+            include: [
+                {
+                    model: Order,
+                    where: orderWhere,
+                    attributes: ['id', 'branchId']
+                }
+            ],
+            order: [['createdAt', 'DESC']]
+        });
+
+        let totalPaymentsReceived = 0;
+
+        const reportData = payments.map(payment => {
+            totalPaymentsReceived += parseFloat(payment.amount);
+            return {
+                "Payment ID": payment.id,
+                "Date": new Date(payment.createdAt).toLocaleDateString(),
+                "Invoice No": payment.order?.id || 'N/A',
+                "Payment Method": payment.paymentMethod,
+                "Amount Paid": payment.amount,
+                "Status": payment.status
+            };
+        });
+
+        const summary = {
+            "Total Payments Received": totalPaymentsReceived.toFixed(2)
+        };
+
+        if (exportType === 'excel') {
+            return exportToExcel(res, "Payment_Report", reportData, summary);
+        } else if (exportType === 'pdf') {
+            const headers = ["Payment ID", "Date", "Invoice No", "Payment Method", "Amount Paid", "Status"];
+            return exportToPDF(res, "Payment Report", { dateRange: `${startDate} to ${endDate}` }, headers, reportData, summary);
+        }
+
+        res.json({
+            header: {
+                reportName: 'Payment Report',
+                dateRange: `${startDate} to ${endDate}`,
+                generatedOn: new Date()
+            },
+            data: reportData,
+            summary: summary
+        });
+
+    } catch (error) {
+        console.error('Payment Report Error:', error);
+        res.status(500).json({ message: error.message });
+    }
+};
+
+
+/**
+ * 4. Product Performance Report
+ */
+exports.getProductPerformanceReport = async (req, res) => {
+    try {
+        const { startDate, endDate, branch, export: exportType } = req.query;
+
+        if (!startDate || !endDate) {
+            return res.status(400).json({ message: 'Missing required parameters: startDate, endDate' });
+        }
+
+        const resolvedBranchId = await getBranchFilter(req, branch);
+
+        const start = new Date(startDate);
+        const end = new Date(endDate);
+        end.setHours(23, 59, 59, 999);
+
+        const orderWhere = {
+            createdAt: { [Op.between]: [start, end] },
+            status: 'complete'
+        };
+
+        if (resolvedBranchId) {
+            orderWhere.branchId = resolvedBranchId;
+        }
+
+        const items = await OrderItem.findAll({
+            include: [
+                {
+                    model: Order,
+                    where: orderWhere,
+                    attributes: []
+                },
+                {
+                    model: Product,
+                    as: 'product',
+                    attributes: ['name']
+                }
+            ],
+            attributes: [
+                'productId',
+                [sequelize.fn('SUM', sequelize.col('quantity')), 'totalQuantitySold'],
+                [sequelize.literal('SUM(quantity * unitPrice - productDiscount)'), 'totalSales']
+            ],
+            group: ['OrderItem.productId', 'product.id'],
+            order: [[sequelize.literal('totalSales'), 'DESC']]
+        });
+
+        let totalItemsSold = 0;
+        let grandTotalSales = 0;
+
+        const reportData = items.map(item => {
+            const qty = parseInt(item.getDataValue('totalQuantitySold') || 0);
+            const sales = parseFloat(item.getDataValue('totalSales') || 0);
+            
+            totalItemsSold += qty;
+            grandTotalSales += sales;
+
+            return {
+                "Product Name": item.product?.name || 'Unknown',
+                "Total Quantity Sold": qty,
+                "Total Sales (Rs)": sales.toFixed(2)
+            };
+        });
+
+        const summary = {
+            "Total Items Sold": totalItemsSold,
+            "Grand Total Sales": `Rs. ${grandTotalSales.toFixed(2)}`
+        };
+
+        if (exportType === 'excel') {
+            return exportToExcel(res, "Product_Performance_Report", reportData, summary);
+        } else if (exportType === 'pdf') {
+            const headers = ["Product Name", "Total Quantity Sold", "Total Sales (Rs)"];
+            return exportToPDF(res, "Product Performance Report", { dateRange: `${startDate} to ${endDate}` }, headers, reportData, summary);
+        }
+
+        res.json({
+            header: {
+                reportName: 'Product Performance Report',
+                dateRange: `${startDate} to ${endDate}`,
+                generatedOn: new Date()
+            },
+            data: reportData,
+            summary: summary
+        });
+
+    } catch (error) {
+        console.error('Product Performance Report Error:', error);
         res.status(500).json({ message: error.message });
     }
 };

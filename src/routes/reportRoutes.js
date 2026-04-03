@@ -4,5 +4,9 @@ const ReportController = require('../controllers/ReportController');
 const { authenticate } = require('../middleware/auth');
 
 router.get('/sales', authenticate, ReportController.getSalesReport);
+router.get('/orders', authenticate, ReportController.getOrdersReport);
+router.get('/payments', authenticate, ReportController.getPaymentsReport);
+router.get('/product-performance', authenticate, ReportController.getProductPerformanceReport);
 
 module.exports = router;
+
