@@ -13,6 +13,21 @@ const orderItemsForBalanceInclude = {
     include: [{ model: OrderItemModification, as: 'modifications', attributes: ['price'] }],
 };
 
+const orderBalanceReloadAttributes = [
+    'id',
+    'status',
+    'totalAmount',
+    'orderDiscount',
+    'serviceCharge',
+    'deliveryChargeAmount',
+];
+
+function orderLikeItems(orderLike) {
+    if (!orderLike || typeof orderLike !== 'object') return [];
+    const raw = orderLike.items ?? orderLike.orderItems;
+    return Array.isArray(raw) ? raw : [];
+}
+
 const DEFAULT_TOLERANCE = 0.02;
 
 const PAYMENT_LIST_ATTRIBUTES = [
@@ -117,22 +132,49 @@ function computeOutstanding(orderTotal, payments) {
     return centsToMoney(rawC);
 }
 
+/**
+ * Amount owed for payment math.
+ */
 function resolveOrderTotalForBalanceFromOrderLike(orderLike) {
     if (!orderLike) {
         return 0;
     }
-    return roundMoney(parseFloat(orderLike.totalAmount) || 0);
+    const stored = roundMoney(parseFloat(orderLike.totalAmount ?? orderLike.total_amount) || 0);
+    const items = orderLikeItems(orderLike);
+    if (!items.length) {
+        return stored;
+    }
+    const disc = Math.max(0, parseFloat(orderLike.orderDiscount ?? orderLike.order_discount) || 0);
+    const feeSvc = Math.max(0, parseFloat(orderLike.serviceCharge ?? orderLike.service_charge) || 0);
+    const feeDel = Math.max(
+        0,
+        parseFloat(orderLike.deliveryChargeAmount ?? orderLike.delivery_charge_amount) || 0
+    );
+    const lineBased = roundMoney(computeOrderTotalsFromLines(items, disc, feeSvc, feeDel).totalAmount);
+    const centTol = Math.max(2, Math.ceil(getTolerance() * 100));
+    if (amountsRoughlyEqual(lineBased, stored, centTol)) {
+        return stored;
+    }
+    return lineBased;
 }
 
 async function reconcileOrderTotalAgainstLineItems(order, transaction) {
     if (!order || order.status === 'cancel') return;
     const disc = Math.max(0, parseFloat(order.orderDiscount) || 0);
-    if (!order.items?.length) return;
-    const computed = computeOrderTotalsFromLines(order.items, disc);
+    if (!orderLikeItems(order).length) return;
+    const feeSvc = Math.max(
+        0,
+        parseFloat(order.serviceCharge ?? order.service_charge) || 0
+    );
+    const feeDel = Math.max(
+        0,
+        parseFloat(order.deliveryChargeAmount ?? order.delivery_charge_amount) || 0
+    );
+    const computed = computeOrderTotalsFromLines(orderLikeItems(order), disc, feeSvc, feeDel);
     const lineBased = roundMoney(computed.totalAmount);
     const stored = roundMoney(parseFloat(order.totalAmount) || 0);
-    const tolHeal = getTolerance();
-    if (lineBased + tolHeal < stored || lineBased > stored + tolHeal) {
+    const centTolHeal = Math.max(2, Math.ceil(getTolerance() * 100));
+    if (!amountsRoughlyEqual(lineBased, stored, centTolHeal)) {
         await order.update(
             { totalAmount: computed.totalAmount, tax: computed.tax },
             { transaction }
@@ -256,11 +298,16 @@ function attachDerivedPaymentFieldsToOrderJson(orderData) {
     const rawOC = computeOutstandingCents(totalForBalance, payments);
     orderData.balanceDue = balanceDue;
     orderData.balance_due = balanceDue;
-    // orders.paymentStatus is the only source of truth on read. Derivation runs only on write
-    // (persistOrderPaymentAggregate) and for legacy rows with no valid stored value.
     if (storedFromRow != null) {
         orderData.paymentStatus = storedFromRow;
         orderData.payment_status = storedFromRow;
+        if (storedFromRow === 'pending') {
+            const derivedStatus = deriveAggregatePaymentStatus(totalForBalance, payments);
+            if (derivedStatus !== 'pending' && rawOC <= tolC) {
+                orderData.paymentStatus = derivedStatus;
+                orderData.payment_status = derivedStatus;
+            }
+        }
     } else {
         const derivedStatus = deriveAggregatePaymentStatus(totalForBalance, payments);
         orderData.paymentStatus = derivedStatus;
@@ -290,7 +337,14 @@ async function persistOrderPaymentAggregate(orderId, transaction) {
 async function syncBalanceDuePayment(orderId, transaction) {
     const order = await Order.findByPk(orderId, {
         transaction,
-        attributes: ['id', 'status', 'totalAmount', 'orderDiscount'],
+        attributes: [
+            'id',
+            'status',
+            'totalAmount',
+            'orderDiscount',
+            'serviceCharge',
+            'deliveryChargeAmount',
+        ],
         include: [orderItemsForBalanceInclude],
     });
     if (!order) return;
@@ -306,6 +360,12 @@ async function syncBalanceDuePayment(orderId, transaction) {
     }
 
     await reconcileOrderTotalAgainstLineItems(order, transaction);
+
+    await order.reload({
+        transaction,
+        attributes: orderBalanceReloadAttributes,
+        include: [orderItemsForBalanceInclude],
+    });
 
     const payments = await Payment.findAll({ where: { orderId }, transaction });
     const financialTotal = resolveOrderTotalForBalanceFromOrderLike(order);
@@ -387,11 +447,24 @@ async function trySettleExistingPendingPayment({
 }) {
     const order = await Order.findByPk(orderId, {
         transaction,
-        attributes: ['id', 'totalAmount', 'orderDiscount', 'status'],
+        attributes: [
+            'id',
+            'totalAmount',
+            'orderDiscount',
+            'status',
+            'serviceCharge',
+            'deliveryChargeAmount',
+        ],
         include: [orderItemsForBalanceInclude],
     });
     if (!order) return { settled: false };
     await reconcileOrderTotalAgainstLineItems(order, transaction);
+
+    await order.reload({
+        transaction,
+        attributes: orderBalanceReloadAttributes,
+        include: [orderItemsForBalanceInclude],
+    });
 
     const requested = roundMoney(parseFloat(amount) || 0);
     const centsTolerance = Math.max(2, Math.ceil(getTolerance() * 100));
