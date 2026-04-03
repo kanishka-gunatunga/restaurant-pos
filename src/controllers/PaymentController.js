@@ -60,6 +60,8 @@ function formatPaymentRowForClient(p) {
         refunded_amount: row.refundedAmount != null ? Number(row.refundedAmount) : Number(row.refunded_amount) || 0,
         paymentMethod: row.paymentMethod ?? row.payment_method,
         payment_method: row.paymentMethod ?? row.payment_method,
+        paidAmount: row.paidAmount != null ? Number(row.paidAmount) : Number(row.paid_amount) || null,
+        paid_amount: row.paidAmount != null ? Number(row.paidAmount) : Number(row.paid_amount) || null,
     };
 }
 
@@ -200,7 +202,8 @@ async function jsonPaymentWithOrderSummary(orderId, paymentRecord, res, statusCo
 exports.createPayment = async (req, res) => {
     const t = await sequelize.transaction();
     try {
-        const { orderId, paymentMethod, amount, transactionId, status } = req.body;
+        const { orderId, paymentMethod, amount, transactionId, status, paidAmount } = req.body;
+        const rawPaidAmount = paidAmount ?? req.body.paid_amount;
         const rawPaymentRole = req.body.paymentRole ?? req.body.payment_role;
         const clientPaymentRole =
             rawPaymentRole !== undefined && rawPaymentRole !== null && String(rawPaymentRole).trim() !== ''
@@ -310,6 +313,7 @@ exports.createPayment = async (req, res) => {
                         status: 'paid',
                         userId: req.user?.id,
                         paymentRole: 'sale',
+                        paidAmount: rawPaidAmount !== undefined ? parseFloat(rawPaidAmount) : amountNum,
                     },
                     { transaction: t }
                 );
@@ -409,6 +413,7 @@ exports.createPayment = async (req, res) => {
                 status: effectiveStatus,
                 userId: req.user?.id,
                 paymentRole: clientPaymentRole === 'balance_due' ? 'balance_due' : 'sale',
+                paidAmount: rawPaidAmount !== undefined ? parseFloat(rawPaidAmount) : amountNum,
             },
             { transaction: t }
         );
