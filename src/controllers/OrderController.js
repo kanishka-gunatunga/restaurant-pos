@@ -304,7 +304,11 @@ exports.createOrder = async (req, res) => {
             landmark,
             zipcode,
             deliveryInstructions,
-            order_products
+            order_products,
+            serviceCharge,
+            deliveryChargeAmount,
+            deliveryChargeId,
+            deliveryChargeSelectedId
         } = req.body;
 
         let { customerId } = req.body;
@@ -313,6 +317,10 @@ exports.createOrder = async (req, res) => {
             orderDiscount !== undefined && orderDiscount !== null
                 ? Math.max(0, parseFloat(orderDiscount) || 0)
                 : 0;
+
+        const effectiveServiceCharge = parseFloat(serviceCharge) || 0;
+        const effectiveDeliveryChargeAmount = parseFloat(deliveryChargeAmount) || 0;
+        const effectiveDeliveryChargeId = deliveryChargeId || deliveryChargeSelectedId || null;
 
         if (customerMobile) {
             let customer = await Customer.findOne({ where: { mobile: customerMobile }, transaction: t });
@@ -326,7 +334,7 @@ exports.createOrder = async (req, res) => {
 
         const userDetail = await UserDetail.findOne({ where: { userId: req.user.id }, transaction: t });
 
-        const preliminaryTotals = computeOrderTotalsFromLines(order_products || [], parsedOrderDiscount);
+        const preliminaryTotals = computeOrderTotalsFromLines(order_products || [], parsedOrderDiscount, effectiveServiceCharge, effectiveDeliveryChargeAmount);
 
         const order = await Order.create({
             customerId,
@@ -345,6 +353,9 @@ exports.createOrder = async (req, res) => {
             status: 'pending',
             userId: req.user?.id,
             branchId: userDetail?.branchId ?? null,
+            serviceCharge: effectiveServiceCharge,
+            deliveryChargeAmount: effectiveDeliveryChargeAmount,
+            deliveryChargeId: effectiveDeliveryChargeId,
         }, { transaction: t });
 
 
@@ -373,13 +384,15 @@ exports.createOrder = async (req, res) => {
             include: [{ model: OrderItemModification, as: 'modifications' }],
             transaction: t
         });
-        const finalTotals = computeOrderTotalsFromLines(savedItems, parsedOrderDiscount);
+        const finalTotals = computeOrderTotalsFromLines(savedItems, parsedOrderDiscount, effectiveServiceCharge, effectiveDeliveryChargeAmount);
         logTotalsMismatchIfAny(order.id, tax, totalAmount, finalTotals, 'createOrder');
         await order.update(
             {
                 tax: finalTotals.tax,
                 totalAmount: finalTotals.totalAmount,
-                orderDiscount: parsedOrderDiscount
+                orderDiscount: parsedOrderDiscount,
+                serviceCharge: effectiveServiceCharge,
+                deliveryChargeAmount: effectiveDeliveryChargeAmount
             },
             { transaction: t }
         );
@@ -668,6 +681,10 @@ exports.updateOrder = async (req, res) => {
             passcode,
             paymentStatus: bodyPaymentStatus,
             payment_status: bodyPaymentStatusSnake,
+            serviceCharge,
+            deliveryChargeAmount,
+            deliveryChargeId,
+            deliveryChargeSelectedId
         } = req.body;
 
         const order = await Order.findByPk(id, { transaction: t });
@@ -712,6 +729,10 @@ exports.updateOrder = async (req, res) => {
                 ? Math.max(0, parseFloat(orderDiscount) || 0)
                 : Math.max(0, parseFloat(order.orderDiscount) || 0);
 
+        const effectiveServiceCharge = serviceCharge !== undefined ? (parseFloat(serviceCharge) || 0) : (parseFloat(order.serviceCharge) || 0);
+        const effectiveDeliveryChargeAmount = deliveryChargeAmount !== undefined ? (parseFloat(deliveryChargeAmount) || 0) : (parseFloat(order.deliveryChargeAmount) || 0);
+        const effectiveDeliveryChargeId = (deliveryChargeId || deliveryChargeSelectedId) !== undefined ? (deliveryChargeId || deliveryChargeSelectedId || null) : order.deliveryChargeId;
+
         if (order_products) {
             const orderItems = await OrderItem.findAll({ where: { orderId: id }, transaction: t });
             for (const item of orderItems) {
@@ -745,7 +766,7 @@ exports.updateOrder = async (req, res) => {
             include: [{ model: OrderItemModification, as: 'modifications' }],
             transaction: t
         });
-        const finalTotals = computeOrderTotalsFromLines(savedItems, effectiveOrderDiscount);
+        const finalTotals = computeOrderTotalsFromLines(savedItems, effectiveOrderDiscount, effectiveServiceCharge, effectiveDeliveryChargeAmount);
         logTotalsMismatchIfAny(id, tax, totalAmount, finalTotals, 'updateOrder');
 
         const updatePayload = {
@@ -762,6 +783,9 @@ exports.updateOrder = async (req, res) => {
             landmark,
             zipcode,
             deliveryInstructions,
+            serviceCharge: effectiveServiceCharge,
+            deliveryChargeAmount: effectiveDeliveryChargeAmount,
+            deliveryChargeId: effectiveDeliveryChargeId,
         };
 
         if (order.branchId == null && editorUserDetail?.branchId != null) {

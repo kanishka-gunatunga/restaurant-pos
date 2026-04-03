@@ -103,6 +103,19 @@ exports.generateReceiptHtml = (order, payment, branch) => {
                 </div>` : ''}
             </div>
 
+            <div style="margin-bottom: 15px;">
+                ${parseFloat(order.serviceCharge || 0) > 0 ? `
+                <div style="display: flex; justify-content: space-between; font-size: 1.1em;">
+                    <span>SERVICE CHARGE</span>
+                    <span>${parseFloat(order.serviceCharge).toFixed(2)}</span>
+                </div>` : ''}
+                ${parseFloat(order.deliveryChargeAmount || 0) > 0 ? `
+                <div style="display: flex; justify-content: space-between; font-size: 1.1em;">
+                    <span>DELIVERY CHARGE</span>
+                    <span>${parseFloat(order.deliveryChargeAmount).toFixed(2)}</span>
+                </div>` : ''}
+            </div>
+
             <div style="border-top: 1px solid #000; margin: 10px 0;"></div>
 
             <div style="margin-bottom: 10px; font-size: 0.95em;">
@@ -230,8 +243,10 @@ exports.generateReceiptStructuredData = (order, payment, branch) => {
             };
         }),
         totals: {
-            subTotal: parseFloat(order.totalAmount || 0).toFixed(2),
+            subTotal: (parseFloat(order.totalAmount || 0) - parseFloat(order.serviceCharge || 0) - parseFloat(order.deliveryChargeAmount || 0)).toFixed(2),
             discount: parseFloat(order.orderDiscount || 0).toFixed(2),
+            serviceCharge: parseFloat(order.serviceCharge || 0).toFixed(2),
+            deliveryCharge: parseFloat(order.deliveryChargeAmount || 0).toFixed(2),
             total: (parseFloat(order.totalAmount || 0)).toFixed(2)
         },
         payment: {

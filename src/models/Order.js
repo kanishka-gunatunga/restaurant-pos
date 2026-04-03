@@ -31,6 +31,23 @@ const Order = sequelize.define('Order', {
         type: DataTypes.DECIMAL(10, 2),
         defaultValue: 0.00,
     },
+    serviceCharge: {
+        type: DataTypes.DECIMAL(10, 2),
+        defaultValue: 0.00,
+        field: 'service_charge'
+    },
+    deliveryChargeAmount: {
+        type: DataTypes.DECIMAL(10, 2),
+        defaultValue: 0.00,
+        field: 'delivery_charge_amount'
+    },
+    deliveryChargeId: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+        field: 'delivery_charge_id',
+        references: { model: 'delivery_charges', key: 'id' },
+        onDelete: 'SET NULL',
+    },
     orderNote: {
         type: DataTypes.TEXT,
         allowNull: true,

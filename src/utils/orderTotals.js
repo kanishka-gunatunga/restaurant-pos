@@ -76,19 +76,23 @@ function dedupeOrderItemsById(items) {
     return out;
 }
 
-function computeOrderTotalsFromLines(items, orderDiscountRaw) {
+function computeOrderTotalsFromLines(items, orderDiscountRaw, serviceChargeRaw = 0, deliveryChargeRaw = 0) {
     const list = dedupeOrderItemsById(items);
     const lineSubtotalSum = roundMoney(
         list.reduce((sum, item) => sum + lineSubtotal(normalizeItem(item)), 0)
     );
     const orderDisc = Math.max(0, parseFloat(orderDiscountRaw) || 0);
+    const serviceCharge = Math.max(0, parseFloat(serviceChargeRaw) || 0);
+    const deliveryCharge = Math.max(0, parseFloat(deliveryChargeRaw) || 0);
     const subtotalAfterOrderDiscount = Math.max(0, roundMoney(lineSubtotalSum - orderDisc));
     const tax = SERVER_COMPUTED_ORDER_TAX;
-    const totalAmount = roundMoney(subtotalAfterOrderDiscount + tax);
+    const totalAmount = roundMoney(subtotalAfterOrderDiscount + tax + serviceCharge + deliveryCharge);
     return {
         lineSubtotalSum,
         subtotalAfterOrderDiscount,
         tax,
+        serviceCharge,
+        deliveryCharge,
         totalAmount,
     };
 }
