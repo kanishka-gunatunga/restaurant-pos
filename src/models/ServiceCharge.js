@@ -12,6 +12,10 @@ const ServiceCharge = sequelize.define('ServiceCharge', {
         allowNull: false,
         defaultValue: 0.00,
     },
+    branchId: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+    },
 }, {
     tableName: 'service_charges',
     timestamps: true,
