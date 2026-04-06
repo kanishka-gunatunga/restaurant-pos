@@ -77,8 +77,11 @@ function logPaymentConsistency(event, data) {
 }
 
 async function queueReceiptPrintJob(orderId, paymentRecord, requestedStatus, userId) {
+    const startTime = Date.now();
     try {
         if (requestedStatus === 'paid' || !requestedStatus) {
+            console.log(`[PaymentController] Starting receipt data fetch for Order #${orderId}...`);
+            const fetchStartTime = Date.now();
             const fullOrder = await Order.findByPk(orderId, {
                 include: [
                     { model: Customer, as: 'customer' },
@@ -102,6 +105,7 @@ async function queueReceiptPrintJob(orderId, paymentRecord, requestedStatus, use
                     }
                 ]
             });
+            console.log(`[PaymentController] Order fetch completed in ${Date.now() - fetchStartTime}ms`);
 
             if (!fullOrder) return;
 
@@ -123,6 +127,7 @@ async function queueReceiptPrintJob(orderId, paymentRecord, requestedStatus, use
                 type: 'receipt',
                 status: 'pending'
             });
+            console.log(`[PaymentController] Receipt print job queued for Order #${orderId}. Total backend time: ${Date.now() - startTime}ms`);
         }
     } catch (printError) {
         console.error('[PaymentController] Failed to queue print job for order', orderId, ':', printError);
