@@ -12,6 +12,8 @@ const Branch = require('../models/Branch');
 const Customer = require('../models/Customer');
 const XLSX = require('xlsx');
 const PDFDocument = require('pdfkit-table');
+const PrintJob = require('../models/PrintJob');
+const templateService = require('../services/templateService');
 
 /**
  * Helper to resolve branchId based on user role
@@ -207,6 +209,7 @@ exports.getSalesReport = async (req, res) => {
             return exportToPDF(res, "Sales Report", { dateRange: `${startDate} to ${endDate}` }, headers, reportData, summary);
         }
 
+        /*
         res.json({
             header: {
                 reportName: 'Sales Report',
@@ -216,6 +219,39 @@ exports.getSalesReport = async (req, res) => {
             data: reportData,
             summary: summary
         });
+        */
+
+        // NEW: Auto print sales report
+        try {
+            const detail = await UserDetail.findOne({ where: { userId: req.user.id } });
+            const branchId = detail?.branchId || 1;
+            const branchRecord = await Branch.findByPk(branchId);
+
+            const headerInfo = {
+                reportName: 'Sales Report',
+                dateRange: `${startDate} to ${endDate}`,
+                generatedOn: new Date()
+            };
+
+            const data = templateService.generateSalesReportStructuredData(reportData, summary, headerInfo, branchRecord);
+            const content = JSON.stringify(data);
+
+            await PrintJob.create({
+                printer_name: 'XP-80',
+                content,
+                type: 'sales_report',
+                status: 'pending'
+            });
+
+            res.json({ 
+                success: true, 
+                message: 'Sales report has been sent to the printer successfully.',
+                printJobType: 'sales_report'
+            });
+        } catch (printError) {
+            console.error('[ReportController] Failed to queue sales report print job:', printError);
+            res.status(500).json({ message: 'Failed to queue print job: ' + printError.message });
+        }
 
     } catch (error) {
         console.error('Sales Report Error:', error);
