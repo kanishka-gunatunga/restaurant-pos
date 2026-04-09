@@ -221,10 +221,12 @@ exports.generateReceiptStructuredData = (order, payment, branch) => {
         dateTime: order.createdAt,
         cashier: order.user?.name || 'Staff',
         unit: String(branch?.id || '1'),
+        customerName: order.customer?.name,
+        customerMobile: order.customer?.mobile,
         branch: {
             name: 'CATERING BY AHAS GAWWA',
             location: branch?.location || 'No. 226, Arakawila, Handapangoda',
-            mobile: branch?.mobile || '0112175275'
+            mobile: branch?.mobile || '011 2 175 275'
         },
         items: order.items.map(item => {
             const name = (item.product?.name || 'Item');
