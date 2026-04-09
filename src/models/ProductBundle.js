@@ -24,6 +24,14 @@ const ProductBundle = sequelize.define('ProductBundle', {
         allowNull: false,
         defaultValue: 0.00,
     },
+    original_price: {
+        type: DataTypes.DECIMAL(10, 2),
+        allowNull: true,
+    },
+    customer_saves: {
+        type: DataTypes.DECIMAL(10, 2),
+        allowNull: true,
+    },
     status: {
         type: DataTypes.ENUM('active', 'inactive'),
         defaultValue: 'active',

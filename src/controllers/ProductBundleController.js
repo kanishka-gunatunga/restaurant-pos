@@ -10,13 +10,15 @@ const UserDetail = require('../models/UserDetail');
 exports.createBundle = async (req, res) => {
     const transaction = await sequelize.transaction();
     try {
-        const { name, description, expire_date, price, branches, items } = req.body;
+        const { name, description, expire_date, price, original_price, customer_saves, branches, items } = req.body;
 
         const bundle = await ProductBundle.create({
             name,
             description,
             expire_date,
-            price: price || 0
+            price: price || 0,
+            original_price,
+            customer_saves
         }, { transaction });
 
         if (branches && branches.length > 0) {
@@ -108,7 +110,7 @@ exports.updateBundle = async (req, res) => {
     const transaction = await sequelize.transaction();
     try {
         const { id } = req.params;
-        const { name, description, expire_date, price, branches, items } = req.body;
+        const { name, description, expire_date, price, original_price, customer_saves, branches, items } = req.body;
 
         const bundle = await ProductBundle.findByPk(id);
         if (!bundle) {
@@ -120,7 +122,9 @@ exports.updateBundle = async (req, res) => {
             name,
             description,
             expire_date,
-            price
+            price,
+            original_price,
+            customer_saves
         }, { transaction });
 
         if (branches !== undefined) {
