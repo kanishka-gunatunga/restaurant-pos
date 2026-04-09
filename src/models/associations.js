@@ -35,6 +35,8 @@ const ProductBundle = require('./ProductBundle');
 const ProductBundleBranch = require('./ProductBundleBranch');
 const ProductBundleItem = require('./ProductBundleItem');
 const ServiceCharge = require('./ServiceCharge');
+const BogoPromotion = require('./BogoPromotion');
+const BogoPromotionBranch = require('./BogoPromotionBranch');
 
 // User <-> UserDetail: One-to-One
 User.hasOne(UserDetail, { foreignKey: 'userId', as: 'UserDetail' });
@@ -249,3 +251,19 @@ Product.hasMany(ProductBundleItem, { foreignKey: 'productId' });
 // ServiceCharge Associations
 Branch.hasOne(ServiceCharge, { foreignKey: 'branchId', as: 'serviceCharge' });
 ServiceCharge.belongsTo(Branch, { foreignKey: 'branchId', as: 'branch' });
+
+// BogoPromotion - BogoPromotionBranch Association
+BogoPromotion.hasMany(BogoPromotionBranch, { foreignKey: 'bogoPromotionId', as: 'branches', onDelete: 'CASCADE', hooks: true });
+BogoPromotionBranch.belongsTo(BogoPromotion, { foreignKey: 'bogoPromotionId' });
+
+// BogoPromotionBranch - Branch Association
+BogoPromotionBranch.belongsTo(Branch, { foreignKey: 'branchId', as: 'branch' });
+Branch.hasMany(BogoPromotionBranch, { foreignKey: 'branchId', as: 'bogoPromotions' });
+
+// BogoPromotion - Product Association (Buy Product)
+BogoPromotion.belongsTo(Product, { foreignKey: 'buyProductId', as: 'buyProduct' });
+Product.hasMany(BogoPromotion, { foreignKey: 'buyProductId', as: 'buyBogoPromotions' });
+
+// BogoPromotion - Product Association (Get Product)
+BogoPromotion.belongsTo(Product, { foreignKey: 'getProductId', as: 'getProduct' });
+Product.hasMany(BogoPromotion, { foreignKey: 'getProductId', as: 'getBogoPromotions' });

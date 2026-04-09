@@ -31,6 +31,7 @@ const printRoutes = require('./routes/printRoutes');
 const deliveryChargeRoutes = require('./routes/deliveryChargeRoutes');
 const serviceChargeRoutes = require('./routes/serviceChargeRoutes');
 const productBundleRoutes = require('./routes/productBundleRoutes');
+const bogoPromotionRoutes = require('./routes/bogoPromotionRoutes');
 
 const app = express();
 
@@ -97,6 +98,7 @@ app.use('/api/print', printRoutes);
 app.use('/api/delivery-charges', deliveryChargeRoutes);
 app.use('/api/service-charge', serviceChargeRoutes);
 app.use('/api/product-bundles', productBundleRoutes);
+app.use('/api/bogo-promotions', bogoPromotionRoutes);
 
 // Global error handler (do not log request body to avoid leaking tokens/passwords)
 app.use((err, req, res, next) => {
