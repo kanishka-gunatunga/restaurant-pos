@@ -225,6 +225,7 @@ exports.createPayment = async (req, res) => {
             await t.rollback();
             return res.status(400).json({ message: 'Amount must be a positive number' });
         }
+        const resolvedPaidAmount = rawPaidAmount !== undefined ? parseFloat(rawPaidAmount) : amountNum;
 
         const order = await Order.findByPk(orderId, {
             transaction: t,
@@ -254,7 +255,6 @@ exports.createPayment = async (req, res) => {
                 orderId,
                 paymentMethod,
                 amount: amountNum,
-                paidAmount: rawPaidAmount !== undefined ? parseFloat(rawPaidAmount) : amountNum,
                 transactionId,
                 userId: req.user?.id,
                 transaction: t,
@@ -277,7 +277,6 @@ exports.createPayment = async (req, res) => {
                         orderId,
                         paymentMethod,
                         amount: amountNum,
-                        paidAmount: rawPaidAmount !== undefined ? parseFloat(rawPaidAmount) : amountNum,
                         transactionId,
                         userId: req.user?.id,
                         transaction: t,
