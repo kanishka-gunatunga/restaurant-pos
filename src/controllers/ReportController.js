@@ -223,9 +223,9 @@ exports.getSalesReport = async (req, res) => {
 
         // NEW: Auto print sales report
         try {
-            const detail = await UserDetail.findOne({ where: { userId: req.user.id } });
-            const branchId = detail?.branchId || 1;
-            const branchRecord = await Branch.findByPk(branchId);
+            // Optimization: Use resolvedBranchId from earlier or default to 1
+            const branchIdToUse = resolvedBranchId && resolvedBranchId !== -1 ? resolvedBranchId : 1;
+            const branchRecord = await Branch.findByPk(branchIdToUse);
 
             const headerInfo = {
                 reportName: 'Sales Report',
