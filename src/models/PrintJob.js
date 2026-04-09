@@ -9,7 +9,7 @@ const PrintJob = sequelize.define('PrintJob', {
     },
     order_id: {
         type: DataTypes.INTEGER,
-        allowNull: false,
+        allowNull: true,
         field: 'order_id'
     },
     payment_id: {
@@ -31,7 +31,7 @@ const PrintJob = sequelize.define('PrintJob', {
         defaultValue: 'pending',
     },
     type: {
-        type: DataTypes.ENUM('receipt', 'kitchen'),
+        type: DataTypes.ENUM('receipt', 'kitchen', 'sales_report'),
         defaultValue: 'receipt',
     },
     createdAt: {
