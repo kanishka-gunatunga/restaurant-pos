@@ -23,6 +23,14 @@ const ProductBundleItem = sequelize.define('ProductBundleItem', {
             key: 'id',
         },
     },
+    variationOptionId: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+        references: {
+            model: 'variationoptions',
+            key: 'id',
+        },
+    },
     quantity: {
         type: DataTypes.INTEGER,
         allowNull: false,

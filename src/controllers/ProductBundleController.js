@@ -3,6 +3,7 @@ const ProductBundleBranch = require('../models/ProductBundleBranch');
 const ProductBundleItem = require('../models/ProductBundleItem');
 const Branch = require('../models/Branch');
 const Product = require('../models/Product');
+const VariationOption = require('../models/VariationOption');
 const sequelize = require('../config/database');
 const { logActivity } = require('./ActivityLogController');
 const UserDetail = require('../models/UserDetail');
@@ -33,6 +34,7 @@ exports.createBundle = async (req, res) => {
             const itemRecords = items.map(i => ({
                 productBundleId: bundle.id,
                 productId: i.productId,
+                variationOptionId: i.variationOptionId,
                 quantity: i.quantity || 1
             }));
             await ProductBundleItem.bulkCreate(itemRecords, { transaction });
@@ -52,13 +54,22 @@ exports.createBundle = async (req, res) => {
         const createdBundle = await ProductBundle.findByPk(bundle.id, {
             include: [
                 { model: ProductBundleBranch, as: 'branches', include: [{ model: Branch, as: 'branch' }] },
-                { model: ProductBundleItem, as: 'items', include: [{ model: Product, as: 'product' }] }
+                { 
+                    model: ProductBundleItem, 
+                    as: 'items', 
+                    include: [
+                        { model: Product, as: 'product' },
+                        { model: VariationOption, as: 'variationOption' }
+                    ] 
+                }
             ]
         });
 
         res.status(201).json(createdBundle);
     } catch (error) {
-        await transaction.rollback();
+        if (transaction && !transaction.finished) {
+            await transaction.rollback();
+        }
         res.status(400).json({ message: error.message });
     }
 };
@@ -78,7 +89,14 @@ exports.getAllBundles = async (req, res) => {
             where,
             include: [
                 { model: ProductBundleBranch, as: 'branches', include: [{ model: Branch, as: 'branch' }] },
-                { model: ProductBundleItem, as: 'items', include: [{ model: Product, as: 'product' }] }
+                { 
+                    model: ProductBundleItem, 
+                    as: 'items', 
+                    include: [
+                        { model: Product, as: 'product' },
+                        { model: VariationOption, as: 'variationOption' }
+                    ] 
+                }
             ],
             order: [['name', 'ASC']]
         });
@@ -94,7 +112,14 @@ exports.getBundleById = async (req, res) => {
         const bundle = await ProductBundle.findByPk(id, {
             include: [
                 { model: ProductBundleBranch, as: 'branches', include: [{ model: Branch, as: 'branch' }] },
-                { model: ProductBundleItem, as: 'items', include: [{ model: Product, as: 'product' }] }
+                { 
+                    model: ProductBundleItem, 
+                    as: 'items', 
+                    include: [
+                        { model: Product, as: 'product' },
+                        { model: VariationOption, as: 'variationOption' }
+                    ] 
+                }
             ]
         });
         if (!bundle) {
@@ -144,6 +169,7 @@ exports.updateBundle = async (req, res) => {
                 const itemRecords = items.map(i => ({
                     productBundleId: id,
                     productId: i.productId,
+                    variationOptionId: i.variationOptionId,
                     quantity: i.quantity || 1
                 }));
                 await ProductBundleItem.bulkCreate(itemRecords, { transaction });
@@ -155,7 +181,14 @@ exports.updateBundle = async (req, res) => {
         const updatedBundle = await ProductBundle.findByPk(id, {
             include: [
                 { model: ProductBundleBranch, as: 'branches', include: [{ model: Branch, as: 'branch' }] },
-                { model: ProductBundleItem, as: 'items', include: [{ model: Product, as: 'product' }] }
+                { 
+                    model: ProductBundleItem, 
+                    as: 'items', 
+                    include: [
+                        { model: Product, as: 'product' },
+                        { model: VariationOption, as: 'variationOption' }
+                    ] 
+                }
             ]
         });
 
@@ -170,7 +203,9 @@ exports.updateBundle = async (req, res) => {
 
         res.json(updatedBundle);
     } catch (error) {
-        await transaction.rollback();
+        if (transaction && !transaction.finished) {
+            await transaction.rollback();
+        }
         res.status(400).json({ message: error.message });
     }
 };
