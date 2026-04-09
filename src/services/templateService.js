@@ -285,3 +285,33 @@ exports.generateKitchenStructuredData = (order, branch) => {
         })
     };
 };
+
+/**
+ * Generate structured JSON for Sales Report (for ESC/POS)
+ */
+exports.generateSalesReportStructuredData = (reportData, summary, headerInfo, branch) => {
+    return {
+        type: 'sales_report',
+        reportName: headerInfo.reportName || 'Sales Report',
+        dateRange: headerInfo.dateRange,
+        generatedOn: headerInfo.generatedOn || new Date(),
+        branch: {
+            name: 'CATERING BY AHAS GAWWA',
+            location: branch?.location || 'No. 226, Arakawila, Handapangoda',
+            mobile: branch?.mobile || '0112175275'
+        },
+        summary: {
+            totalSalesAmount: summary["Total Sales Amount"],
+            totalDiscountsGiven: summary["Total Discounts Given"],
+            totalTaxCollected: summary["Total Tax Collected"],
+            netSales: summary["Net Sales"]
+        },
+        data: reportData.map(item => ({
+            date: item["Date"],
+            invoiceNo: item["Invoice No"],
+            productName: item["Product Name"],
+            qtySold: item["Qty Sold"],
+            totalAmount: item["Total Amount"]
+        }))
+    };
+};
