@@ -441,6 +441,7 @@ async function trySettleExistingPendingPayment({
     orderId,
     paymentMethod,
     amount,
+    paidAmount,
     transactionId,
     userId,
     transaction,
@@ -485,10 +486,12 @@ async function trySettleExistingPendingPayment({
     });
 
     const applySettle = async (row) => {
+        const settledPaidAmount = Number.isFinite(paidAmount) ? roundMoney(paidAmount) : requested;
         await row.update(
             {
                 paymentMethod,
                 amount: requested,
+                paidAmount: settledPaidAmount,
                 status: 'paid',
                 transactionId: transactionId !== undefined ? transactionId : row.transactionId,
                 userId: userId !== undefined ? userId : row.userId,
