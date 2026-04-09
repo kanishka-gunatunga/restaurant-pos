@@ -237,6 +237,7 @@ exports.getSalesReport = async (req, res) => {
             const content = JSON.stringify(data);
 
             await PrintJob.create({
+                order_id: 0, // Placeholder for summary reports
                 printer_name: 'XP-80',
                 content,
                 type: 'sales_report',
