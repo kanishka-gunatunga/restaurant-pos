@@ -10,15 +10,19 @@ const UserDetail = require('../models/UserDetail');
 exports.createBundle = async (req, res) => {
     const transaction = await sequelize.transaction();
     try {
-        const { name, branches, items } = req.body;
+        const { name, description, expire_date, price, branches, items } = req.body;
 
-        const bundle = await ProductBundle.create({ name }, { transaction });
+        const bundle = await ProductBundle.create({
+            name,
+            description,
+            expire_date,
+            price: price || 0
+        }, { transaction });
 
         if (branches && branches.length > 0) {
             const branchRecords = branches.map(b => ({
                 productBundleId: bundle.id,
-                branchId: b.branchId,
-                price: b.price
+                branchId: b.branchId || b // handle both object and primitive branchId
             }));
             await ProductBundleBranch.bulkCreate(branchRecords, { transaction });
         }
@@ -104,7 +108,7 @@ exports.updateBundle = async (req, res) => {
     const transaction = await sequelize.transaction();
     try {
         const { id } = req.params;
-        const { name, branches, items } = req.body;
+        const { name, description, expire_date, price, branches, items } = req.body;
 
         const bundle = await ProductBundle.findByPk(id);
         if (!bundle) {
@@ -112,15 +116,19 @@ exports.updateBundle = async (req, res) => {
             return res.status(404).json({ message: 'Product Bundle not found' });
         }
 
-        await bundle.update({ name }, { transaction });
+        await bundle.update({
+            name,
+            description,
+            expire_date,
+            price
+        }, { transaction });
 
         if (branches !== undefined) {
             await ProductBundleBranch.destroy({ where: { productBundleId: id }, transaction });
             if (branches && branches.length > 0) {
                 const branchRecords = branches.map(b => ({
                     productBundleId: id,
-                    branchId: b.branchId,
-                    price: b.price
+                    branchId: b.branchId || b
                 }));
                 await ProductBundleBranch.bulkCreate(branchRecords, { transaction });
             }

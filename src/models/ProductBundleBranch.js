@@ -23,10 +23,6 @@ const ProductBundleBranch = sequelize.define('ProductBundleBranch', {
             key: 'id',
         },
     },
-    price: {
-        type: DataTypes.DECIMAL(10, 2),
-        allowNull: false,
-    },
 }, {
     tableName: 'product_bundle_branches',
 });
