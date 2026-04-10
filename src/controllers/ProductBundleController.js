@@ -11,22 +11,26 @@ const UserDetail = require('../models/UserDetail');
 exports.createBundle = async (req, res) => {
     const transaction = await sequelize.transaction();
     try {
-        const { name, description, expire_date, price, original_price, customer_saves, branches, items } = req.body;
+        const { name, description, expire_date, branches, items } = req.body;
 
         const bundle = await ProductBundle.create({
             name,
             description,
-            expire_date,
-            price: price || 0,
-            original_price,
-            customer_saves
+            expire_date
         }, { transaction });
 
         if (branches && branches.length > 0) {
-            const branchRecords = branches.map(b => ({
-                productBundleId: bundle.id,
-                branchId: b.branchId || b // handle both object and primitive branchId
-            }));
+            const branchRecords = branches.map(b => {
+                const branchId = b.branchId || b;
+                const isObject = typeof b === 'object' && b !== null;
+                return {
+                    productBundleId: bundle.id,
+                    branchId: branchId,
+                    original_price: isObject ? b.original_price : null,
+                    price: isObject ? b.price : null,
+                    customer_saves: isObject ? b.customer_saves : null
+                };
+            });
             await ProductBundleBranch.bulkCreate(branchRecords, { transaction });
         }
 
@@ -135,7 +139,7 @@ exports.updateBundle = async (req, res) => {
     const transaction = await sequelize.transaction();
     try {
         const { id } = req.params;
-        const { name, description, expire_date, price, original_price, customer_saves, branches, items } = req.body;
+        const { name, description, expire_date, branches, items } = req.body;
 
         const bundle = await ProductBundle.findByPk(id);
         if (!bundle) {
@@ -146,19 +150,23 @@ exports.updateBundle = async (req, res) => {
         await bundle.update({
             name,
             description,
-            expire_date,
-            price,
-            original_price,
-            customer_saves
+            expire_date
         }, { transaction });
 
         if (branches !== undefined) {
             await ProductBundleBranch.destroy({ where: { productBundleId: id }, transaction });
             if (branches && branches.length > 0) {
-                const branchRecords = branches.map(b => ({
-                    productBundleId: id,
-                    branchId: b.branchId || b
-                }));
+                const branchRecords = branches.map(b => {
+                    const branchId = b.branchId || b;
+                    const isObject = typeof b === 'object' && b !== null;
+                    return {
+                        productBundleId: id,
+                        branchId: branchId,
+                        original_price: isObject ? b.original_price : null,
+                        price: isObject ? b.price : null,
+                        customer_saves: isObject ? b.customer_saves : null
+                    };
+                });
                 await ProductBundleBranch.bulkCreate(branchRecords, { transaction });
             }
         }
