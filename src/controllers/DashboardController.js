@@ -91,7 +91,8 @@ exports.getCashierDashboard = async (req, res) => {
         const lowStockItems = await VariationPrice.findAll({
             where: {
                 branchId,
-                quantity: { [Op.lte]: lowStockThreshold }
+                quantity: { [Op.lte]: lowStockThreshold },
+                isUnlimited: false
             },
             include: [
                 {
@@ -289,7 +290,8 @@ exports.getManagerDashboard = async (req, res) => {
         const lowStockItems = await VariationPrice.findAll({
             where: {
                 branchId,
-                quantity: { [Op.lte]: lowStockThreshold }
+                quantity: { [Op.lte]: lowStockThreshold },
+                isUnlimited: false
             },
             include: [
                 { model: Branch, as: 'Branch' },
@@ -567,7 +569,8 @@ exports.getAdminDashboard = async (req, res) => {
         const lowStockThreshold = 10;
         const lowStockItems = await VariationPrice.findAll({
             where: {
-                quantity: { [Op.lte]: lowStockThreshold }
+                quantity: { [Op.lte]: lowStockThreshold },
+                isUnlimited: false
             },
             include: [
                 { model: Branch, as: 'Branch' },

@@ -36,6 +36,11 @@ const VariationPrice = sequelize.define('VariationPrice', {
     batchNo: {
         type: DataTypes.STRING,
         allowNull: true,
+    },
+    isUnlimited: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: false,
     }
 }, {
     tableName: 'variationprices',
