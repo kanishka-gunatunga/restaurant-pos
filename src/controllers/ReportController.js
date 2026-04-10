@@ -147,6 +147,11 @@ exports.getSalesReport = async (req, res) => {
                             model: Product, 
                             as: 'product',
                             include: [{ model: Category, as: 'category' }]
+                        },
+                        {
+                            model: VariationOption,
+                            as: 'variationOption',
+                            include: [{ model: Variation, as: 'Variation' }]
                         }
                     ]
                 },
@@ -159,34 +164,46 @@ exports.getSalesReport = async (req, res) => {
             order: [['createdAt', 'DESC']]
         });
 
-        const reportData = [];
+        const itemSummaries = {};
         let totalSalesAmount = 0;
         let totalDiscountsGiven = 0;
         let totalTaxCollected = 0;
 
         orders.forEach(order => {
-            const paymentType = order.payments.map(p => p.paymentMethod).join(', ') || 'N/A';
             const orderSubtotal = order.items.reduce((sum, item) => sum + (parseFloat(item.unitPrice) * item.quantity), 0);
             
             order.items.forEach(item => {
+                const productId = item.productId;
+                const variationOptionId = item.variationOptionId || 0;
+                const key = `${productId}_${variationOptionId}`;
+
+                if (!itemSummaries[key]) {
+                    const productName = item.product?.name || 'Unknown';
+                    const vOpt = item.variationOption;
+                    const variationName = vOpt ? (vOpt.Variation?.name ? `${vOpt.Variation.name}: ${vOpt.name}` : vOpt.name) : '';
+                    const fullName = variationName ? `${productName} (${variationName})` : productName;
+
+                    itemSummaries[key] = {
+                        "Product No": item.product?.sku || item.product?.code || 'N/A',
+                        "Product Name": fullName,
+                        "Category": item.product?.category?.name || 'Uncategorized',
+                        "Qty Sold": 0,
+                        "Unit Price": parseFloat(item.unitPrice),
+                        "Discount": 0,
+                        "Tax": 0,
+                        "Total Amount": 0
+                    };
+                }
+
                 const itemSubtotal = parseFloat(item.unitPrice) * item.quantity;
                 const itemDiscount = parseFloat(item.productDiscount || 0);
                 const itemTax = orderSubtotal > 0 ? (itemSubtotal / orderSubtotal) * parseFloat(order.tax || 0) : 0;
                 const totalAmount = itemSubtotal - itemDiscount + itemTax;
 
-                reportData.push({
-                    "Date": new Date(order.createdAt).toLocaleDateString(),
-                    "Invoice No": order.id,
-                    "Product No": item.product?.sku || item.product?.code || 'N/A',
-                    "Product Name": item.product?.name || 'Unknown',
-                    "Category": item.product?.category?.name || 'Uncategorized',
-                    "Qty Sold": item.quantity,
-                    "Unit Price": item.unitPrice,
-                    "Discount": itemDiscount,
-                    "Tax": itemTax.toFixed(2),
-                    "Total Amount": totalAmount.toFixed(2),
-                    "Payment Type": paymentType
-                });
+                itemSummaries[key]["Qty Sold"] += item.quantity;
+                itemSummaries[key]["Discount"] += itemDiscount;
+                itemSummaries[key]["Tax"] += itemTax;
+                itemSummaries[key]["Total Amount"] += totalAmount;
 
                 totalSalesAmount += totalAmount;
                 totalDiscountsGiven += itemDiscount;
@@ -194,6 +211,15 @@ exports.getSalesReport = async (req, res) => {
             });
             totalDiscountsGiven += parseFloat(order.orderDiscount || 0);
         });
+
+        // Filter and round values
+        const reportData = Object.values(itemSummaries)
+            .filter(item => item["Qty Sold"] > 0)
+            .map(item => ({
+                ...item,
+                "Tax": item.Tax.toFixed(2),
+                "Total Amount": item["Total Amount"].toFixed(2)
+            }));
 
         const summary = {
             "Total Sales Amount": totalSalesAmount.toFixed(2),
@@ -203,10 +229,10 @@ exports.getSalesReport = async (req, res) => {
         };
 
         if (exportType === 'excel') {
-            return exportToExcel(res, "Sales_Report", reportData, summary);
+            return exportToExcel(res, "Sales_Report_Item_Wise", reportData, summary);
         } else if (exportType === 'pdf') {
-            const headers = ["Date", "Invoice No", "Product No", "Product Name", "Category", "Qty Sold", "Unit Price", "Discount", "Tax", "Total Amount", "Payment Type"];
-            return exportToPDF(res, "Sales Report", { dateRange: `${startDate} to ${endDate}` }, headers, reportData, summary);
+            const headers = ["Product No", "Product Name", "Category", "Qty Sold", "Unit Price", "Discount", "Tax", "Total Amount"];
+            return exportToPDF(res, "Sales Report (Item-Wise)", { dateRange: `${startDate} to ${endDate}` }, headers, reportData, summary);
         }
 
         /*
