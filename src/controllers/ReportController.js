@@ -182,8 +182,10 @@ exports.getSalesReport = async (req, res) => {
                 if (!itemSummaries[key]) {
                     const productName = item.product?.name || 'Unknown';
                     const vOpt = item.variationOption;
-                    const variationName = vOpt ? (vOpt.Variation?.name ? `${vOpt.Variation.name}: ${vOpt.name}` : vOpt.name) : '';
-                    const fullName = variationName ? `${productName} (${variationName})` : productName;
+                    //  const variationName = vOpt ? (vOpt.Variation?.name ? `${vOpt.Variation.name}: ${vOpt.name}` : vOpt.name) : '';
+                    // const fullName = variationName ? `${productName} (${variationName})` : productName;
+                    const variationSuffix = vOpt?.name ? ` - ${vOpt.name.charAt(0).toUpperCase()}` : '';
+                    const fullName = `${productName}${variationSuffix}`;
 
                     itemSummaries[key] = {
                         "Product No": item.product?.sku || item.product?.code || 'N/A',
