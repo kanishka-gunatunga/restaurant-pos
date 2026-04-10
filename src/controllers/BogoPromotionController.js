@@ -5,11 +5,12 @@ const Product = require('../models/Product');
 const sequelize = require('../config/database');
 const { logActivity } = require('./ActivityLogController');
 const UserDetail = require('../models/UserDetail');
+const VariationOption = require('../models/VariationOption');
 
 exports.createBogoPromotion = async (req, res) => {
     const transaction = await sequelize.transaction();
     try {
-        const { name, expiryDate, buyQuantity, getQuantity, buyProductId, getProductId, branches } = req.body;
+        const { name, expiryDate, buyQuantity, getQuantity, buyProductId, getProductId, buyVariationOptionId, getVariationOptionId, branches } = req.body;
 
         const promotion = await BogoPromotion.create({
             name,
@@ -18,6 +19,8 @@ exports.createBogoPromotion = async (req, res) => {
             getQuantity: getQuantity || 1,
             buyProductId,
             getProductId,
+            buyVariationOptionId,
+            getVariationOptionId,
         }, { transaction });
 
         if (branches && branches.length > 0) {
@@ -43,7 +46,9 @@ exports.createBogoPromotion = async (req, res) => {
             include: [
                 { model: BogoPromotionBranch, as: 'branches', include: [{ model: Branch, as: 'branch' }] },
                 { model: Product, as: 'buyProduct' },
-                { model: Product, as: 'getProduct' }
+                { model: VariationOption, as: 'buyVariationOption' },
+                { model: Product, as: 'getProduct' },
+                { model: VariationOption, as: 'getVariationOption' }
             ]
         });
 
@@ -70,7 +75,9 @@ exports.getAllBogoPromotions = async (req, res) => {
             include: [
                 { model: BogoPromotionBranch, as: 'branches', include: [{ model: Branch, as: 'branch' }] },
                 { model: Product, as: 'buyProduct' },
-                { model: Product, as: 'getProduct' }
+                { model: VariationOption, as: 'buyVariationOption' },
+                { model: Product, as: 'getProduct' },
+                { model: VariationOption, as: 'getVariationOption' }
             ],
             order: [['name', 'ASC']]
         });
@@ -87,7 +94,9 @@ exports.getBogoPromotionById = async (req, res) => {
             include: [
                 { model: BogoPromotionBranch, as: 'branches', include: [{ model: Branch, as: 'branch' }] },
                 { model: Product, as: 'buyProduct' },
-                { model: Product, as: 'getProduct' }
+                { model: VariationOption, as: 'buyVariationOption' },
+                { model: Product, as: 'getProduct' },
+                { model: VariationOption, as: 'getVariationOption' }
             ]
         });
         if (!promotion) {
@@ -103,7 +112,7 @@ exports.updateBogoPromotion = async (req, res) => {
     const transaction = await sequelize.transaction();
     try {
         const { id } = req.params;
-        const { name, expiryDate, buyQuantity, getQuantity, buyProductId, getProductId, branches, status } = req.body;
+        const { name, expiryDate, buyQuantity, getQuantity, buyProductId, getProductId, buyVariationOptionId, getVariationOptionId, branches, status } = req.body;
 
         const promotion = await BogoPromotion.findByPk(id);
         if (!promotion) {
@@ -118,6 +127,8 @@ exports.updateBogoPromotion = async (req, res) => {
             getQuantity,
             buyProductId,
             getProductId,
+            buyVariationOptionId,
+            getVariationOptionId,
             status
         }, { transaction });
 
@@ -138,7 +149,9 @@ exports.updateBogoPromotion = async (req, res) => {
             include: [
                 { model: BogoPromotionBranch, as: 'branches', include: [{ model: Branch, as: 'branch' }] },
                 { model: Product, as: 'buyProduct' },
-                { model: Product, as: 'getProduct' }
+                { model: VariationOption, as: 'buyVariationOption' },
+                { model: Product, as: 'getProduct' },
+                { model: VariationOption, as: 'getVariationOption' }
             ]
         });
 

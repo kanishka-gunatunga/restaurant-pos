@@ -41,6 +41,22 @@ const BogoPromotion = sequelize.define('BogoPromotion', {
             key: 'id',
         },
     },
+    buyVariationOptionId: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+        references: {
+            model: 'variationoptions',
+            key: 'id',
+        },
+    },
+    getVariationOptionId: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+        references: {
+            model: 'variationoptions',
+            key: 'id',
+        },
+    },
     status: {
         type: DataTypes.ENUM('active', 'inactive'),
         defaultValue: 'active',

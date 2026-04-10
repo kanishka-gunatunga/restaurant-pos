@@ -270,3 +270,11 @@ Product.hasMany(BogoPromotion, { foreignKey: 'buyProductId', as: 'buyBogoPromoti
 // BogoPromotion - Product Association (Get Product)
 BogoPromotion.belongsTo(Product, { foreignKey: 'getProductId', as: 'getProduct' });
 Product.hasMany(BogoPromotion, { foreignKey: 'getProductId', as: 'getBogoPromotions' });
+
+// BogoPromotion - VariationOption Association (Buy Variation)
+BogoPromotion.belongsTo(VariationOption, { foreignKey: 'buyVariationOptionId', as: 'buyVariationOption' });
+VariationOption.hasMany(BogoPromotion, { foreignKey: 'buyVariationOptionId' });
+
+// BogoPromotion - VariationOption Association (Get Variation)
+BogoPromotion.belongsTo(VariationOption, { foreignKey: 'getVariationOptionId', as: 'getVariationOption' });
+VariationOption.hasMany(BogoPromotion, { foreignKey: 'getVariationOptionId' });
