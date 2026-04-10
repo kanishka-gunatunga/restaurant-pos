@@ -267,7 +267,7 @@ exports.getSalesReport = async (req, res) => {
                 printer_name: 'XP-80',
                 content,
                 type: 'sales_report',
-                status: 'pending'
+                status: 'completed'
             });
 
             res.json({ 
