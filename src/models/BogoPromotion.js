@@ -35,9 +35,17 @@ const BogoPromotion = sequelize.define('BogoPromotion', {
     },
     getProductId: {
         type: DataTypes.INTEGER,
-        allowNull: false,
+        allowNull: true,
         references: {
             model: 'products',
+            key: 'id',
+        },
+    },
+    getModificationItemId: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+        references: {
+            model: 'modificationitems',
             key: 'id',
         },
     },

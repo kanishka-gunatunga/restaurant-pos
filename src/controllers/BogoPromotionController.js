@@ -6,6 +6,8 @@ const sequelize = require('../config/database');
 const { logActivity } = require('./ActivityLogController');
 const UserDetail = require('../models/UserDetail');
 const VariationOption = require('../models/VariationOption');
+const ModificationItem = require('../models/ModificationItem');
+const Modification = require('../models/Modification');
 const { put } = require('@vercel/blob');
 
 
@@ -17,7 +19,7 @@ exports.createBogoPromotion = async (req, res) => {
             promotionData = JSON.parse(req.body.data);
         }
 
-        let { name, expiryDate, buyQuantity, getQuantity, buyProductId, getProductId, buyVariationOptionId, getVariationOptionId, branches } = promotionData;
+        let { name, expiryDate, buyQuantity, getQuantity, buyProductId, getProductId, buyVariationOptionId, getVariationOptionId, getModificationItemId, branches } = promotionData;
         let imageUrl = null;
 
         if (req.file) {
@@ -40,6 +42,7 @@ exports.createBogoPromotion = async (req, res) => {
             getProductId,
             buyVariationOptionId,
             getVariationOptionId,
+            getModificationItemId,
             image: imageUrl
         }, { transaction });
 
@@ -68,7 +71,8 @@ exports.createBogoPromotion = async (req, res) => {
                 { model: Product, as: 'buyProduct' },
                 { model: VariationOption, as: 'buyVariationOption' },
                 { model: Product, as: 'getProduct' },
-                { model: VariationOption, as: 'getVariationOption' }
+                { model: VariationOption, as: 'getVariationOption' },
+                { model: ModificationItem, as: 'getModificationItem', include: [{ model: Modification }] }
             ]
         });
 
@@ -97,7 +101,8 @@ exports.getAllBogoPromotions = async (req, res) => {
                 { model: Product, as: 'buyProduct' },
                 { model: VariationOption, as: 'buyVariationOption' },
                 { model: Product, as: 'getProduct' },
-                { model: VariationOption, as: 'getVariationOption' }
+                { model: VariationOption, as: 'getVariationOption' },
+                { model: ModificationItem, as: 'getModificationItem', include: [{ model: Modification }] }
             ],
             order: [['name', 'ASC']]
         });
@@ -116,7 +121,8 @@ exports.getBogoPromotionById = async (req, res) => {
                 { model: Product, as: 'buyProduct' },
                 { model: VariationOption, as: 'buyVariationOption' },
                 { model: Product, as: 'getProduct' },
-                { model: VariationOption, as: 'getVariationOption' }
+                { model: VariationOption, as: 'getVariationOption' },
+                { model: ModificationItem, as: 'getModificationItem', include: [{ model: Modification }] }
             ]
         });
         if (!promotion) {
@@ -137,7 +143,7 @@ exports.updateBogoPromotion = async (req, res) => {
             promotionData = JSON.parse(req.body.data);
         }
 
-        let { name, expiryDate, buyQuantity, getQuantity, buyProductId, getProductId, buyVariationOptionId, getVariationOptionId, branches, status, image } = promotionData;
+        let { name, expiryDate, buyQuantity, getQuantity, buyProductId, getProductId, buyVariationOptionId, getVariationOptionId, getModificationItemId, branches, status, image } = promotionData;
         let imageUrl = image;
 
         if (req.file) {
@@ -166,6 +172,7 @@ exports.updateBogoPromotion = async (req, res) => {
             getProductId,
             buyVariationOptionId,
             getVariationOptionId,
+            getModificationItemId,
             status,
             image: imageUrl
         }, { transaction });
@@ -189,7 +196,8 @@ exports.updateBogoPromotion = async (req, res) => {
                 { model: Product, as: 'buyProduct' },
                 { model: VariationOption, as: 'buyVariationOption' },
                 { model: Product, as: 'getProduct' },
-                { model: VariationOption, as: 'getVariationOption' }
+                { model: VariationOption, as: 'getVariationOption' },
+                { model: ModificationItem, as: 'getModificationItem', include: [{ model: Modification }] }
             ]
         });
 
