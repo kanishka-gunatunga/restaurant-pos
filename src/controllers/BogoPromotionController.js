@@ -6,11 +6,30 @@ const sequelize = require('../config/database');
 const { logActivity } = require('./ActivityLogController');
 const UserDetail = require('../models/UserDetail');
 const VariationOption = require('../models/VariationOption');
+const { put } = require('@vercel/blob');
+
 
 exports.createBogoPromotion = async (req, res) => {
     const transaction = await sequelize.transaction();
     try {
-        const { name, expiryDate, buyQuantity, getQuantity, buyProductId, getProductId, buyVariationOptionId, getVariationOptionId, branches } = req.body;
+        let promotionData = req.body;
+        if (typeof req.body.data === 'string') {
+            promotionData = JSON.parse(req.body.data);
+        }
+
+        let { name, expiryDate, buyQuantity, getQuantity, buyProductId, getProductId, buyVariationOptionId, getVariationOptionId, branches } = promotionData;
+        let imageUrl = null;
+
+        if (req.file) {
+            const blob = await put(`bogo_promotions/${Date.now()}-${req.file.originalname}`, req.file.buffer, {
+                access: 'public',
+                token: process.env.BLOB_READ_WRITE_TOKEN
+            });
+            imageUrl = blob.url;
+        }
+
+        // Parse JSON strings if they come from multipart/form-data
+        if (typeof branches === 'string') branches = JSON.parse(branches);
 
         const promotion = await BogoPromotion.create({
             name,
@@ -21,6 +40,7 @@ exports.createBogoPromotion = async (req, res) => {
             getProductId,
             buyVariationOptionId,
             getVariationOptionId,
+            image: imageUrl
         }, { transaction });
 
         if (branches && branches.length > 0) {
@@ -112,7 +132,24 @@ exports.updateBogoPromotion = async (req, res) => {
     const transaction = await sequelize.transaction();
     try {
         const { id } = req.params;
-        const { name, expiryDate, buyQuantity, getQuantity, buyProductId, getProductId, buyVariationOptionId, getVariationOptionId, branches, status } = req.body;
+        let promotionData = req.body;
+        if (typeof req.body.data === 'string') {
+            promotionData = JSON.parse(req.body.data);
+        }
+
+        let { name, expiryDate, buyQuantity, getQuantity, buyProductId, getProductId, buyVariationOptionId, getVariationOptionId, branches, status, image } = promotionData;
+        let imageUrl = image;
+
+        if (req.file) {
+            const blob = await put(`bogo_promotions/${Date.now()}-${req.file.originalname}`, req.file.buffer, {
+                access: 'public',
+                token: process.env.BLOB_READ_WRITE_TOKEN
+            });
+            imageUrl = blob.url;
+        }
+
+        // Parse JSON strings if they come from multipart/form-data
+        if (typeof branches === 'string') branches = JSON.parse(branches);
 
         const promotion = await BogoPromotion.findByPk(id);
         if (!promotion) {
@@ -129,7 +166,8 @@ exports.updateBogoPromotion = async (req, res) => {
             getProductId,
             buyVariationOptionId,
             getVariationOptionId,
-            status
+            status,
+            image: imageUrl
         }, { transaction });
 
         if (branches !== undefined) {

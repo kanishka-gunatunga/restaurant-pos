@@ -23,6 +23,10 @@ const ProductBundle = sequelize.define('ProductBundle', {
         type: DataTypes.ENUM('active', 'inactive'),
         defaultValue: 'active',
     },
+    image: {
+        type: DataTypes.STRING,
+        allowNull: true,
+    },
 }, {
     tableName: 'product_bundles',
 });

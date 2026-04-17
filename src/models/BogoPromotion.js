@@ -61,6 +61,10 @@ const BogoPromotion = sequelize.define('BogoPromotion', {
         type: DataTypes.ENUM('active', 'inactive'),
         defaultValue: 'active',
     },
+    image: {
+        type: DataTypes.STRING,
+        allowNull: true,
+    },
 }, {
     tableName: 'bogo_promotions',
 });

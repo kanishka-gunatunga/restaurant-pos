@@ -7,16 +7,37 @@ const VariationOption = require('../models/VariationOption');
 const sequelize = require('../config/database');
 const { logActivity } = require('./ActivityLogController');
 const UserDetail = require('../models/UserDetail');
+const { put } = require('@vercel/blob');
+
 
 exports.createBundle = async (req, res) => {
     const transaction = await sequelize.transaction();
     try {
-        const { name, description, expire_date, branches, items } = req.body;
+        let bundleData = req.body;
+        if (typeof req.body.data === 'string') {
+            bundleData = JSON.parse(req.body.data);
+        }
+
+        let { name, description, expire_date, branches, items } = bundleData;
+        let imageUrl = null;
+
+        if (req.file) {
+            const blob = await put(`product_bundles/${Date.now()}-${req.file.originalname}`, req.file.buffer, {
+                access: 'public',
+                token: process.env.BLOB_READ_WRITE_TOKEN
+            });
+            imageUrl = blob.url;
+        }
+
+        // Parse JSON strings if they come from multipart/form-data
+        if (typeof branches === 'string') branches = JSON.parse(branches);
+        if (typeof items === 'string') items = JSON.parse(items);
 
         const bundle = await ProductBundle.create({
             name,
             description,
-            expire_date
+            expire_date,
+            image: imageUrl
         }, { transaction });
 
         if (branches && branches.length > 0) {
@@ -139,7 +160,25 @@ exports.updateBundle = async (req, res) => {
     const transaction = await sequelize.transaction();
     try {
         const { id } = req.params;
-        const { name, description, expire_date, branches, items } = req.body;
+        let bundleData = req.body;
+        if (typeof req.body.data === 'string') {
+            bundleData = JSON.parse(req.body.data);
+        }
+
+        let { name, description, expire_date, branches, items, image } = bundleData;
+        let imageUrl = image;
+
+        if (req.file) {
+            const blob = await put(`product_bundles/${Date.now()}-${req.file.originalname}`, req.file.buffer, {
+                access: 'public',
+                token: process.env.BLOB_READ_WRITE_TOKEN
+            });
+            imageUrl = blob.url;
+        }
+
+        // Parse JSON strings if they come from multipart/form-data
+        if (typeof branches === 'string') branches = JSON.parse(branches);
+        if (typeof items === 'string') items = JSON.parse(items);
 
         const bundle = await ProductBundle.findByPk(id);
         if (!bundle) {
@@ -150,7 +189,8 @@ exports.updateBundle = async (req, res) => {
         await bundle.update({
             name,
             description,
-            expire_date
+            expire_date,
+            image: imageUrl
         }, { transaction });
 
         if (branches !== undefined) {
