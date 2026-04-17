@@ -1,4 +1,6 @@
+const { Op } = require('sequelize');
 const BogoPromotion = require('../models/BogoPromotion');
+
 const BogoPromotionBranch = require('../models/BogoPromotionBranch');
 const Branch = require('../models/Branch');
 const Product = require('../models/Product');
@@ -265,13 +267,19 @@ exports.getBogoPromotionsByBranch = async (req, res) => {
         const branchId = userDetail?.branchId || 1;
 
         const promotions = await BogoPromotion.findAll({
-            where: { status: 'active' },
+            where: { 
+                status: 'active',
+                [Op.or]: [
+                    sequelize.where(sequelize.col('branches.branchId'), branchId),
+                    sequelize.where(sequelize.col('branches.id'), { [Op.is]: null })
+                ]
+            },
+
             include: [
                 {
                     model: BogoPromotionBranch,
                     as: 'branches',
-                    where: { branchId },
-                    required: true,
+                    required: false,
                     include: [{ model: Branch, as: 'branch' }]
                 },
                 { model: Product, as: 'buyProduct' },
@@ -286,6 +294,7 @@ exports.getBogoPromotionsByBranch = async (req, res) => {
             ],
             order: [['name', 'ASC']]
         });
+
 
         res.json(promotions);
     } catch (error) {

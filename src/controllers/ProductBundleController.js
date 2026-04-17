@@ -1,4 +1,6 @@
+const { Op } = require('sequelize');
 const ProductBundle = require('../models/ProductBundle');
+
 const ProductBundleBranch = require('../models/ProductBundleBranch');
 const ProductBundleItem = require('../models/ProductBundleItem');
 const Branch = require('../models/Branch');
@@ -315,13 +317,19 @@ exports.getBundlesByBranch = async (req, res) => {
         const branchId = userDetail?.branchId || 1;
 
         const bundles = await ProductBundle.findAll({
-            where: { status: 'active' },
+            where: { 
+                status: 'active',
+                [Op.or]: [
+                    sequelize.where(sequelize.col('branches.branchId'), branchId),
+                    sequelize.where(sequelize.col('branches.id'), { [Op.is]: null })
+                ]
+            },
+
             include: [
                 {
                     model: ProductBundleBranch,
                     as: 'branches',
-                    where: { branchId },
-                    required: true,
+                    required: false,
                     include: [{ model: Branch, as: 'branch' }]
                 },
                 {
@@ -358,6 +366,7 @@ exports.getBundlesByBranch = async (req, res) => {
             ],
             order: [['name', 'ASC']]
         });
+
 
         res.json(bundles);
     } catch (error) {
