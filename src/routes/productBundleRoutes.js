@@ -9,6 +9,7 @@ const upload = multer({ storage: multer.memoryStorage() });
 
 router.post('/', authenticate, upload.single('image'), productBundleController.createBundle);
 router.get('/', authenticate, productBundleController.getAllBundles);
+router.get('/branch-specific', authenticate, productBundleController.getBundlesByBranch);
 router.get('/:id', authenticate, productBundleController.getBundleById);
 router.put('/:id', authenticate, upload.single('image'), productBundleController.updateBundle);
 router.patch('/:id/deactivate', authenticate, productBundleController.deactivateBundle);

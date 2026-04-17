@@ -4,6 +4,7 @@ const ProductBundleItem = require('../models/ProductBundleItem');
 const Branch = require('../models/Branch');
 const Product = require('../models/Product');
 const VariationOption = require('../models/VariationOption');
+const VariationPrice = require('../models/VariationPrice');
 const sequelize = require('../config/database');
 const { logActivity } = require('./ActivityLogController');
 const UserDetail = require('../models/UserDetail');
@@ -295,6 +296,50 @@ exports.activateBundle = async (req, res) => {
             return res.json({ message: 'Product Bundle activated' });
         }
         throw new Error('Product Bundle not found');
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
+exports.getBundlesByBranch = async (req, res) => {
+    try {
+        const userDetail = await UserDetail.findOne({ where: { userId: req.user.id } });
+        const branchId = userDetail?.branchId || 1;
+
+        const bundles = await ProductBundle.findAll({
+            where: { status: 'active' },
+            include: [
+                {
+                    model: ProductBundleBranch,
+                    as: 'branches',
+                    where: { branchId },
+                    required: true,
+                    include: [{ model: Branch, as: 'branch' }]
+                },
+                {
+                    model: ProductBundleItem,
+                    as: 'items',
+                    include: [
+                        { model: Product, as: 'product' },
+                        {
+                            model: VariationOption,
+                            as: 'variationOption',
+                            include: [
+                                {
+                                    model: VariationPrice,
+                                    as: 'prices',
+                                    where: { branchId },
+                                    required: false // Include even if price is not set for this specific branch
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ],
+            order: [['name', 'ASC']]
+        });
+
+        res.json(bundles);
     } catch (error) {
         res.status(500).json({ message: error.message });
     }
