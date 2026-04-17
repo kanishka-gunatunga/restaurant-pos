@@ -157,6 +157,10 @@ ProductModificationItemPrice.belongsTo(ProductModification, { foreignKey: 'produ
 ProductModificationItemPrice.belongsTo(ModificationItem, { foreignKey: 'modificationItemId', as: 'item' });
 ProductModificationItemPrice.belongsTo(Branch, { foreignKey: 'branchId' });
 
+// ModificationItem - ProductModificationItemPrice Association
+ModificationItem.hasMany(ProductModificationItemPrice, { foreignKey: 'modificationItemId', as: 'itemPrices', onDelete: 'CASCADE', hooks: true });
+
+
 // Discount - DiscountBranch Association
 Discount.hasMany(DiscountBranch, { foreignKey: 'discountId', as: 'branches', onDelete: 'CASCADE', hooks: true });
 DiscountBranch.belongsTo(Discount, { foreignKey: 'discountId' });
