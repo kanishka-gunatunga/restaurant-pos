@@ -5,6 +5,8 @@ const Branch = require('../models/Branch');
 const Product = require('../models/Product');
 const VariationOption = require('../models/VariationOption');
 const VariationPrice = require('../models/VariationPrice');
+const ModificationItem = require('../models/ModificationItem');
+const ProductModificationItemPrice = require('../models/ProductModificationItemPrice');
 const sequelize = require('../config/database');
 const { logActivity } = require('./ActivityLogController');
 const UserDetail = require('../models/UserDetail');
@@ -61,6 +63,7 @@ exports.createBundle = async (req, res) => {
                 productBundleId: bundle.id,
                 productId: i.productId,
                 variationOptionId: i.variationOptionId,
+                modificationItemId: i.modificationItemId,
                 quantity: i.quantity || 1
             }));
             await ProductBundleItem.bulkCreate(itemRecords, { transaction });
@@ -85,7 +88,8 @@ exports.createBundle = async (req, res) => {
                     as: 'items', 
                     include: [
                         { model: Product, as: 'product' },
-                        { model: VariationOption, as: 'variationOption' }
+                        { model: VariationOption, as: 'variationOption' },
+                        { model: ModificationItem, as: 'modificationItem' }
                     ] 
                 }
             ]
@@ -120,7 +124,8 @@ exports.getAllBundles = async (req, res) => {
                     as: 'items', 
                     include: [
                         { model: Product, as: 'product' },
-                        { model: VariationOption, as: 'variationOption' }
+                        { model: VariationOption, as: 'variationOption' },
+                        { model: ModificationItem, as: 'modificationItem' }
                     ] 
                 }
             ],
@@ -143,7 +148,8 @@ exports.getBundleById = async (req, res) => {
                     as: 'items', 
                     include: [
                         { model: Product, as: 'product' },
-                        { model: VariationOption, as: 'variationOption' }
+                        { model: VariationOption, as: 'variationOption' },
+                        { model: ModificationItem, as: 'modificationItem' }
                     ] 
                 }
             ]
@@ -219,6 +225,7 @@ exports.updateBundle = async (req, res) => {
                     productBundleId: id,
                     productId: i.productId,
                     variationOptionId: i.variationOptionId,
+                    modificationItemId: i.modificationItemId,
                     quantity: i.quantity || 1
                 }));
                 await ProductBundleItem.bulkCreate(itemRecords, { transaction });
@@ -235,7 +242,8 @@ exports.updateBundle = async (req, res) => {
                     as: 'items', 
                     include: [
                         { model: Product, as: 'product' },
-                        { model: VariationOption, as: 'variationOption' }
+                        { model: VariationOption, as: 'variationOption' },
+                        { model: ModificationItem, as: 'modificationItem' }
                     ] 
                 }
             ]
@@ -329,7 +337,19 @@ exports.getBundlesByBranch = async (req, res) => {
                                     model: VariationPrice,
                                     as: 'prices',
                                     where: { branchId },
-                                    required: false // Include even if price is not set for this specific branch
+                                    required: false
+                                }
+                            ]
+                        },
+                        {
+                            model: ModificationItem,
+                            as: 'modificationItem',
+                            include: [
+                                {
+                                    model: ProductModificationItemPrice,
+                                    as: 'itemPrices',
+                                    where: { branchId },
+                                    required: false
                                 }
                             ]
                         }

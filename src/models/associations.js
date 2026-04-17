@@ -251,6 +251,9 @@ Product.hasMany(ProductBundleItem, { foreignKey: 'productId' });
 ProductBundleItem.belongsTo(VariationOption, { foreignKey: 'variationOptionId', as: 'variationOption' });
 VariationOption.hasMany(ProductBundleItem, { foreignKey: 'variationOptionId' });
 
+ProductBundleItem.belongsTo(ModificationItem, { foreignKey: 'modificationItemId', as: 'modificationItem' });
+ModificationItem.hasMany(ProductBundleItem, { foreignKey: 'modificationItemId' });
+
 // ServiceCharge Associations
 Branch.hasOne(ServiceCharge, { foreignKey: 'branchId', as: 'serviceCharge' });
 ServiceCharge.belongsTo(Branch, { foreignKey: 'branchId', as: 'branch' });
