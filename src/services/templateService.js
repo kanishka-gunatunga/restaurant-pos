@@ -218,6 +218,7 @@ exports.generateReceiptStructuredData = (order, payment, branch) => {
     return {
         type: 'receipt',
         orderId: order.id.toString().padStart(8, '0'),
+        orderType: capitalize(order.orderType || 'N/A'),
         dateTime: order.createdAt,
         cashier: order.user?.name || 'Staff',
         unit: String(branch?.id || '1'),
@@ -232,14 +233,14 @@ exports.generateReceiptStructuredData = (order, payment, branch) => {
             const name = (item.product?.name || 'Item');
             const vOpt = item.variationOption || item.variation_option;
             const variationSummary = vOpt ? (vOpt.Variation?.name ? `${vOpt.Variation.name}: ${vOpt.name}` : vOpt.name) : '';
-            
+
             return {
                 name: name,
                 variation: variationSummary,
                 price: parseFloat(item.unitPrice).toFixed(2),
                 qty: parseFloat(item.quantity).toFixed(2),
                 amount: (item.quantity * item.unitPrice).toFixed(2),
-                modifications: item.modifications?.map(mod => 
+                modifications: item.modifications?.map(mod =>
                     mod.modification?.name || mod.modification?.title || 'Extra'
                 ) || []
             };
@@ -280,7 +281,7 @@ exports.generateKitchenStructuredData = (order, branch) => {
                 name: name,
                 variation: variationSummary,
                 qty: parseFloat(item.quantity).toFixed(2),
-                modifications: item.modifications?.map(mod => 
+                modifications: item.modifications?.map(mod =>
                     mod.modification?.name || mod.modification?.title || 'Extra'
                 ) || []
             };

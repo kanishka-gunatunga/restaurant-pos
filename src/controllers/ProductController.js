@@ -417,7 +417,8 @@ exports.createProduct = async (req, res) => {
                                     discountPrice: p.discountPrice,
                                     quantity: p.quantity || 0,
                                     expireDate: p.expireDate || null,
-                                    batchNo: p.batchNo || null
+                                    batchNo: p.batchNo || null,
+                                    isUnlimited: p.isUnlimited || false
                                 }, { transaction: t });
                             }
                         }
@@ -551,7 +552,8 @@ exports.updateProduct = async (req, res) => {
                                     discountPrice: p.discountPrice,
                                     quantity: p.quantity || 0,
                                     expireDate: p.expireDate || null,
-                                    batchNo: p.batchNo || null
+                                    batchNo: p.batchNo || null,
+                                    isUnlimited: p.isUnlimited || false
                                 }, { transaction: t });
                             }
                         }
