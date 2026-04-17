@@ -258,3 +258,37 @@ exports.activateBogoPromotion = async (req, res) => {
         res.status(500).json({ message: error.message });
     }
 };
+
+exports.getBogoPromotionsByBranch = async (req, res) => {
+    try {
+        const userDetail = await UserDetail.findOne({ where: { userId: req.user.id } });
+        const branchId = userDetail?.branchId || 1;
+
+        const promotions = await BogoPromotion.findAll({
+            where: { status: 'active' },
+            include: [
+                {
+                    model: BogoPromotionBranch,
+                    as: 'branches',
+                    where: { branchId },
+                    required: true,
+                    include: [{ model: Branch, as: 'branch' }]
+                },
+                { model: Product, as: 'buyProduct' },
+                { model: VariationOption, as: 'buyVariationOption' },
+                { model: Product, as: 'getProduct' },
+                { model: VariationOption, as: 'getVariationOption' },
+                { 
+                    model: ModificationItem, 
+                    as: 'getModificationItem', 
+                    include: [{ model: Modification }] 
+                }
+            ],
+            order: [['name', 'ASC']]
+        });
+
+        res.json(promotions);
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};

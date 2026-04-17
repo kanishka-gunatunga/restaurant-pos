@@ -9,7 +9,9 @@ const upload = multer({ storage: multer.memoryStorage() });
 
 router.post('/', authenticate, upload.single('image'), bogoPromotionController.createBogoPromotion);
 router.get('/', authenticate, bogoPromotionController.getAllBogoPromotions);
+router.get('/branch-specific', authenticate, bogoPromotionController.getBogoPromotionsByBranch);
 router.get('/:id', authenticate, bogoPromotionController.getBogoPromotionById);
+
 router.put('/:id', authenticate, upload.single('image'), bogoPromotionController.updateBogoPromotion);
 router.patch('/:id/deactivate', authenticate, bogoPromotionController.deactivateBogoPromotion);
 router.patch('/:id/activate', authenticate, bogoPromotionController.activateBogoPromotion);
