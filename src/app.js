@@ -33,7 +33,7 @@ const serviceChargeRoutes = require('./routes/serviceChargeRoutes');
 const productBundleRoutes = require('./routes/productBundleRoutes');
 
 const app = express();
-
+app.set('trust proxy', 1);
 app.param('id', (req, res, next, id) => {
     const err = validatePositiveInt(id, 'id');
     if (err) return res.status(400).json({ message: err });
