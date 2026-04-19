@@ -34,7 +34,7 @@ const productBundleRoutes = require('./routes/productBundleRoutes');
 const bogoPromotionRoutes = require('./routes/bogoPromotionRoutes');
 
 const app = express();
-
+app.set('trust proxy', 1);
 app.param('id', (req, res, next, id) => {
     const err = validatePositiveInt(id, 'id');
     if (err) return res.status(400).json({ message: err });
