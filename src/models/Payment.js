@@ -43,6 +43,14 @@ const Payment = sequelize.define('Payment', {
         type: DataTypes.DECIMAL(10, 2),
         allowNull: true,
     },
+    cardType: {
+        type: DataTypes.STRING,
+        allowNull: true,
+    },
+    cardLastFour: {
+        type: DataTypes.STRING(4),
+        allowNull: true,
+    },
 }, {
     tableName: 'payments',
     underscored: true,

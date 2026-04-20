@@ -88,13 +88,32 @@ exports.generateReceiptHtml = (order, payment, branch) => {
             </div>
 
             <div style="margin-bottom: 15px; border-top: 1px dashed #000; padding-top: 8px;">
+                ${(order.payments && order.payments.length > 0) ? order.payments.map(p => `
+                <div style="display: flex; justify-content: space-between; font-size: 1.1em; margin-bottom: 4px;">
+                    <span>
+                        ${(p.paymentMethod || 'CASH').toUpperCase()}
+                        ${p.cardType ? `(${p.cardType})` : ''}
+                        ${p.cardLastFour ? ` **** ${p.cardLastFour}` : ''}
+                    </span>
+                    <span>${parseFloat(p.amount).toFixed(2)}</span>
+                </div>
+                `).join('') : `
                 <div style="display: flex; justify-content: space-between; font-size: 1.2em;">
                     <span>${(payment?.paymentMethod || 'CASH').toUpperCase()}</span>
                     <span>${parseFloat(payment?.paidAmount || payment?.amount || subTotal).toFixed(2)}</span>
                 </div>
+                `}
+                
+                <div style="margin-top: 8px; border-top: 1px solid #eee; padding-top: 4px;">
+                    <div style="display: flex; justify-content: space-between; font-size: 1.1em;">
+                        <span>TOTAL PAID</span>
+                        <span>${(order.payments && order.payments.length > 0 ? order.payments.reduce((s, p) => s + parseFloat(p.paidAmount || p.amount), 0) : parseFloat(payment?.paidAmount || payment?.amount || subTotal)).toFixed(2)}</span>
+                    </div>
+                </div>
+
                 <div style="display: flex; justify-content: space-between; font-weight: bold; font-size: 1.3em; margin-top: 4px;">
                     <span>BALANCE</span>
-                    <span>${(parseFloat(payment?.paidAmount || payment?.amount || subTotal) - parseFloat(subTotal)).toFixed(2)}</span>
+                    <span>${Math.max(0, (order.payments && order.payments.length > 0 ? order.payments.reduce((s, p) => s + parseFloat(p.paidAmount || p.amount), 0) : parseFloat(payment?.paidAmount || payment?.amount || subTotal)) - parseFloat(subTotal)).toFixed(2)}</span>
                 </div>
                 ${totalDiscount > 0 ? `
                 <div style="display: flex; justify-content: space-between; margin-top: 8px; font-weight: bold;">
@@ -256,8 +275,19 @@ exports.generateReceiptStructuredData = (order, payment, branch) => {
             method: capitalize(payment?.paymentMethod || 'Cash'),
             paidAmount: parseFloat(payment?.paidAmount || payment?.amount || order.totalAmount).toFixed(2),
             amount: parseFloat(payment?.amount || order.totalAmount).toFixed(2),
-            balance: (parseFloat(payment?.paidAmount || payment?.amount || order.totalAmount) - parseFloat(order.totalAmount || 0)).toFixed(2)
-        }
+            balance: Math.max(0, parseFloat(payment?.paidAmount || payment?.amount || order.totalAmount) - parseFloat(order.totalAmount || 0)).toFixed(2)
+        },
+        payments: (order.payments && order.payments.length > 0) ? order.payments.map(p => ({
+            method: capitalize(p.paymentMethod || 'Cash'),
+            amount: parseFloat(p.amount).toFixed(2),
+            paidAmount: parseFloat(p.paidAmount || p.amount).toFixed(2),
+            cardType: p.cardType,
+            cardLastFour: p.cardLastFour
+        })) : [{
+            method: capitalize(payment?.paymentMethod || 'Cash'),
+            amount: parseFloat(payment?.amount || order.totalAmount).toFixed(2),
+            paidAmount: parseFloat(payment?.paidAmount || payment?.amount || order.totalAmount).toFixed(2)
+        }]
     };
 };
 
