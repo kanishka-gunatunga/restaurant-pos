@@ -286,6 +286,3 @@ VariationOption.hasMany(BogoPromotion, { foreignKey: 'buyVariationOptionId' });
 BogoPromotion.belongsTo(VariationOption, { foreignKey: 'getVariationOptionId', as: 'getVariationOption' });
 VariationOption.hasMany(BogoPromotion, { foreignKey: 'getVariationOptionId' });
 
-// BogoPromotion - ModificationItem Association (Get Modification)
-BogoPromotion.belongsTo(ModificationItem, { foreignKey: 'getModificationItemId', as: 'getModificationItem' });
-ModificationItem.hasMany(BogoPromotion, { foreignKey: 'getModificationItemId' });

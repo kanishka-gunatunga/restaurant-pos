@@ -8,8 +8,8 @@ const sequelize = require('../config/database');
 const { logActivity } = require('./ActivityLogController');
 const UserDetail = require('../models/UserDetail');
 const VariationOption = require('../models/VariationOption');
-const ModificationItem = require('../models/ModificationItem');
-const Modification = require('../models/Modification');
+const Variation = require('../models/Variation');
+const VariationPrice = require('../models/VariationPrice');
 const { put } = require('@vercel/blob');
 
 
@@ -21,7 +21,7 @@ exports.createBogoPromotion = async (req, res) => {
             promotionData = JSON.parse(req.body.data);
         }
 
-        let { name, expiryDate, buyQuantity, getQuantity, buyProductId, getProductId, buyVariationOptionId, getVariationOptionId, getModificationItemId, branches } = promotionData;
+        let { name, expiryDate, buyQuantity, getQuantity, buyProductId, getProductId, buyVariationOptionId, getVariationOptionId, branches } = promotionData;
         let imageUrl = null;
 
         if (req.file) {
@@ -44,7 +44,6 @@ exports.createBogoPromotion = async (req, res) => {
             getProductId,
             buyVariationOptionId,
             getVariationOptionId,
-            getModificationItemId,
             image: imageUrl
         }, { transaction });
 
@@ -73,8 +72,7 @@ exports.createBogoPromotion = async (req, res) => {
                 { model: Product, as: 'buyProduct' },
                 { model: VariationOption, as: 'buyVariationOption' },
                 { model: Product, as: 'getProduct' },
-                { model: VariationOption, as: 'getVariationOption' },
-                { model: ModificationItem, as: 'getModificationItem', include: [{ model: Modification }] }
+                { model: VariationOption, as: 'getVariationOption' }
             ]
         });
 
@@ -103,8 +101,7 @@ exports.getAllBogoPromotions = async (req, res) => {
                 { model: Product, as: 'buyProduct' },
                 { model: VariationOption, as: 'buyVariationOption' },
                 { model: Product, as: 'getProduct' },
-                { model: VariationOption, as: 'getVariationOption' },
-                { model: ModificationItem, as: 'getModificationItem', include: [{ model: Modification }] }
+                { model: VariationOption, as: 'getVariationOption' }
             ],
             order: [['name', 'ASC']]
         });
@@ -123,8 +120,7 @@ exports.getBogoPromotionById = async (req, res) => {
                 { model: Product, as: 'buyProduct' },
                 { model: VariationOption, as: 'buyVariationOption' },
                 { model: Product, as: 'getProduct' },
-                { model: VariationOption, as: 'getVariationOption' },
-                { model: ModificationItem, as: 'getModificationItem', include: [{ model: Modification }] }
+                { model: VariationOption, as: 'getVariationOption' }
             ]
         });
         if (!promotion) {
@@ -145,7 +141,7 @@ exports.updateBogoPromotion = async (req, res) => {
             promotionData = JSON.parse(req.body.data);
         }
 
-        let { name, expiryDate, buyQuantity, getQuantity, buyProductId, getProductId, buyVariationOptionId, getVariationOptionId, getModificationItemId, branches, status, image } = promotionData;
+        let { name, expiryDate, buyQuantity, getQuantity, buyProductId, getProductId, buyVariationOptionId, getVariationOptionId, branches, status, image } = promotionData;
         let imageUrl = image;
 
         if (req.file) {
@@ -174,7 +170,6 @@ exports.updateBogoPromotion = async (req, res) => {
             getProductId,
             buyVariationOptionId,
             getVariationOptionId,
-            getModificationItemId,
             status,
             image: imageUrl
         }, { transaction });
@@ -198,8 +193,7 @@ exports.updateBogoPromotion = async (req, res) => {
                 { model: Product, as: 'buyProduct' },
                 { model: VariationOption, as: 'buyVariationOption' },
                 { model: Product, as: 'getProduct' },
-                { model: VariationOption, as: 'getVariationOption' },
-                { model: ModificationItem, as: 'getModificationItem', include: [{ model: Modification }] }
+                { model: VariationOption, as: 'getVariationOption' }
             ]
         });
 
@@ -282,14 +276,61 @@ exports.getBogoPromotionsByBranch = async (req, res) => {
                     required: false,
                     include: [{ model: Branch, as: 'branch' }]
                 },
-                { model: Product, as: 'buyProduct' },
-                { model: VariationOption, as: 'buyVariationOption' },
-                { model: Product, as: 'getProduct' },
-                { model: VariationOption, as: 'getVariationOption' },
                 { 
-                    model: ModificationItem, 
-                    as: 'getModificationItem', 
-                    include: [{ model: Modification }] 
+                    model: Product, 
+                    as: 'buyProduct',
+                    include: [{
+                        model: Variation,
+                        as: 'variations',
+                        include: [{
+                            model: VariationOption,
+                            as: 'options',
+                            include: [{
+                                model: VariationPrice,
+                                as: 'prices',
+                                where: { branchId },
+                                required: false
+                            }]
+                        }]
+                    }]
+                },
+                { 
+                    model: VariationOption, 
+                    as: 'buyVariationOption',
+                    include: [{
+                        model: VariationPrice,
+                        as: 'prices',
+                        where: { branchId },
+                        required: false
+                    }]
+                },
+                { 
+                    model: Product, 
+                    as: 'getProduct',
+                    include: [{
+                        model: Variation,
+                        as: 'variations',
+                        include: [{
+                            model: VariationOption,
+                            as: 'options',
+                            include: [{
+                                model: VariationPrice,
+                                as: 'prices',
+                                where: { branchId },
+                                required: false
+                            }]
+                        }]
+                    }]
+                },
+                { 
+                    model: VariationOption, 
+                    as: 'getVariationOption',
+                    include: [{
+                        model: VariationPrice,
+                        as: 'prices',
+                        where: { branchId },
+                        required: false
+                    }]
                 }
             ],
             order: [['name', 'ASC']]
