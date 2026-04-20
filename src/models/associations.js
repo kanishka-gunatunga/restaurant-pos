@@ -92,6 +92,8 @@ Order.hasMany(OrderItem, { foreignKey: 'orderId', as: 'items', onDelete: 'CASCAD
 OrderItem.belongsTo(Order, { foreignKey: 'orderId' });
 OrderItem.belongsTo(Product, { foreignKey: 'productId', as: 'product' });
 OrderItem.belongsTo(VariationOption, { foreignKey: 'variationOptionId', as: 'variationOption' });
+OrderItem.belongsTo(ProductBundle, { foreignKey: 'productBundleId', as: 'productBundle' });
+OrderItem.belongsTo(BogoPromotion, { foreignKey: 'bogoPromotionId', as: 'bogoPromotion' });
 
 // OrderItem - OrderItemModification Association
 OrderItem.hasMany(OrderItemModification, { foreignKey: 'orderItemId', as: 'modifications', onDelete: 'CASCADE', hooks: true });

@@ -19,6 +19,8 @@ const PrintJob = require('../models/PrintJob');
 const Branch = require('../models/Branch');
 const templateService = require('../services/templateService');
 const Pusher = require('pusher');
+const ProductBundle = require('../models/ProductBundle');
+const BogoPromotion = require('../models/BogoPromotion');
 
 const pusher = new Pusher({
     appId: process.env.PUSHER_APP_ID,
@@ -71,6 +73,8 @@ const orderItemsBasicInclude = {
     as: 'items',
     include: [
         { model: Product, as: 'product' },
+        { model: ProductBundle, as: 'productBundle' },
+        { model: BogoPromotion, as: 'bogoPromotion' },
         {
             model: VariationOption,
             as: 'variationOption',
@@ -367,8 +371,10 @@ exports.createOrder = async (req, res) => {
                 const variationOptionId = item.variationId ?? item.variation_id ?? item.variationOptionId ?? null;
                 const orderItem = await OrderItem.create({
                     orderId: order.id,
-                    productId: item.productId,
+                    productId: item.productId || null,
                     variationOptionId,
+                    productBundleId: item.productBundleId ?? item.product_bundle_id ?? null,
+                    bogoPromotionId: item.bogoPromotionId ?? item.bogo_promotion_id ?? null,
                     quantity: item.quantity,
                     unitPrice: item.unitPrice,
                     productDiscount: item.productDiscount,
@@ -761,8 +767,10 @@ exports.updateOrder = async (req, res) => {
                     const variationOptionId = item.variationId ?? item.variation_id ?? item.variationOptionId ?? null;
                     const orderItem = await OrderItem.create({
                         orderId: order.id,
-                        productId: item.productId,
+                        productId: item.productId || null,
                         variationOptionId,
+                        productBundleId: item.productBundleId ?? item.product_bundle_id ?? null,
+                        bogoPromotionId: item.bogoPromotionId ?? item.bogo_promotion_id ?? null,
                         quantity: item.quantity,
                         unitPrice: item.unitPrice,
                         productDiscount: item.productDiscount,

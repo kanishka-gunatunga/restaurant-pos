@@ -20,7 +20,7 @@ exports.generateReceiptHtml = (order, payment, branch) => {
             }).join('');
         }
 
-        const name = (item.product?.name || 'Item');
+        const name = item.productBundle?.name || item.bogoPromotion?.name || item.product?.name || 'Item';
         const vOpt = item.variationOption || item.variation_option;
         const variationSummary = vOpt ? (vOpt.Variation?.name ? `${vOpt.Variation.name}: ${vOpt.name}` : vOpt.name) : '';
         const variation = variationSummary ? `(${variationSummary})` : '';
@@ -150,7 +150,7 @@ exports.generateKitchenReceiptHtml = (order, branch) => {
             }).join('');
         }
 
-        const name = (item.product?.name || 'Item').substring(0, 25);
+        const name = (item.productBundle?.name || item.bogoPromotion?.name || item.product?.name || 'Item').substring(0, 25);
         const vOpt = item.variationOption || item.variation_option;
         const variationSummary = vOpt ? (vOpt.Variation?.name ? `${vOpt.Variation.name}: ${vOpt.name}` : vOpt.name) : '';
         const variation = variationSummary ? `(${variationSummary})` : '';
@@ -230,7 +230,7 @@ exports.generateReceiptStructuredData = (order, payment, branch) => {
             mobile: branch?.mobile || '011 2 175 275'
         },
         items: order.items.map(item => {
-            const name = (item.product?.name || 'Item');
+            const name = item.productBundle?.name || item.bogoPromotion?.name || item.product?.name || 'Item';
             const vOpt = item.variationOption || item.variation_option;
             const variationSummary = vOpt ? (vOpt.Variation?.name ? `${vOpt.Variation.name}: ${vOpt.name}` : vOpt.name) : '';
 
@@ -273,7 +273,7 @@ exports.generateKitchenStructuredData = (order, branch) => {
         tableNumber: order.tableNumber || 'N/A',
         kitchenNote: order.kitchenNote,
         items: order.items.map(item => {
-            const name = (item.product?.name || 'Item');
+            const name = item.productBundle?.name || item.bogoPromotion?.name || item.product?.name || 'Item';
             const vOpt = item.variationOption || item.variation_option;
             const variationSummary = vOpt ? (vOpt.Variation?.name ? `${vOpt.Variation.name}: ${vOpt.name}` : vOpt.name) : '';
 

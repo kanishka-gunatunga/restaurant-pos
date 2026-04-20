@@ -13,7 +13,15 @@ const OrderItem = sequelize.define('OrderItem', {
     },
     productId: {
         type: DataTypes.INTEGER,
-        allowNull: false,
+        allowNull: true,
+    },
+    productBundleId: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+    },
+    bogoPromotionId: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
     },
     variationOptionId: {
         type: DataTypes.INTEGER,
