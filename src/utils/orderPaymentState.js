@@ -496,7 +496,6 @@ async function trySettleExistingPendingPayment({
                 transactionId: transactionId !== undefined ? transactionId : row.transactionId,
                 userId: userId !== undefined ? userId : row.userId,
                 paymentRole: 'sale',
-                paidAmount: paidAmount !== undefined ? paidAmount : requested,
             },
             { transaction }
         );

@@ -205,6 +205,7 @@ async function jsonPaymentWithOrderSummary(orderId, paymentRecord, res, statusCo
 }
 
 exports.createPayment = async (req, res) => {
+    console.log('[PaymentController] Creating payment with payload:', JSON.stringify(req.body, null, 2));
     const t = await sequelize.transaction();
     try {
         const { orderId, paymentMethod, amount, transactionId, status, paidAmount } = req.body;
@@ -255,6 +256,7 @@ exports.createPayment = async (req, res) => {
                 orderId,
                 paymentMethod,
                 amount: amountNum,
+                paidAmount: resolvedPaidAmount,
                 transactionId,
                 userId: req.user?.id,
                 transaction: t,
@@ -277,6 +279,7 @@ exports.createPayment = async (req, res) => {
                         orderId,
                         paymentMethod,
                         amount: amountNum,
+                        paidAmount: resolvedPaidAmount,
                         transactionId,
                         userId: req.user?.id,
                         transaction: t,
@@ -288,11 +291,9 @@ exports.createPayment = async (req, res) => {
 
             if (!settled.settled) {
                 if (clientPaymentRole === 'balance_due') {
-                    await t.rollback();
-                    return res.status(400).json({
-                        message:
-                            'No pending balance-due line matches this amount. Save the order first, then pay exactly the additional amount (see GET order balanceDue or pending balance_due payment row).',
-                    });
+                    // We previously returned 400 here, but the user wants to be able to save a payment even if it doesn't match a pending line perfectly.
+                    // We will allow it to fall through to Payment.create below.
+                    console.log(`[PaymentController] No pending balance_due line matches amount ${amountNum} for order ${orderId}. Creating new line instead.`);
                 }
                 const existing = await Payment.findAll({ where: { orderId }, transaction: t });
                 if (wouldDoubleCoverOrder(order.totalAmount, existing, amountNum)) {
@@ -318,8 +319,8 @@ exports.createPayment = async (req, res) => {
                         transactionId,
                         status: 'paid',
                         userId: req.user?.id,
-                        paymentRole: 'sale',
-                        paidAmount: rawPaidAmount !== undefined ? parseFloat(rawPaidAmount) : amountNum,
+                        paymentRole: clientPaymentRole || 'sale',
+                        paidAmount: resolvedPaidAmount,
                     },
                     { transaction: t }
                 );
@@ -418,8 +419,8 @@ exports.createPayment = async (req, res) => {
                 transactionId,
                 status: effectiveStatus,
                 userId: req.user?.id,
-                paymentRole: clientPaymentRole === 'balance_due' ? 'balance_due' : 'sale',
-                paidAmount: rawPaidAmount !== undefined ? parseFloat(rawPaidAmount) : amountNum,
+                paymentRole: clientPaymentRole || 'sale',
+                paidAmount: resolvedPaidAmount,
             },
             { transaction: t }
         );
