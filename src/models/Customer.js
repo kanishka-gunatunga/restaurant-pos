@@ -33,6 +33,11 @@ const Customer = sequelize.define('Customer', {
         type: DataTypes.ENUM('active', 'inactive'),
         defaultValue: 'active',
     },
+    loyalty_points: {
+        type: DataTypes.INTEGER,
+        defaultValue: 0,
+        field: 'loyalty_points'
+    },
 }, {
     tableName: 'customers',
     underscored: true,

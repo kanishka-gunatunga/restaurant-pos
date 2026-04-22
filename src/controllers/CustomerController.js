@@ -102,6 +102,28 @@ exports.getByMobile = async (req, res) => {
     }
 };
 
+exports.getLoyaltyPointsByMobile = async (req, res) => {
+    try {
+        const { mobile } = req.params;
+        const customer = await Customer.findOne({ 
+            where: { mobile },
+            attributes: ['id', 'name', 'mobile', 'loyalty_points']
+        });
+        if (!customer) {
+            return res.status(404).json({ message: 'Customer not found' });
+        }
+        res.json({
+            customerId: customer.id,
+            name: customer.name,
+            mobile: customer.mobile,
+            loyaltyPoints: customer.loyalty_points
+        });
+    } catch (error) {
+        console.error('Loyalty Points Error:', error);
+        res.status(500).json({ message: error.message || 'Internal server error' });
+    }
+};
+
 exports.getAllCustomers = async (req, res) => {
     try {
         const { status } = req.query;

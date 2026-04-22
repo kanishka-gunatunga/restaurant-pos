@@ -18,6 +18,7 @@ const Variation = require('../models/Variation');
 const VariationOption = require('../models/VariationOption');
 const Branch = require('../models/Branch');
 const templateService = require('../services/templateService');
+const loyaltyService = require('../services/loyaltyService');
 const { roundMoney } = require('../utils/orderTotals');
 const { resolveOrderBranchWhereClause, orderBelongsToRequesterBranch } = require('../utils/orderBranchScope');
 const {
@@ -265,7 +266,29 @@ exports.createPayment = async (req, res) => {
             });
 
             for (const p of payments) {
-                const amountNum = parseFloat(p.amount);
+                let amountNum = parseFloat(p.amount);
+
+                // Handle Loyalty Points Redemption
+                if (p.paymentMethod === 'loyalty_points') {
+                    if (!order.customerId) {
+                        await t.rollback();
+                        return res.status(400).json({ message: 'Loyalty points can only be used for orders with a registered customer' });
+                    }
+                    const pts = parseInt(p.pointsUsed ?? p.points_used, 10);
+                    if (!pts || pts <= 0) {
+                        await t.rollback();
+                        return res.status(400).json({ message: 'Valid loyalty points amount is required for point-based payment' });
+                    }
+                    try {
+                        const redemption = await loyaltyService.redeemLoyaltyPoints(order.customerId, pts, t);
+                        amountNum = redemption.monetaryValue;
+                        p.amount = amountNum; // Ensure standard validation passes
+                    } catch (redemptionError) {
+                        await t.rollback();
+                        return res.status(400).json({ message: redemptionError.message });
+                    }
+                }
+
                 if (!Number.isFinite(amountNum) || amountNum <= 0) {
                     await t.rollback();
                     return res.status(400).json({ message: 'Each payment amount must be a positive number' });
@@ -281,7 +304,7 @@ exports.createPayment = async (req, res) => {
                     transactionId: p.transactionId,
                     userId: req.user?.id,
                     transaction: t,
-                    paidAmount: p.paidAmount ?? p.paid_amount
+                    paidAmount: p.paidAmount ?? p.paid_amount ?? amountNum
                 });
 
                 if (!settled.settled) {
@@ -298,7 +321,7 @@ exports.createPayment = async (req, res) => {
                             transactionId: p.transactionId,
                             userId: req.user?.id,
                             transaction: t,
-                            paidAmount: p.paidAmount ?? p.paid_amount
+                            paidAmount: p.paidAmount ?? p.paid_amount ?? amountNum
                         });
                     }
                 }
@@ -309,7 +332,8 @@ exports.createPayment = async (req, res) => {
                     // Update new fields if they were provided in the settlement
                     await paymentRecord.update({
                         cardType: p.cardType,
-                        cardLastFour: p.cardLastFour
+                        cardLastFour: p.cardLastFour,
+                        pointsUsed: p.paymentMethod === 'loyalty_points' ? (p.pointsUsed ?? p.points_used) : null
                     }, { transaction: t });
                 } else {
                     if (clientPaymentRole === 'balance_due') {
@@ -319,9 +343,6 @@ exports.createPayment = async (req, res) => {
                         });
                     }
 
-                    const existing = await Payment.findAll({ where: { orderId }, transaction: t });
-                    // Note: wouldDoubleCoverOrder might need caution if called in a loop for same request
-                    // But usually split payments are done together.
                     paymentRecord = await Payment.create({
                         orderId,
                         paymentMethod: p.paymentMethod,
@@ -332,7 +353,8 @@ exports.createPayment = async (req, res) => {
                         paymentRole: 'sale',
                         paidAmount: p.paidAmount ?? p.paid_amount ?? amountNum,
                         cardType: p.cardType,
-                        cardLastFour: p.cardLastFour
+                        cardLastFour: p.cardLastFour,
+                        pointsUsed: p.paymentMethod === 'loyalty_points' ? (p.pointsUsed ?? p.points_used) : null
                     }, { transaction: t });
                 }
 
