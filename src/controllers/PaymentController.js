@@ -210,6 +210,7 @@ async function jsonPaymentWithOrderSummary(orderId, paymentRecord, res, statusCo
 }
 
 exports.createPayment = async (req, res) => {
+    console.log('[PaymentController] Creating payment with payload:', JSON.stringify(req.body, null, 2));
     const t = await sequelize.transaction();
     try {
         const { orderId, status } = req.body;
