@@ -143,8 +143,8 @@ exports.generateReceiptHtml = (order, payment, branch) => {
                     <span>TOTAL QTY: ${totalQty}</span>
                 </div>
                 <div style="display: flex; justify-content: space-between; margin-top: 4px;">
-                    <span>DATE: ${date.toLocaleDateString('en-GB')}</span>
-                    <span>TIME: ${date.toLocaleTimeString('en-GB')}</span>
+                    <span>DATE: ${date.toLocaleDateString('en-GB', { timeZone: 'Asia/Colombo' })}</span>
+                    <span>TIME: ${date.toLocaleTimeString('en-GB', { timeZone: 'Asia/Colombo' })}</span>
                 </div>
             </div>
 
@@ -215,7 +215,7 @@ exports.generateKitchenReceiptHtml = (order, branch) => {
             </div>
 
             <div style="margin-top: 10px; font-size: 0.9em; text-align: center;">
-                <div>TIME: ${date.toLocaleString('en-GB')}</div>
+                <div>TIME: ${date.toLocaleString('en-GB', { timeZone: 'Asia/Colombo' })}</div>
             </div>
         </div>
     `;
@@ -236,13 +236,34 @@ const capitalize = (str) => {
 const formatDateTime = (date) => {
     if (!date) return date;
     const d = new Date(date);
-    const year = d.getFullYear();
-    const month = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    const hours = String(d.getHours()).padStart(2, '0');
-    const minutes = String(d.getMinutes()).padStart(2, '0');
-    const seconds = String(d.getSeconds()).padStart(2, '0');
-    return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+    
+    try {
+        const formatter = new Intl.DateTimeFormat('en-GB', {
+            timeZone: 'Asia/Colombo',
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+            hour12: false
+        });
+        
+        const parts = formatter.formatToParts(d);
+        const map = {};
+        parts.forEach(p => map[p.type] = p.value);
+        
+        return `${map.year}-${map.month}-${map.day} ${map.hour}:${map.minute}:${map.second}`;
+    } catch (e) {
+        // Fallback to old behavior if Intl fails
+        const year = d.getFullYear();
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        const hours = String(d.getHours()).padStart(2, '0');
+        const minutes = String(d.getMinutes()).padStart(2, '0');
+        const seconds = String(d.getSeconds()).padStart(2, '0');
+        return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+    }
 };
 
 /**
