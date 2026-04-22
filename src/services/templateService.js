@@ -212,6 +212,21 @@ const capitalize = (str) => {
 };
 
 /**
+ * Helper to format date as local YYYY-MM-DD HH:mm:ss
+ */
+const formatDateTime = (date) => {
+    if (!date) return date;
+    const d = new Date(date);
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    const hours = String(d.getHours()).padStart(2, '0');
+    const minutes = String(d.getMinutes()).padStart(2, '0');
+    const seconds = String(d.getSeconds()).padStart(2, '0');
+    return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+};
+
+/**
  * Generate structured JSON for payment receipts (for ESC/POS)
  */
 exports.generateReceiptStructuredData = (order, payment, branch) => {
@@ -219,7 +234,7 @@ exports.generateReceiptStructuredData = (order, payment, branch) => {
         type: 'receipt',
         orderId: order.id.toString().padStart(8, '0'),
         orderType: capitalize(order.orderType || 'N/A'),
-        dateTime: order.createdAt,
+        dateTime: formatDateTime(order.createdAt),
         cashier: order.user?.name || 'Staff',
         unit: String(branch?.id || '1'),
         customerName: order.customer?.name,
@@ -268,7 +283,7 @@ exports.generateKitchenStructuredData = (order, branch) => {
     return {
         type: 'kitchen',
         orderId: order.id.toString().padStart(8, '0'),
-        dateTime: order.createdAt,
+        dateTime: formatDateTime(order.createdAt),
         orderType: capitalize(order.orderType || 'N/A'),
         tableNumber: order.tableNumber || 'N/A',
         kitchenNote: order.kitchenNote,
@@ -297,7 +312,7 @@ exports.generateSalesReportStructuredData = (reportData, summary, headerInfo, br
         type: 'sales_report',
         reportName: headerInfo.reportName || 'Sales Report',
         dateRange: headerInfo.dateRange,
-        generatedOn: headerInfo.generatedOn || new Date(),
+        generatedOn: formatDateTime(headerInfo.generatedOn || new Date()),
         branch: {
             name: 'CATERING BY AHAS GAWWA',
             location: branch?.location || 'No. 226, Arakawila, Handapangoda',
