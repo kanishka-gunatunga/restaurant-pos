@@ -108,13 +108,23 @@ exports.createBundle = async (req, res) => {
 
 exports.getAllBundles = async (req, res) => {
     try {
-        const { status } = req.query;
+        const { status, excludeExpired } = req.query;
         let where = { status: 'active' };
 
         if (status === 'inactive') {
             where = { status: 'inactive' };
         } else if (status === 'all') {
             where = {};
+        }
+
+        if (excludeExpired === 'true') {
+            const today = new Date().toISOString().split('T')[0];
+            where.expire_date = {
+                [Op.or]: [
+                    { [Op.gte]: today },
+                    { [Op.is]: null }
+                ]
+            };
         }
 
         const bundles = await ProductBundle.findAll({
@@ -313,17 +323,30 @@ exports.activateBundle = async (req, res) => {
 
 exports.getBundlesByBranch = async (req, res) => {
     try {
+        const { excludeExpired } = req.query;
         const userDetail = await UserDetail.findOne({ where: { userId: req.user.id } });
         const branchId = userDetail?.branchId || 1;
 
-        const bundles = await ProductBundle.findAll({
-            where: { 
-                status: 'active',
+        let where = { 
+            status: 'active',
+            [Op.or]: [
+                sequelize.where(sequelize.col('branches.branchId'), branchId),
+                sequelize.where(sequelize.col('branches.id'), { [Op.is]: null })
+            ]
+        };
+
+        if (excludeExpired === 'true') {
+            const today = new Date().toISOString().split('T')[0];
+            where.expire_date = {
                 [Op.or]: [
-                    sequelize.where(sequelize.col('branches.branchId'), branchId),
-                    sequelize.where(sequelize.col('branches.id'), { [Op.is]: null })
+                    { [Op.gte]: today },
+                    { [Op.is]: null }
                 ]
-            },
+            };
+        }
+
+        const bundles = await ProductBundle.findAll({
+            where,
 
             include: [
                 {
