@@ -85,13 +85,23 @@ exports.createBogoPromotion = async (req, res) => {
 
 exports.getAllBogoPromotions = async (req, res) => {
     try {
-        const { status } = req.query;
+        const { status, excludeExpired } = req.query;
         let where = { status: 'active' };
 
         if (status === 'inactive') {
             where = { status: 'inactive' };
         } else if (status === 'all') {
             where = {};
+        }
+
+        if (excludeExpired === 'true') {
+            const today = new Date().toISOString().split('T')[0];
+            where.expiryDate = {
+                [Op.or]: [
+                    { [Op.gte]: today },
+                    { [Op.is]: null }
+                ]
+            };
         }
 
         const promotions = await BogoPromotion.findAll({
