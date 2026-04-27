@@ -309,6 +309,8 @@ exports.createOrder = async (req, res) => {
         const order_products =
             req.body.order_products ?? req.body.orderProducts ?? req.body.order_lines;
         const serviceChargeNorm = req.body.serviceCharge ?? req.body.service_charge;
+        const orderAmountNorm = req.body.totalAmount ?? req.body.total_amount;
+        const taxAmountNorm = req.body.tax ?? req.body.tax;
         const deliveryChargeAmountNorm = req.body.deliveryChargeAmount ?? req.body.delivery_charge_amount;
         const deliveryChargeIdNorm = req.body.deliveryChargeId ?? req.body.delivery_charge_id;
         const deliveryChargeSelectedIdNorm =
@@ -323,6 +325,8 @@ exports.createOrder = async (req, res) => {
 
         const effectiveServiceCharge = parseFloat(serviceChargeNorm) || 0;
         const effectiveDeliveryChargeAmount = parseFloat(deliveryChargeAmountNorm) || 0;
+        const effectiveOrderAmount = parseFloat(orderAmountNorm) || 0;
+        const effectiveTaxAmount = parseFloat(taxAmountNorm) || 0;
         const effectiveDeliveryChargeId = deliveryChargeIdNorm || deliveryChargeSelectedIdNorm || null;
 
         if (customerMobile) {
@@ -341,11 +345,11 @@ exports.createOrder = async (req, res) => {
 
         const order = await Order.create({
             customerId,
-            totalAmount: totalAmount,
+            totalAmount: effectiveOrderAmount,
             orderType,
             tableNumber,
             orderDiscount: parsedOrderDiscount,
-            tax: tax,
+            tax: effectiveTaxAmount,
             orderNote,
             kitchenNote,
             orderTimer,
