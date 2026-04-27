@@ -13,11 +13,13 @@ const VariationOption = require('../models/VariationOption');
 const DiscountItem = require('../models/DiscountItem');
 const Discount = require('../models/Discount');
 const Branch = require('../models/Branch');
+const UserDetail = require('../models/UserDetail');
 const sequelize = require('../config/database');
 const { put } = require('@vercel/blob');
 const { logActivity } = require('./ActivityLogController');
-const UserDetail = require('../models/UserDetail');
 const xlsx = require('xlsx');
+const { generateUniqueBarcode } = require('../utils/barcodeUtils');
+const BarcodeService = require('../services/BarcodeService');
 
 exports.searchProducts = async (req, res) => {
     try {
@@ -38,7 +40,8 @@ exports.searchProducts = async (req, res) => {
                 [Op.or]: [
                     { name: { [Op.like]: `%${query}%` } },
                     { sku: { [Op.like]: `%${query}%` } },
-                    { code: { [Op.like]: `%${query}%` } }
+                    { code: { [Op.like]: `%${query}%` } },
+                    { barcode: { [Op.like]: `%${query}%` } }
                 ],
                 ...statusFilter
             },
@@ -351,6 +354,122 @@ exports.getProductById = async (req, res) => {
     }
 };
 
+exports.getProductByBarcode = async (req, res) => {
+    try {
+        const { barcode } = req.params;
+
+        // 1. Search in VariationOptions (since variations are more specific scannable items)
+        const option = await VariationOption.findOne({
+            where: { barcode, status: 'active' },
+            include: [
+                {
+                    model: Variation,
+                    as: 'variation',
+                    include: [{ model: Product, as: 'product' }]
+                }
+            ]
+        });
+
+        if (option) {
+            // Found a variation option
+            const variation = option.variation;
+            const product = variation.product;
+            
+            // Get full product details like the standard getProductById but filtered for this variation
+            const fullProduct = await Product.findByPk(product.id, {
+                include: [
+                    { model: Category, as: 'category' },
+                    { 
+                        model: Variation, 
+                        as: 'variations', 
+                        where: { id: variation.id },
+                        include: [{ 
+                            model: VariationOption, 
+                            as: 'options',
+                            where: { id: option.id },
+                            include: [{ model: VariationPrice, as: 'prices' }]
+                        }]
+                    }
+                ]
+            });
+            return res.json({ type: 'variation', product: fullProduct });
+        }
+
+        // 2. Search in Products (for items without variations)
+        const product = await Product.findOne({
+            where: { barcode, status: 'active' },
+            include: [
+                { model: Category, as: 'category' },
+                { model: Variation, as: 'variations', include: [{ model: VariationOption, as: 'options', include: [{ model: VariationPrice, as: 'prices' }] }] }
+            ]
+        });
+
+        if (product) {
+            return res.json({ type: 'product', product });
+        }
+
+        res.status(404).json({ message: 'Product not found with this barcode' });
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
+exports.printBarcode = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { type } = req.query; // 'product' or 'variation'
+
+        let productName, barcode, price;
+
+        if (type === 'variation') {
+            const option = await VariationOption.findByPk(id, {
+                include: [
+                    {
+                        model: Variation,
+                        as: 'variation',
+                        include: [{ model: Product, as: 'product' }]
+                    },
+                    { model: VariationPrice, as: 'prices', limit: 1 }
+                ]
+            });
+            if (!option) return res.status(404).json({ message: 'Variation option not found' });
+            productName = `${option.variation.product.name} (${option.name})`;
+            barcode = option.barcode;
+            price = option.prices?.[0]?.price || 0;
+        } else {
+            const product = await Product.findByPk(id, {
+                include: [
+                    {
+                        model: Variation,
+                        as: 'variations',
+                        include: [{ model: VariationOption, as: 'options', include: [{ model: VariationPrice, as: 'prices' }] }]
+                    }
+                ]
+            });
+            if (!product) return res.status(404).json({ message: 'Product not found' });
+            productName = product.name;
+            barcode = product.barcode;
+            
+            const firstPrice = product.variations?.[0]?.options?.[0]?.prices?.[0];
+            price = firstPrice ? firstPrice.price : 0;
+        }
+
+        if (!barcode) {
+            return res.status(400).json({ message: 'This item does not have a barcode' });
+        }
+
+        const pdfBuffer = await BarcodeService.generateBarcodePdf(productName, barcode, price);
+
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename=barcode-${barcode}.pdf`);
+        res.send(pdfBuffer);
+    } catch (error) {
+        console.error('Barcode Print Error:', error);
+        res.status(500).json({ message: error.message });
+    }
+};
+
+
 exports.createProduct = async (req, res) => {
     const t = await sequelize.transaction();
     try {
@@ -366,7 +485,7 @@ exports.createProduct = async (req, res) => {
         }
 
         let {
-            name, code, shortDescription, description, sku, categoryId, subCategoryId,
+            name, code, shortDescription, description, sku, barcode, categoryId, subCategoryId,
             variations, modifications, branches
         } = productData;
 
@@ -375,9 +494,23 @@ exports.createProduct = async (req, res) => {
         if (typeof variations === 'string') variations = JSON.parse(variations);
         if (typeof modifications === 'string') modifications = JSON.parse(modifications);
 
+        // Determine 4-digit barcode prefix for the product
+        let barcodePrefix = '';
+        if (barcode) {
+            barcodePrefix = barcode.toString().substring(0, 4);
+        } else {
+            // Generate a random 4-digit prefix
+            barcodePrefix = Math.floor(1000 + Math.random() * 9000).toString();
+        }
+
+        // Generate barcode for product if none exists and no variations
+        if (!barcode && (!variations || variations.length === 0)) {
+            barcode = await generateUniqueBarcode(Product, VariationOption, barcodePrefix);
+        }
+
         // 1. Create base product
         const product = await Product.create({
-            name, code, image: imageUrl, shortDescription, description, sku, categoryId, subCategoryId, status: 'active'
+            name, code, image: imageUrl, shortDescription, description, sku, barcode, categoryId, subCategoryId, status: 'active'
         }, { transaction: t });
 
         // 1.5. Create Product Branches
@@ -402,9 +535,16 @@ exports.createProduct = async (req, res) => {
                 // Create options
                 if (v.options && v.options.length > 0) {
                     for (const o of v.options) {
+                        // Generate barcode for variation option if missing
+                        let optBarcode = o.barcode;
+                        if (!optBarcode) {
+                            optBarcode = await generateUniqueBarcode(Product, VariationOption, barcodePrefix);
+                        }
+
                         const option = await VariationOption.create({
                             variationId: variation.id,
                             name: o.name,
+                            barcode: optBarcode,
                             status: 'active'
                         }, { transaction: t });
 
@@ -461,7 +601,8 @@ exports.createProduct = async (req, res) => {
 
         res.status(201).json(product);
     } catch (error) {
-        await t.rollback();
+        if (t && !t.finished) await t.rollback();
+        console.error('Create Product Error:', error);
         if (error.name === 'SequelizeValidationError' || error.name === 'SequelizeUniqueConstraintError') {
             return res.status(400).json({
                 message: error.message,
@@ -488,7 +629,7 @@ exports.updateProduct = async (req, res) => {
         }
 
         let {
-            name, code, shortDescription, description, sku, categoryId, subCategoryId,
+            name, code, shortDescription, description, sku, barcode, categoryId, subCategoryId,
             variations, modifications, branches
         } = productData;
 
@@ -497,9 +638,47 @@ exports.updateProduct = async (req, res) => {
         if (typeof variations === 'string') variations = JSON.parse(variations);
         if (typeof modifications === 'string') modifications = JSON.parse(modifications);
 
+        // Determine 4-digit barcode prefix for the product
+        let barcodePrefix = '';
+        const existingProduct = await Product.findByPk(id, {
+            include: [{ 
+                model: Variation, 
+                as: 'variations', 
+                include: [{ model: VariationOption, as: 'options' }] 
+            }]
+        });
+
+        if (barcode) {
+            barcodePrefix = barcode.toString().substring(0, 4);
+        } else if (existingProduct?.barcode) {
+            barcodePrefix = existingProduct.barcode.substring(0, 4);
+        } else {
+            // Try to find a prefix from existing variations
+            let foundOpt = null;
+            if (existingProduct?.variations) {
+                for (const v of existingProduct.variations) {
+                    foundOpt = v.options?.find(o => o.barcode);
+                    if (foundOpt) break;
+                }
+            }
+            if (foundOpt) {
+                barcodePrefix = foundOpt.barcode.substring(0, 4);
+            } else {
+                // Last resort: generate new random prefix
+                barcodePrefix = Math.floor(1000 + Math.random() * 9000).toString();
+            }
+        }
+
+        // Handle base product barcode
+        if (!barcode && (!variations || variations.length === 0)) {
+            if (existingProduct && !existingProduct.barcode) {
+                barcode = await generateUniqueBarcode(Product, VariationOption, barcodePrefix);
+            }
+        }
+
         // 1. Update base product
         await Product.update({
-            name, code, image: imageUrl, shortDescription, description, sku, categoryId, subCategoryId
+            name, code, image: imageUrl, shortDescription, description, sku, barcode, categoryId, subCategoryId
         }, { where: { id }, transaction: t });
 
         // 1.5. Sync Branches
@@ -537,9 +716,15 @@ exports.updateProduct = async (req, res) => {
 
                 if (v.options && v.options.length > 0) {
                     for (const o of v.options) {
+                        let optBarcode = o.barcode;
+                        if (!optBarcode) {
+                            optBarcode = await generateUniqueBarcode(Product, VariationOption, barcodePrefix);
+                        }
+
                         const option = await VariationOption.create({
                             variationId: variation.id,
                             name: o.name,
+                            barcode: optBarcode,
                             status: 'active'
                         }, { transaction: t });
 
@@ -597,7 +782,8 @@ exports.updateProduct = async (req, res) => {
 
         res.json({ message: 'Product and nested items updated successfully' });
     } catch (error) {
-        await t.rollback();
+        if (t && !t.finished) await t.rollback();
+        console.error('Update Product Error:', error);
         if (error.name === 'SequelizeValidationError' || error.name === 'SequelizeUniqueConstraintError') {
             return res.status(400).json({
                 message: error.message,
@@ -1003,7 +1189,8 @@ exports.importProducts = async (req, res) => {
 
         res.status(200).json({ message: `Successfully imported ${createdProductsCount} products.` });
     } catch (error) {
-        await t.rollback();
+        if (t && !t.finished) await t.rollback();
+        console.error('Import Products Error:', error);
         res.status(400).json({ message: error.message || 'Error parsing Excel file' });
     }
 };

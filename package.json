@@ -12,8 +12,9 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
-    "@vercel/blob": "^2.2.0",
+    "@vercel/blob": "^2.3.3",
     "bcryptjs": "^3.0.3",
+    "bwip-js": "^4.10.0",
     "cors": "^2.8.6",
     "csv-parser": "^3.2.0",
     "dotenv": "^17.3.1",
@@ -23,6 +24,7 @@
     "jsonwebtoken": "^9.0.3",
     "multer": "^2.0.2",
     "mysql2": "^3.17.1",
+    "nodemailer": "^8.0.5",
     "nodemon": "^3.1.11",
     "pdfkit": "^0.18.0",
     "pdfkit-table": "^0.1.99",
