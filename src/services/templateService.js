@@ -282,7 +282,7 @@ exports.generateReceiptStructuredData = (order, payment, branch) => {
             };
         }),
         totals: {
-            subTotal: (parseFloat(order.totalAmount || 0) - parseFloat(order.serviceCharge || 0) - parseFloat(order.deliveryChargeAmount || 0)).toFixed(2),
+            subTotal: (parseFloat(order.totalAmount || 0) + parseFloat(order.orderDiscount || 0) - parseFloat(order.serviceCharge || 0) - parseFloat(order.deliveryChargeAmount || 0)).toFixed(2),
             discount: parseFloat(order.orderDiscount || 0).toFixed(2),
             serviceCharge: parseFloat(order.serviceCharge || 0).toFixed(2),
             deliveryCharge: parseFloat(order.deliveryChargeAmount || 0).toFixed(2),
