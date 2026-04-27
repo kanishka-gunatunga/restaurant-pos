@@ -36,9 +36,9 @@ function mapModificationsForNormalize(mods) {
 function lineSubtotal(item) {
     const qty = Math.max(0, parseInt(item.quantity, 10) || 0);
     const unit = parseFloat(item.unitPrice) || 0;
-    const lineDisc = parseFloat(item.productDiscount) || 0;
     const modSum = modificationSum(item.modifications);
-    const raw = unit * qty - lineDisc + modSum;
+    // Product discount is already accounted for in the frontend's calculations
+    const raw = unit * qty + modSum;
     return Math.max(0, roundMoney(raw));
 }
 
