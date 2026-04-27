@@ -28,6 +28,10 @@ const Product = sequelize.define('Product', {
         type: DataTypes.STRING,
         unique: true,
     },
+    barcode: {
+        type: DataTypes.STRING,
+        unique: true,
+    },
     categoryId: {
         type: DataTypes.INTEGER,
         allowNull: true,
