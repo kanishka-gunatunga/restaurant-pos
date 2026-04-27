@@ -392,12 +392,12 @@ exports.createOrder = async (req, res) => {
             include: [{ model: OrderItemModification, as: 'modifications' }],
             transaction: t
         });
-        const finalTotals = computeOrderTotalsFromLines(savedItems, parsedOrderDiscount, effectiveServiceCharge, effectiveDeliveryChargeAmount);
-        logTotalsMismatchIfAny(order.id, tax, totalAmount, finalTotals, 'createOrder');
+        // const finalTotals = computeOrderTotalsFromLines(savedItems, parsedOrderDiscount, effectiveServiceCharge, effectiveDeliveryChargeAmount);
+        // logTotalsMismatchIfAny(order.id, tax, totalAmount, finalTotals, 'createOrder');
         await order.update(
             {
-                tax: finalTotals.tax,
-                totalAmount: finalTotals.totalAmount,
+                tax: effectiveTaxAmount,
+                totalAmount: effectiveOrderAmount,
                 orderDiscount: parsedOrderDiscount,
                 serviceCharge: effectiveServiceCharge,
                 deliveryChargeAmount: effectiveDeliveryChargeAmount
@@ -420,8 +420,8 @@ exports.createOrder = async (req, res) => {
             activityType: 'Order Placed',
             description: `New order ${order.id} placed for ${orderType} at ${tableNumber || 'N/A'}`,
             orderId: order.id,
-            amount: finalTotals.totalAmount,
-            metadata: { orderType, tableNumber, totalAmount: finalTotals.totalAmount }
+            amount: effectiveOrderAmount,
+            metadata: { orderType, tableNumber, totalAmount: effectiveOrderAmount }
         });
 
         try {
@@ -698,6 +698,8 @@ exports.updateOrder = async (req, res) => {
         const deliveryChargeIdFromBody = req.body.deliveryChargeId ?? req.body.delivery_charge_id;
         const deliveryChargeSelectedIdFromBody =
             req.body.deliveryChargeSelectedId ?? req.body.delivery_charge_selected_id;
+        const orderAmountNorm = req.body.totalAmount ?? req.body.total_amount;
+        const taxAmountNorm = req.body.tax ?? req.body.tax;
 
         const order = await Order.findByPk(id, { transaction: t });
         if (!order) {
@@ -749,6 +751,8 @@ exports.updateOrder = async (req, res) => {
             deliveryChargeAmountFromBody !== undefined
                 ? parseFloat(deliveryChargeAmountFromBody) || 0
                 : parseFloat(order.deliveryChargeAmount) || 0;
+        const effectiveOrderAmount = parseFloat(orderAmountNorm) || 0;
+        const effectiveTaxAmount = parseFloat(taxAmountNorm) || 0;     
         const effectiveDeliveryChargeId =
             deliveryChargeIdFromBody !== undefined || deliveryChargeSelectedIdFromBody !== undefined
                 ? deliveryChargeIdFromBody || deliveryChargeSelectedIdFromBody || null
@@ -782,21 +786,21 @@ exports.updateOrder = async (req, res) => {
             }
         }
 
-        const savedItems = await OrderItem.findAll({
-            where: { orderId: id },
-            include: [{ model: OrderItemModification, as: 'modifications' }],
-            transaction: t
-        });
-        const finalTotals = computeOrderTotalsFromLines(savedItems, effectiveOrderDiscount, effectiveServiceCharge, effectiveDeliveryChargeAmount);
-        logTotalsMismatchIfAny(id, tax, totalAmount, finalTotals, 'updateOrder');
+        // const savedItems = await OrderItem.findAll({
+        //     where: { orderId: id },
+        //     include: [{ model: OrderItemModification, as: 'modifications' }],
+        //     transaction: t
+        // });
+        // const finalTotals = computeOrderTotalsFromLines(savedItems, effectiveOrderDiscount, effectiveServiceCharge, effectiveDeliveryChargeAmount);
+        // logTotalsMismatchIfAny(id, tax, totalAmount, finalTotals, 'updateOrder');
 
         const updatePayload = {
             customerId,
             orderType,
             tableNumber,
             orderDiscount: effectiveOrderDiscount,
-            tax: finalTotals.tax,
-            totalAmount: finalTotals.totalAmount,
+            tax: effectiveTaxAmount,
+            totalAmount: effectiveOrderAmount,
             orderNote,
             kitchenNote,
             orderTimer,
@@ -825,9 +829,9 @@ exports.updateOrder = async (req, res) => {
                 path: req.path,
                 metadata: {
                     orderId: Number(id),
-                    totalAmount: finalTotals.totalAmount,
-                    tax: finalTotals.tax,
-                    lineSubtotalSum: finalTotals.lineSubtotalSum,
+                    totalAmount: effectiveOrderAmount,
+                    tax: effectiveTaxAmount,
+                    lineSubtotalSum: effectiveOrderAmount - effectiveTaxAmount - effectiveServiceCharge - effectiveDeliveryChargeAmount,
                 },
             });
         }

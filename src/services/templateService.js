@@ -217,7 +217,7 @@ const capitalize = (str) => {
 const formatDateTime = (date) => {
     if (!date) return date;
     const d = new Date(date);
-    
+
     try {
         const formatter = new Intl.DateTimeFormat('en-GB', {
             timeZone: 'Asia/Colombo',
@@ -229,11 +229,11 @@ const formatDateTime = (date) => {
             second: '2-digit',
             hour12: false
         });
-        
+
         const parts = formatter.formatToParts(d);
         const map = {};
         parts.forEach(p => map[p.type] = p.value);
-        
+
         return `${map.year}-${map.month}-${map.day} ${map.hour}:${map.minute}:${map.second}`;
     } catch (e) {
         // Fallback to old behavior if Intl fails
