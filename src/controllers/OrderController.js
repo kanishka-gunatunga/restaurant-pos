@@ -337,15 +337,15 @@ exports.createOrder = async (req, res) => {
 
         const userDetail = await UserDetail.findOne({ where: { userId: req.user.id }, transaction: t });
 
-        const preliminaryTotals = computeOrderTotalsFromLines(order_products || [], parsedOrderDiscount, effectiveServiceCharge, effectiveDeliveryChargeAmount);
+        // const preliminaryTotals = computeOrderTotalsFromLines(order_products || [], parsedOrderDiscount, effectiveServiceCharge, effectiveDeliveryChargeAmount);
 
         const order = await Order.create({
             customerId,
-            totalAmount: preliminaryTotals.totalAmount,
+            totalAmount: totalAmount,
             orderType,
             tableNumber,
             orderDiscount: parsedOrderDiscount,
-            tax: preliminaryTotals.tax,
+            tax: tax,
             orderNote,
             kitchenNote,
             orderTimer,

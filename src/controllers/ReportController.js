@@ -239,49 +239,48 @@ exports.getSalesReport = async (req, res) => {
             return exportToPDF(res, "Sales Report (Item-Wise)", { dateRange: `${startDate} to ${endDate}` }, headers, reportData, summary);
         }
 
-        /*
-        res.json({
-            header: {
-                reportName: 'Sales Report',
-                dateRange: `${startDate} to ${endDate}`,
-                generatedOn: new Date()
-            },
-            data: reportData,
-            summary: summary
-        });
-        */
+        if (req.query.print === 'true') {
+            try {
+                // Optimization: Use resolvedBranchId from earlier or default to 1
+                const branchIdToUse = resolvedBranchId && resolvedBranchId !== -1 ? resolvedBranchId : 1;
+                const branchRecord = await Branch.findByPk(branchIdToUse);
 
-        // NEW: Auto print sales report
-        try {
-            // Optimization: Use resolvedBranchId from earlier or default to 1
-            const branchIdToUse = resolvedBranchId && resolvedBranchId !== -1 ? resolvedBranchId : 1;
-            const branchRecord = await Branch.findByPk(branchIdToUse);
+                const headerInfo = {
+                    reportName: 'Sales Report',
+                    dateRange: `${startDate} to ${endDate}`,
+                    generatedOn: new Date()
+                };
 
-            const headerInfo = {
-                reportName: 'Sales Report',
-                dateRange: `${startDate} to ${endDate}`,
-                generatedOn: new Date()
-            };
+                const data = templateService.generateSalesReportStructuredData(reportData, summary, headerInfo, branchRecord);
+                const content = JSON.stringify(data);
 
-            const data = templateService.generateSalesReportStructuredData(reportData, summary, headerInfo, branchRecord);
-            const content = JSON.stringify(data);
+                await PrintJob.create({
+                    order_id: null, // Summary reports are not tied to a specific order
+                    printer_name: 'XP-80',
+                    content,
+                    type: 'sales_report',
+                    status: 'pending'
+                });
 
-            await PrintJob.create({
-                order_id: null, // Summary reports are not tied to a specific order
-                printer_name: 'XP-80',
-                content,
-                type: 'sales_report',
-                status: 'pending'
+                res.json({ 
+                    success: true, 
+                    message: 'Sales report has been sent to the printer successfully.',
+                    printJobType: 'sales_report'
+                });
+            } catch (printError) {
+                console.error('[ReportController] Failed to queue sales report print job:', printError);
+                res.status(500).json({ message: 'Failed to queue print job: ' + printError.message });
+            }
+        } else {
+            res.json({
+                header: {
+                    reportName: 'Sales Report',
+                    dateRange: `${startDate} to ${endDate}`,
+                    generatedOn: new Date()
+                },
+                data: reportData,
+                summary: summary
             });
-
-            res.json({ 
-                success: true, 
-                message: 'Sales report has been sent to the printer successfully.',
-                printJobType: 'sales_report'
-            });
-        } catch (printError) {
-            console.error('[ReportController] Failed to queue sales report print job:', printError);
-            res.status(500).json({ message: 'Failed to queue print job: ' + printError.message });
         }
 
     } catch (error) {
