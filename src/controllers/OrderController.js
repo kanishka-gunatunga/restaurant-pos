@@ -287,6 +287,7 @@ exports.getOrderById = async (req, res) => {
 };
 
 exports.createOrder = async (req, res) => {
+    console.log('[OrderController] Creating order with payload:', JSON.stringify(req.body, null, 2));
     const t = await sequelize.transaction();
     try {
         const {
