@@ -39,6 +39,7 @@ const {
     getOutstandingToleranceCents,
     sumNetCollected,
 } = require('../utils/orderPaymentState');
+const EReceiptService = require('../services/EReceiptService');
 
 /**
  * Single payment row for clients. Line settlement is `status` / `linePaymentStatus`.
@@ -395,6 +396,13 @@ exports.createPayment = async (req, res) => {
             // Technically the receipt should show all now. 
             // I'll pass the first one for legacy support but update templateService to fetch all.
             await queueReceiptPrintJob(orderId, createdPayments[0], status, req.user.id);
+            
+            // Trigger E-Receipt
+            if (status === 'paid' || !status) {
+                EReceiptService.processEReceipt(orderId, createdPayments[0], req.user.id).catch(err => 
+                    console.error('[PaymentController] E-Receipt trigger error:', err)
+                );
+            }
 
             return jsonPaymentWithOrderSummary(orderId, createdPayments[0], res, 201);
         }
@@ -425,6 +433,13 @@ exports.createPayment = async (req, res) => {
         await t.commit();
 
         await queueReceiptPrintJob(orderId, createdPayments[0], status, req.user.id);
+
+        // Trigger E-Receipt
+        if (effectiveStatus === 'paid') {
+            EReceiptService.processEReceipt(orderId, createdPayments[0], req.user.id).catch(err => 
+                console.error('[PaymentController] E-Receipt trigger error:', err)
+            );
+        }
         
         return jsonPaymentWithOrderSummary(orderId, createdPayments[0], res, 201);
 
@@ -586,6 +601,12 @@ exports.updatePaymentStatus = async (req, res) => {
             amount: isRefund ? actualRefundAmount : null,
             metadata: { paymentId: id, status: finalStatus, is_refund, refund_type, actualRefundAmount }
         });
+        if (finalStatus === 'paid' && !isRefund) {
+            EReceiptService.processEReceipt(orderId, payment, req.user.id).catch(err => 
+                console.error('[PaymentController] E-Receipt trigger error:', err)
+            );
+        }
+
         if (isRefund) {
             auditLog('refund', { ip: req.ip, userId: req.user.id, metadata: { paymentId: id, orderId: payment.orderId, amount: actualRefundAmount } });
         } else {
