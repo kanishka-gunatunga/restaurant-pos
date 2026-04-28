@@ -19,17 +19,6 @@ const { logActivity } = require('./ActivityLogController');
 const UserDetail = require('../models/UserDetail');
 const xlsx = require('xlsx');
 
-const getActiveDiscountWhere = () => {
-    const today = new Date().toISOString().split('T')[0];
-    return {
-        status: 'active',
-        [Op.or]: [
-            { expiryDate: null },
-            { expiryDate: { [Op.gte]: today } }
-        ]
-    };
-};
-
 exports.searchProducts = async (req, res) => {
     try {
         const { query, status } = req.query;
@@ -685,7 +674,7 @@ exports.getProductsByCategory = async (req, res) => {
                     as: 'discountItems',
                     required: false,
                     include: [
-                        { model: Discount, required: true, where: getActiveDiscountWhere() },
+                        { model: Discount, required: true, where: { status: 'active' } },
                         { model: Branch, as: 'branch', attributes: ['id', 'name'], required: false }
                     ]
                 }
