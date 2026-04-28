@@ -78,7 +78,9 @@ exports.createBogoPromotion = async (req, res) => {
 
         res.status(201).json(createdPromotion);
     } catch (error) {
-        await transaction.rollback();
+        if (transaction && !transaction.finished) {
+            await transaction.rollback();
+        }
         res.status(400).json({ message: error.message });
     }
 };
@@ -218,7 +220,9 @@ exports.updateBogoPromotion = async (req, res) => {
 
         res.json(updatedPromotion);
     } catch (error) {
-        await transaction.rollback();
+        if (transaction && !transaction.finished) {
+            await transaction.rollback();
+        }
         res.status(400).json({ message: error.message });
     }
 };
