@@ -550,3 +550,142 @@ exports.getProductPerformanceReport = async (req, res) => {
         res.status(500).json({ message: error.message });
     }
 };
+
+/**
+ * 5. Itemized Sales List (No Aggregation)
+ */
+exports.getItemizedSalesList = async (req, res) => {
+    try {
+        const { startDate, endDate, branch, product, export: exportType } = req.query;
+
+        if (!startDate || !endDate) {
+            return res.status(400).json({ message: 'Missing required parameters: startDate, endDate' });
+        }
+
+        const resolvedBranchId = await getBranchFilter(req, branch);
+        
+        const start = new Date(startDate);
+        const end = new Date(endDate);
+        end.setHours(23, 59, 59, 999);
+
+        const whereCondition = {
+            createdAt: { [Op.between]: [start, end] },
+            status: { [Op.ne]: 'cancel' }
+        };
+
+        if (resolvedBranchId) {
+            whereCondition.branchId = resolvedBranchId;
+        }
+
+        const itemWhere = {};
+        if (product && product !== 'all') {
+            itemWhere.productId = product;
+        }
+
+        const orders = await Order.findAll({
+            where: whereCondition,
+            include: [
+                {
+                    model: OrderItem,
+                    as: 'items',
+                    where: itemWhere,
+                    include: [
+                        { 
+                            model: Product, 
+                            as: 'product',
+                            include: [{ model: Category, as: 'category' }]
+                        },
+                        {
+                            model: VariationOption,
+                            as: 'variationOption',
+                            include: [{ model: Variation, as: 'Variation' }]
+                        }
+                    ]
+                },
+                {
+                    model: Payment,
+                    as: 'payments',
+                    attributes: ['paymentMethod']
+                }
+            ],
+            order: [['createdAt', 'DESC']]
+        });
+
+        const reportData = [];
+        let totalSalesAmount = 0;
+        let totalDiscountsGiven = 0;
+        let totalTaxCollected = 0;
+
+        orders.forEach(order => {
+            const orderSubtotal = order.items.reduce((sum, item) => sum + (parseFloat(item.unitPrice) * item.quantity), 0);
+            
+            order.items.forEach(item => {
+                const productName = item.product?.name || 'Unknown';
+                const vOpt = item.variationOption;
+                const variationSuffix = vOpt?.name ? ` - ${vOpt.name.charAt(0).toUpperCase()}` : '';
+                const fullName = `${productName}${variationSuffix}`;
+
+                const itemSubtotal = parseFloat(item.unitPrice) * item.quantity;
+                const itemDiscount = parseFloat(item.productDiscount || 0);
+                const itemTax = orderSubtotal > 0 ? (itemSubtotal / orderSubtotal) * parseFloat(order.tax || 0) : 0;
+                
+                // Add apportioned order discount if requested, but generally for itemized we just show item discount 
+                // Let's add a separate apportioned order discount to be very detailed
+                let apportionedOrderDiscount = 0;
+                if (orderSubtotal > 0 && order.orderDiscount) {
+                     apportionedOrderDiscount = (itemSubtotal / orderSubtotal) * parseFloat(order.orderDiscount);
+                }
+
+                const totalAmount = itemSubtotal - itemDiscount - apportionedOrderDiscount + itemTax;
+
+                reportData.push({
+                    "Order ID": order.id,
+                    "Date": new Date(order.createdAt).toLocaleString(),
+                    "Product No": item.product?.sku || item.product?.code || 'N/A',
+                    "Product Name": fullName,
+                    "Category": item.product?.category?.name || 'Uncategorized',
+                    "Qty Sold": item.quantity,
+                    "Unit Price": parseFloat(item.unitPrice).toFixed(2),
+                    "Subtotal": itemSubtotal.toFixed(2),
+                    "Item Discount": itemDiscount.toFixed(2),
+                    "Order Discount Apportioned": apportionedOrderDiscount.toFixed(2),
+                    "Tax": itemTax.toFixed(2),
+                    "Total Amount": totalAmount.toFixed(2),
+                    "Payment Method": order.payments && order.payments.length > 0 ? order.payments.map(p => p.paymentMethod).join(', ') : 'N/A'
+                });
+
+                totalSalesAmount += totalAmount;
+                totalDiscountsGiven += (itemDiscount + apportionedOrderDiscount);
+                totalTaxCollected += itemTax;
+            });
+        });
+
+        const summary = {
+            "Total Sales Amount": totalSalesAmount.toFixed(2),
+            "Total Discounts Given": totalDiscountsGiven.toFixed(2),
+            "Total Tax Collected": totalTaxCollected.toFixed(2),
+            "Net Sales": (totalSalesAmount - totalTaxCollected).toFixed(2)
+        };
+
+        if (exportType === 'excel') {
+            return exportToExcel(res, "Itemized_Sales_List", reportData, summary);
+        } else if (exportType === 'pdf') {
+            const headers = ["Order ID", "Date", "Product No", "Product Name", "Category", "Qty Sold", "Unit Price", "Subtotal", "Item Discount", "Order Discount Apportioned", "Tax", "Total Amount", "Payment Method"];
+            return exportToPDF(res, "Itemized Sales List", { dateRange: `${startDate} to ${endDate}` }, headers, reportData, summary);
+        }
+
+        res.json({
+            header: {
+                reportName: 'Itemized Sales List',
+                dateRange: `${startDate} to ${endDate}`,
+                generatedOn: new Date()
+            },
+            data: reportData,
+            summary: summary
+        });
+
+    } catch (error) {
+        console.error('Itemized Sales List Error:', error);
+        res.status(500).json({ message: error.message });
+    }
+};

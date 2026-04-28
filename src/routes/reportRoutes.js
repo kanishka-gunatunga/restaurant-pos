@@ -7,6 +7,7 @@ router.get('/sales', authenticate, ReportController.getSalesReport);
 router.get('/orders', authenticate, ReportController.getOrdersReport);
 router.get('/payments', authenticate, ReportController.getPaymentsReport);
 router.get('/product-performance', authenticate, ReportController.getProductPerformanceReport);
+router.get('/itemized-sales', authenticate, ReportController.getItemizedSalesList);
 
 module.exports = router;
 
