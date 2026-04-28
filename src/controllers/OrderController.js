@@ -410,7 +410,7 @@ exports.createOrder = async (req, res) => {
         const effectiveDeliveryChargeAmount = parseFloat(deliveryChargeAmountNorm) || 0;
         const effectiveOrderAmount = parseFloat(orderAmountNorm) || 0;
         const effectiveDeliveryChargeId = deliveryChargeIdNorm || deliveryChargeSelectedIdNorm || null;
-
+        const effectiveTaxAmount = parseFloat(taxAmountNorm) || 0;
         if (customerMobile) {
             let customer = await Customer.findOne({ where: { mobile: customerMobile }, transaction: t });
             if (!customer && customerName) {
