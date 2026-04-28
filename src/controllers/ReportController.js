@@ -167,9 +167,8 @@ exports.getSalesReport = async (req, res) => {
         });
 
         const itemSummaries = {};
-        let totalSalesAmount = 0;
+        let totalGrossSalesAmount = 0;
         let totalDiscountsGiven = 0;
-        let totalTaxCollected = 0;
 
         orders.forEach(order => {
             const orderSubtotal = order.items.reduce((sum, item) => sum + (parseFloat(item.unitPrice) * item.quantity), 0);
@@ -184,7 +183,7 @@ exports.getSalesReport = async (req, res) => {
                     const vOpt = item.variationOption;
                     //  const variationName = vOpt ? (vOpt.Variation?.name ? `${vOpt.Variation.name}: ${vOpt.name}` : vOpt.name) : '';
                     // const fullName = variationName ? `${productName} (${variationName})` : productName;
-                    const variationSuffix = vOpt?.name ? ` - ${vOpt.name.charAt(0).toUpperCase()}` : '';
+                    const variationSuffix = vOpt?.name ? ` - ${vOpt.name}` : '';
                     const fullName = `${productName}${variationSuffix}`;
 
                     itemSummaries[key] = {
@@ -194,24 +193,20 @@ exports.getSalesReport = async (req, res) => {
                         "Qty Sold": 0,
                         "Unit Price": parseFloat(item.unitPrice),
                         "Discount": 0,
-                        "Tax": 0,
                         "Total Amount": 0
                     };
                 }
 
                 const itemSubtotal = parseFloat(item.unitPrice) * item.quantity;
-                const itemDiscount = parseFloat(item.productDiscount || 0);
-                const itemTax = orderSubtotal > 0 ? (itemSubtotal / orderSubtotal) * parseFloat(order.tax || 0) : 0;
-                const totalAmount = itemSubtotal - itemDiscount + itemTax;
+                const itemDiscount = parseFloat(item.productDiscount || 0) * item.quantity;
+                const totalAmount = itemSubtotal - itemDiscount;
 
                 itemSummaries[key]["Qty Sold"] += item.quantity;
                 itemSummaries[key]["Discount"] += itemDiscount;
-                itemSummaries[key]["Tax"] += itemTax;
                 itemSummaries[key]["Total Amount"] += totalAmount;
 
-                totalSalesAmount += totalAmount;
+                totalGrossSalesAmount += itemSubtotal;
                 totalDiscountsGiven += itemDiscount;
-                totalTaxCollected += itemTax;
             });
         });
 
@@ -220,21 +215,19 @@ exports.getSalesReport = async (req, res) => {
             .filter(item => item["Qty Sold"] > 0)
             .map(item => ({
                 ...item,
-                "Tax": item.Tax.toFixed(2),
                 "Total Amount": item["Total Amount"].toFixed(2)
             }));
 
         const summary = {
-            "Total Sales Amount": totalSalesAmount.toFixed(2),
+            "Total Sales (Before Discount)": totalGrossSalesAmount.toFixed(2),
             "Total Discounts Given": totalDiscountsGiven.toFixed(2),
-            "Total Tax Collected": totalTaxCollected.toFixed(2),
-            "Net Sales": (totalSalesAmount - totalTaxCollected).toFixed(2)
+            "Final Total (After Discount)": (totalGrossSalesAmount - totalDiscountsGiven).toFixed(2)
         };
 
         if (exportType === 'excel') {
             return exportToExcel(res, "Sales_Report_Item_Wise", reportData, summary);
         } else if (exportType === 'pdf') {
-            const headers = ["Product No", "Product Name", "Category", "Qty Sold", "Unit Price", "Discount", "Tax", "Total Amount"];
+            const headers = ["Product No", "Product Name", "Category", "Qty Sold", "Unit Price", "Discount", "Total Amount"];
             return exportToPDF(res, "Sales Report (Item-Wise)", { dateRange: `${startDate} to ${endDate}` }, headers, reportData, summary);
         }
 
@@ -611,9 +604,8 @@ exports.getItemizedSalesList = async (req, res) => {
         });
 
         const reportData = [];
-        let totalSalesAmount = 0;
+        let totalGrossSalesAmount = 0;
         let totalDiscountsGiven = 0;
-        let totalTaxCollected = 0;
 
         orders.forEach(order => {
             const orderSubtotal = order.items.reduce((sum, item) => sum + (parseFloat(item.unitPrice) * item.quantity), 0);
@@ -621,14 +613,13 @@ exports.getItemizedSalesList = async (req, res) => {
             order.items.forEach(item => {
                 const productName = item.product?.name || 'Unknown';
                 const vOpt = item.variationOption;
-                const variationSuffix = vOpt?.name ? ` - ${vOpt.name.charAt(0).toUpperCase()}` : '';
+                const variationSuffix = vOpt?.name ? ` - ${vOpt.name}` : '';
                 const fullName = `${productName}${variationSuffix}`;
 
                 const itemSubtotal = parseFloat(item.unitPrice) * item.quantity;
-                const itemDiscount = parseFloat(item.productDiscount || 0);
-                const itemTax = orderSubtotal > 0 ? (itemSubtotal / orderSubtotal) * parseFloat(order.tax || 0) : 0;
-
-                const totalAmount = itemSubtotal - itemDiscount + itemTax;
+                const itemDiscount = parseFloat(item.productDiscount || 0) * item.quantity;
+                
+                const totalAmount = itemSubtotal - itemDiscount;
 
                 reportData.push({
                     "Order ID": order.id,
@@ -640,28 +631,25 @@ exports.getItemizedSalesList = async (req, res) => {
                     "Unit Price": parseFloat(item.unitPrice).toFixed(2),
                     "Subtotal": itemSubtotal.toFixed(2),
                     "Discount": itemDiscount.toFixed(2),
-                    "Tax": itemTax.toFixed(2),
                     "Total Amount": totalAmount.toFixed(2),
                     "Payment Method": order.payments && order.payments.length > 0 ? order.payments.map(p => p.paymentMethod).join(', ') : 'N/A'
                 });
 
-                totalSalesAmount += totalAmount;
+                totalGrossSalesAmount += itemSubtotal;
                 totalDiscountsGiven += itemDiscount;
-                totalTaxCollected += itemTax;
             });
         });
 
         const summary = {
-            "Total Sales Amount": totalSalesAmount.toFixed(2),
+            "Total Sales (Before Discount)": totalGrossSalesAmount.toFixed(2),
             "Total Discounts Given": totalDiscountsGiven.toFixed(2),
-            "Total Tax Collected": totalTaxCollected.toFixed(2),
-            "Net Sales": (totalSalesAmount - totalTaxCollected).toFixed(2)
+            "Final Total (After Discount)": (totalGrossSalesAmount - totalDiscountsGiven).toFixed(2)
         };
 
         if (exportType === 'excel') {
             return exportToExcel(res, "Itemized_Sales_List", reportData, summary);
         } else if (exportType === 'pdf') {
-            const headers = ["Order ID", "Date", "Product No", "Product Name", "Category", "Qty Sold", "Unit Price", "Subtotal", "Discount", "Tax", "Total Amount", "Payment Method"];
+            const headers = ["Order ID", "Date", "Product No", "Product Name", "Category", "Qty Sold", "Unit Price", "Subtotal", "Discount", "Total Amount", "Payment Method"];
             return exportToPDF(res, "Itemized Sales List", { dateRange: `${startDate} to ${endDate}` }, headers, reportData, summary);
         }
 
