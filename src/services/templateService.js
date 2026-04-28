@@ -1,7 +1,7 @@
 /**
  * Service to generate receipt HTML templates.
  */
-const formatOrderReference = (order) => order?.receiptNo || order?.receipt_no || order?.id?.toString().padStart(8, '0') || 'N/A';
+const formatOrderReference = (order) => order?.orderNo || order?.receipt_no || order?.id?.toString().padStart(8, '0') || 'N/A';
 
 exports.generateReceiptHtml = (order, payment, branch) => {
     const pad = (str, len, char = ' ', right = false) => {
@@ -256,7 +256,7 @@ exports.generateReceiptStructuredData = (order, payment, branch) => {
     return {
         type: 'receipt',
         orderId: order.id.toString().padStart(8, '0'),
-        receiptNo: order.receiptNo,
+        orderNo: order.orderNo,
         orderType: capitalize(order.orderType || 'N/A'),
         dateTime: formatDateTime(order.createdAt),
         cashier: order.user?.name || 'Staff',
@@ -307,7 +307,7 @@ exports.generateKitchenStructuredData = (order, branch) => {
     return {
         type: 'kitchen',
         orderId: order.id.toString().padStart(8, '0'),
-        receiptNo: order.receiptNo,
+        orderNo: order.orderNo,
         dateTime: formatDateTime(order.createdAt),
         orderType: capitalize(order.orderType || 'N/A'),
         tableNumber: order.tableNumber || 'N/A',

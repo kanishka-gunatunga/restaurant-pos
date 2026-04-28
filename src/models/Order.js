@@ -7,7 +7,7 @@ const Order = sequelize.define('Order', {
         autoIncrement: true,
         primaryKey: true,
     },
-    receiptNo: {
+    orderNo: {
         type: DataTypes.STRING,
         allowNull: true
     },

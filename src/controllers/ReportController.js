@@ -328,7 +328,7 @@ exports.getOrdersReport = async (req, res) => {
 
             return {
                 "Order ID":order.id,
-                "Receipt No": order.receiptNo,
+                "Order No": order.orderNo,
                 "Order Date": new Date(order.createdAt).toLocaleDateString(),
                 "Customer Name": order.customer?.name || 'Guest',
                 "Order Type": order.orderType,
@@ -403,7 +403,7 @@ exports.getPaymentsReport = async (req, res) => {
                     model: Order,
                     as: 'order',
                     where: orderWhere,
-                    attributes: ['id', 'branchId', 'receiptNo']
+                    attributes: ['id', 'branchId', 'orderNo']
                 }
             ],
             order: [['createdAt', 'DESC']]
@@ -417,7 +417,7 @@ exports.getPaymentsReport = async (req, res) => {
                 "Payment ID": payment.id,
                 "Date": new Date(payment.createdAt).toLocaleDateString(),
                 "Invoice No": payment.order?.id || 'N/A',
-                "Receipt No": payment.order?.receiptNo || 'N/A',
+                "Order No": payment.order?.orderNo || 'N/A',
                 "Payment Method": payment.paymentMethod,
                 "Amount Paid": payment.amount,
                 "Status": payment.status
@@ -625,7 +625,7 @@ exports.getItemizedSalesList = async (req, res) => {
 
                 reportData.push({
                     "Order ID": order.id,
-                    "Receipt No": order.receiptNo,
+                    "Order No": order.orderNo,
                     "Date": new Date(order.createdAt).toLocaleString(),
                     "Product No": item.product?.sku || item.product?.code || 'N/A',
                     "Product Name": fullName,

@@ -93,7 +93,7 @@ const orderItemsBasicInclude = {
 
 const orderItemsFullInclude = orderItemsBasicInclude;
 
-const RECEIPT_NO_PREFIX = 'RN';
+const RECEIPT_NO_PREFIX = 'ONUM';
 const RECEIPT_NO_WIDTH = 5;
 const RECEIPT_TIME_ZONE = 'Asia/Colombo';
 
@@ -120,12 +120,12 @@ function getReceiptDayRange(date = new Date()) {
     };
 }
 
-function formatReceiptNo(sequence) {
+function formatOrderNo(sequence) {
     return `${RECEIPT_NO_PREFIX}${String(sequence).padStart(RECEIPT_NO_WIDTH, '0')}`;
 }
 
-function parseReceiptSequence(receiptNo) {
-    const match = String(receiptNo || '').match(/^RN(\d+)$/);
+function parseReceiptSequence(orderNo) {
+    const match = String(orderNo || '').match(/^RN(\d+)$/);
     return match ? parseInt(match[1], 10) : 0;
 }
 
@@ -155,23 +155,23 @@ async function withDailyReceiptLock(transaction, day, work) {
     }
 }
 
-async function generateNextReceiptNo(transaction, now = new Date()) {
+async function generateNextOrderNo(transaction, now = new Date()) {
     const { day, start, end } = getReceiptDayRange(now);
 
     return withDailyReceiptLock(transaction, day, async () => {
         const lastOrderToday = await Order.findOne({
             where: {
                 createdAt: { [Op.between]: [start, end] },
-                receiptNo: { [Op.ne]: null },
+                orderNo: { [Op.ne]: null },
             },
-            attributes: ['receiptNo'],
+            attributes: ['orderNo'],
             order: [['id', 'DESC']],
             transaction,
             lock: Transaction.LOCK.UPDATE,
         });
 
-        const nextSequence = parseReceiptSequence(lastOrderToday?.receiptNo) + 1;
-        return formatReceiptNo(nextSequence);
+        const nextSequence = parseReceiptSequence(lastOrderToday?.orderNo) + 1;
+        return formatOrderNo(nextSequence);
     });
 }
 
@@ -424,10 +424,10 @@ exports.createOrder = async (req, res) => {
         const userDetail = await UserDetail.findOne({ where: { userId: req.user.id }, transaction: t });
 
         // const preliminaryTotals = computeOrderTotalsFromLines(order_products || [], parsedOrderDiscount, effectiveServiceCharge, effectiveDeliveryChargeAmount);
-        const receiptNo = await generateNextReceiptNo(t);
+        const orderNo = await generateNextOrderNo(t);
 
         const order = await Order.create({
-            receiptNo,
+            orderNo,
             customerId,
             totalAmount: effectiveOrderAmount,
             orderType,
