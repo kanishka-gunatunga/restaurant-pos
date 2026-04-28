@@ -100,6 +100,11 @@ const Order = sequelize.define('Order', {
         type: DataTypes.ENUM('pending', 'paid', 'partial_refund', 'refund'),
         defaultValue: 'pending',
     },
+    loyaltyPointsEarned: {
+        type: DataTypes.INTEGER,
+        defaultValue: 0,
+        field: 'loyalty_points_earned'
+    },
 }, {
     tableName: 'orders',
 });
