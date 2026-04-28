@@ -125,7 +125,7 @@ function formatOrderNo(sequence) {
 }
 
 function parseReceiptSequence(orderNo) {
-    const match = String(orderNo || '').match(/^RN(\d+)$/);
+    const match = String(orderNo || '').match(new RegExp(`^${RECEIPT_NO_PREFIX}(\\d+)$`));
     return match ? parseInt(match[1], 10) : 0;
 }
 
