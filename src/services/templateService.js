@@ -1,6 +1,8 @@
 /**
  * Service to generate receipt HTML templates.
  */
+const formatOrderReference = (order) => order?.receiptNo || order?.receipt_no || order?.id?.toString().padStart(8, '0') || 'N/A';
+
 exports.generateReceiptHtml = (order, payment, branch) => {
     const pad = (str, len, char = ' ', right = false) => {
         str = String(str);
@@ -54,7 +56,7 @@ exports.generateReceiptHtml = (order, payment, branch) => {
             </div>
             
             <div style="border-top: 1px solid #000; margin: 4px 0;"></div>
-            <div style="display: flex; justify-content: flex-end; font-weight: bold; font-size: 1.2em;"><span>${order.id.toString().padStart(8, '0')}</span></div>
+            <div style="display: flex; justify-content: flex-end; font-weight: bold; font-size: 1.2em;"><span>${formatOrderReference(order)}</span></div>
 
             <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
                 <span>CASHIER: ${order.user?.name || 'Staff'}</span>
@@ -170,7 +172,7 @@ exports.generateKitchenReceiptHtml = (order, branch) => {
         <div style="width: 550px; font-family: 'Courier New', Courier, monospace; line-height: 1.2; color: #000; background: #fff; padding: 10px;">
             <div style="text-align: center; border: 2px solid #000; padding: 5px; margin-bottom: 10px;">
                 <div style="font-size: 1.8em; font-weight: bold; text-transform: uppercase;">KITCHEN COPY</div>
-                <div style="font-size: 1.2em;">Order #${order.id.toString().padStart(8, '0')}</div>
+                <div style="font-size: 1.2em;">Order #${formatOrderReference(order)}</div>
             </div>
 
             <div style="display: flex; justify-content: space-between; margin-bottom: 10px; font-weight: bold; font-size: 1.1em;">
@@ -254,6 +256,7 @@ exports.generateReceiptStructuredData = (order, payment, branch) => {
     return {
         type: 'receipt',
         orderId: order.id.toString().padStart(8, '0'),
+        receiptNo: order.receiptNo,
         orderType: capitalize(order.orderType || 'N/A'),
         dateTime: formatDateTime(order.createdAt),
         cashier: order.user?.name || 'Staff',
@@ -304,6 +307,7 @@ exports.generateKitchenStructuredData = (order, branch) => {
     return {
         type: 'kitchen',
         orderId: order.id.toString().padStart(8, '0'),
+        receiptNo: order.receiptNo,
         dateTime: formatDateTime(order.createdAt),
         orderType: capitalize(order.orderType || 'N/A'),
         tableNumber: order.tableNumber || 'N/A',

@@ -327,7 +327,8 @@ exports.getOrdersReport = async (req, res) => {
             totalOrderValue += parseFloat(order.totalAmount);
 
             return {
-                "Order ID": order.id,
+                "Order ID":order.id,
+                "Receipt No": order.receiptNo,
                 "Order Date": new Date(order.createdAt).toLocaleDateString(),
                 "Customer Name": order.customer?.name || 'Guest',
                 "Order Type": order.orderType,
@@ -402,7 +403,7 @@ exports.getPaymentsReport = async (req, res) => {
                     model: Order,
                     as: 'order',
                     where: orderWhere,
-                    attributes: ['id', 'branchId']
+                    attributes: ['id', 'branchId', 'receiptNo']
                 }
             ],
             order: [['createdAt', 'DESC']]
@@ -416,6 +417,7 @@ exports.getPaymentsReport = async (req, res) => {
                 "Payment ID": payment.id,
                 "Date": new Date(payment.createdAt).toLocaleDateString(),
                 "Invoice No": payment.order?.id || 'N/A',
+                "Receipt No": payment.order?.receiptNo || 'N/A',
                 "Payment Method": payment.paymentMethod,
                 "Amount Paid": payment.amount,
                 "Status": payment.status
@@ -623,6 +625,7 @@ exports.getItemizedSalesList = async (req, res) => {
 
                 reportData.push({
                     "Order ID": order.id,
+                    "Receipt No": order.receiptNo,
                     "Date": new Date(order.createdAt).toLocaleString(),
                     "Product No": item.product?.sku || item.product?.code || 'N/A',
                     "Product Name": fullName,
