@@ -41,7 +41,7 @@ const getBranchFilter = async (req, requestedBranch) => {
  */
 const exportToExcel = (res, fileName, data, summary) => {
     const wb = XLSX.utils.book_new();
-    
+
     // Add Main Data Sheet
     const ws = XLSX.utils.json_to_sheet(data);
     XLSX.utils.book_append_sheet(wb, ws, "Report Data");
@@ -64,14 +64,14 @@ const exportToExcel = (res, fileName, data, summary) => {
  */
 const exportToPDF = async (res, title, headerInfo, tableHeaders, tableRows, summary) => {
     const doc = new PDFDocument({ margin: 30, size: 'A4' });
-    
+
     res.setHeader('Content-Disposition', `attachment; filename="${title.replace(/\s+/g, '_')}.pdf"`);
     res.setHeader('Content-Type', 'application/pdf');
     doc.pipe(res);
 
     doc.fontSize(18).text(title, { align: 'center' });
     doc.moveDown();
-    
+
     doc.fontSize(10).text(`Date Range: ${headerInfo.dateRange}`);
     doc.text(`Generated On: ${new Date().toLocaleString()}`);
     doc.moveDown();
@@ -84,7 +84,7 @@ const exportToPDF = async (res, title, headerInfo, tableHeaders, tableRows, summ
 
     // Since headers might be complex, we customize column width and labels
     const mappedHeaders = tableHeaders.map(h => h); // Placeholder
-    
+
     await doc.table({
         title: title,
         subtitle: `Date Range: ${headerInfo.dateRange}`,
@@ -118,7 +118,7 @@ exports.getSalesReport = async (req, res) => {
         }
 
         const resolvedBranchId = await getBranchFilter(req, branch);
-        
+
         const start = new Date(startDate);
         const end = new Date(endDate);
         end.setHours(23, 59, 59, 999);
@@ -145,8 +145,8 @@ exports.getSalesReport = async (req, res) => {
                     as: 'items',
                     where: itemWhere,
                     include: [
-                        { 
-                            model: Product, 
+                        {
+                            model: Product,
                             as: 'product',
                             include: [{ model: Category, as: 'category' }]
                         },
@@ -173,7 +173,7 @@ exports.getSalesReport = async (req, res) => {
 
         orders.forEach(order => {
             const orderSubtotal = order.items.reduce((sum, item) => sum + (parseFloat(item.unitPrice) * item.quantity), 0);
-            
+
             order.items.forEach(item => {
                 const productId = item.productId;
                 const variationOptionId = item.variationOptionId || 0;
@@ -213,7 +213,6 @@ exports.getSalesReport = async (req, res) => {
                 totalDiscountsGiven += itemDiscount;
                 totalTaxCollected += itemTax;
             });
-            totalDiscountsGiven += parseFloat(order.orderDiscount || 0);
         });
 
         // Filter and round values
@@ -262,8 +261,8 @@ exports.getSalesReport = async (req, res) => {
                     status: 'pending'
                 });
 
-                res.json({ 
-                    success: true, 
+                res.json({
+                    success: true,
                     message: 'Sales report has been sent to the printer successfully.',
                     printJobType: 'sales_report'
                 });
@@ -512,7 +511,7 @@ exports.getProductPerformanceReport = async (req, res) => {
         const reportData = items.map(item => {
             const qty = parseInt(item.getDataValue('totalQuantitySold') || 0);
             const sales = parseFloat(item.getDataValue('totalSales') || 0);
-            
+
             totalItemsSold += qty;
             grandTotalSales += sales;
 
@@ -563,7 +562,7 @@ exports.getItemizedSalesList = async (req, res) => {
         }
 
         const resolvedBranchId = await getBranchFilter(req, branch);
-        
+
         const start = new Date(startDate);
         const end = new Date(endDate);
         end.setHours(23, 59, 59, 999);
@@ -590,8 +589,8 @@ exports.getItemizedSalesList = async (req, res) => {
                     as: 'items',
                     where: itemWhere,
                     include: [
-                        { 
-                            model: Product, 
+                        {
+                            model: Product,
                             as: 'product',
                             include: [{ model: Category, as: 'category' }]
                         },
@@ -618,7 +617,7 @@ exports.getItemizedSalesList = async (req, res) => {
 
         orders.forEach(order => {
             const orderSubtotal = order.items.reduce((sum, item) => sum + (parseFloat(item.unitPrice) * item.quantity), 0);
-            
+
             order.items.forEach(item => {
                 const productName = item.product?.name || 'Unknown';
                 const vOpt = item.variationOption;
@@ -628,7 +627,7 @@ exports.getItemizedSalesList = async (req, res) => {
                 const itemSubtotal = parseFloat(item.unitPrice) * item.quantity;
                 const itemDiscount = parseFloat(item.productDiscount || 0);
                 const itemTax = orderSubtotal > 0 ? (itemSubtotal / orderSubtotal) * parseFloat(order.tax || 0) : 0;
-                
+
                 const totalAmount = itemSubtotal - itemDiscount + itemTax;
 
                 reportData.push({
