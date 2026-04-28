@@ -629,14 +629,7 @@ exports.getItemizedSalesList = async (req, res) => {
                 const itemDiscount = parseFloat(item.productDiscount || 0);
                 const itemTax = orderSubtotal > 0 ? (itemSubtotal / orderSubtotal) * parseFloat(order.tax || 0) : 0;
                 
-                // Add apportioned order discount if requested, but generally for itemized we just show item discount 
-                // Let's add a separate apportioned order discount to be very detailed
-                let apportionedOrderDiscount = 0;
-                if (orderSubtotal > 0 && order.orderDiscount) {
-                     apportionedOrderDiscount = (itemSubtotal / orderSubtotal) * parseFloat(order.orderDiscount);
-                }
-
-                const totalAmount = itemSubtotal - itemDiscount - apportionedOrderDiscount + itemTax;
+                const totalAmount = itemSubtotal - itemDiscount + itemTax;
 
                 reportData.push({
                     "Order ID": order.id,
@@ -647,15 +640,14 @@ exports.getItemizedSalesList = async (req, res) => {
                     "Qty Sold": item.quantity,
                     "Unit Price": parseFloat(item.unitPrice).toFixed(2),
                     "Subtotal": itemSubtotal.toFixed(2),
-                    "Item Discount": itemDiscount.toFixed(2),
-                    "Order Discount Apportioned": apportionedOrderDiscount.toFixed(2),
+                    "Discount": itemDiscount.toFixed(2),
                     "Tax": itemTax.toFixed(2),
                     "Total Amount": totalAmount.toFixed(2),
                     "Payment Method": order.payments && order.payments.length > 0 ? order.payments.map(p => p.paymentMethod).join(', ') : 'N/A'
                 });
 
                 totalSalesAmount += totalAmount;
-                totalDiscountsGiven += (itemDiscount + apportionedOrderDiscount);
+                totalDiscountsGiven += itemDiscount;
                 totalTaxCollected += itemTax;
             });
         });
@@ -670,7 +662,7 @@ exports.getItemizedSalesList = async (req, res) => {
         if (exportType === 'excel') {
             return exportToExcel(res, "Itemized_Sales_List", reportData, summary);
         } else if (exportType === 'pdf') {
-            const headers = ["Order ID", "Date", "Product No", "Product Name", "Category", "Qty Sold", "Unit Price", "Subtotal", "Item Discount", "Order Discount Apportioned", "Tax", "Total Amount", "Payment Method"];
+            const headers = ["Order ID", "Date", "Product No", "Product Name", "Category", "Qty Sold", "Unit Price", "Subtotal", "Discount", "Tax", "Total Amount", "Payment Method"];
             return exportToPDF(res, "Itemized Sales List", { dateRange: `${startDate} to ${endDate}` }, headers, reportData, summary);
         }
 
