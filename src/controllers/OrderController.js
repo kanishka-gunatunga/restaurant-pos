@@ -450,6 +450,10 @@ exports.createOrder = async (req, res) => {
             if (!selectedTable) {
                 throw new Error('Selected table not found');
             }
+            if (selectedTable.status !== 'available') {
+                throw new Error('Selected table is not available');
+            }
+            await selectedTable.update({ status: 'unavailable' }, { transaction: t });
         }
         if (customerMobile) {
             let customer = await Customer.findOne({ where: { mobile: customerMobile }, transaction: t });
