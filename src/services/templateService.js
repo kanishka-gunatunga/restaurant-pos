@@ -2,6 +2,7 @@
  * Service to generate receipt HTML templates.
  */
 const formatOrderReference = (order) => order?.orderNo || order?.receipt_no || order?.id?.toString().padStart(8, '0') || 'N/A';
+const resolveOrderTableLabel = (order) => order?.table?.table_name || order?.tableName || order?.tableNumber || 'N/A';
 
 exports.generateReceiptHtml = (order, payment, branch) => {
     const pad = (str, len, char = ' ', right = false) => {
@@ -196,7 +197,7 @@ exports.generateKitchenReceiptHtml = (order, branch) => {
 
             <div style="display: flex; justify-content: space-between; margin-bottom: 10px; font-weight: bold; font-size: 1.1em;">
                 <span>TYPE: ${order.orderType || 'N/A'}</span>
-                <span>TABLE: ${order.tableNumber || 'N/A'}</span>
+                <span>TABLE: ${resolveOrderTableLabel(order)}</span>
             </div>
 
             <div style="margin-bottom: 10px; border-top: 1px dashed #000; border-bottom: 1px dashed #000; padding: 5px 0;">
@@ -340,7 +341,7 @@ exports.generateKitchenStructuredData = (order, branch) => {
         orderNo: order.orderNo,
         dateTime: formatDateTime(order.createdAt),
         orderType: capitalize(order.orderType || 'N/A'),
-        tableNumber: order.tableNumber || 'N/A',
+        tableNumber: resolveOrderTableLabel(order),
         kitchenNote: order.kitchenNote,
         items: order.items.map(item => {
             const name = item.productBundle?.name || item.bogoPromotion?.name || item.product?.name || 'Item';

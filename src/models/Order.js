@@ -27,6 +27,13 @@ const Order = sequelize.define('Order', {
         type: DataTypes.STRING,
         allowNull: true,
     },
+    tableId: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+        field: 'table_id',
+        references: { model: 'tables', key: 'id' },
+        onDelete: 'SET NULL',
+    },
     orderDiscount: {
         type: DataTypes.DECIMAL(10, 2),
         defaultValue: 0.00,

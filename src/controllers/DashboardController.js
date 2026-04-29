@@ -17,6 +17,7 @@ const Branch = require('../models/Branch');
 const User = require('../models/User');
 const ModificationItem = require('../models/ModificationItem');
 const OrderItemModification = require('../models/OrderItemModification');
+const Table = require('../models/Table');
 exports.getCashierDashboard = async (req, res) => {
     try {
         const userId = req.user.id;
@@ -419,7 +420,8 @@ exports.getKitchenDashboard = async (req, res) => {
                             include: [{ model: ModificationItem, as: 'modification', attributes: ['id', 'title'] }]
                         }
                     ]
-                }
+                },
+                { model: Table, as: 'table', attributes: ['id', 'table_name'] }
             ],
             order: [['createdAt', 'ASC']] // Oldest orders first for kitchen queue
         });
@@ -446,7 +448,8 @@ exports.getKitchenDashboard = async (req, res) => {
                 id: data.id,
                 status: data.status,
                 orderType: data.orderType,
-                tableNumber: data.tableNumber,
+                tableId: data.tableId ?? null,
+                tableNumber: data.table?.table_name || data.tableNumber,
                 createdAt: data.createdAt,
                 customerName: data.customer?.name || 'Walk-in',
                 kitchenNote: data.kitchenNote,

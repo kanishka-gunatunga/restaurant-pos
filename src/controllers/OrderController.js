@@ -17,6 +17,7 @@ const { logActivity } = require('./ActivityLogController');
 const UserDetail = require('../models/UserDetail');
 const PrintJob = require('../models/PrintJob');
 const Branch = require('../models/Branch');
+const Table = require('../models/Table');
 const templateService = require('../services/templateService');
 const Pusher = require('pusher');
 const ProductBundle = require('../models/ProductBundle');
@@ -51,7 +52,7 @@ const {
 } = require('../utils/orderListQuery');
 
 async function enrichOrderListItem(json) {
-    const out = attachDerivedPaymentFieldsToOrderJson({ ...json });
+    const out = applyOrderTableDisplay(attachDerivedPaymentFieldsToOrderJson({ ...json }));
     await enrichOrderJsonItemsForDetail(out);
     return out;
 }
@@ -67,6 +68,31 @@ const paymentsOrderInclude = {
     as: 'payments',
     attributes: PAYMENT_LIST_ATTRIBUTES,
 };
+
+const tableOrderInclude = {
+    model: Table,
+    as: 'table',
+    attributes: ['id', 'table_name'],
+};
+
+function parseTableId(value) {
+    if (value === undefined || value === null || value === '') return null;
+    const parsed = Number(value);
+    if (!Number.isInteger(parsed) || parsed <= 0) return null;
+    return parsed;
+}
+
+function applyOrderTableDisplay(json) {
+    const out = { ...json };
+    const tableName = out?.table?.table_name ? String(out.table.table_name).trim() : '';
+    if (tableName) {
+        out.tableNumber = tableName;
+        out.tableName = tableName;
+    } else {
+        out.tableName = out.tableNumber || null;
+    }
+    return out;
+}
 
 const orderItemsBasicInclude = {
     model: OrderItem,
@@ -233,7 +259,7 @@ exports.searchOrders = async (req, res) => {
         const { page, pageSize, offset } = parseOrderListPagination(req);
         const result = await findOrdersPage({
             where: scopedWhere,
-            include: [customerOrderInclude, paymentsOrderInclude, orderItemsBasicInclude],
+            include: [customerOrderInclude, paymentsOrderInclude, tableOrderInclude, orderItemsBasicInclude],
             order: [['createdAt', 'DESC']],
             page,
             pageSize,
@@ -266,7 +292,7 @@ exports.filterOrdersByStatus = async (req, res) => {
         const { page, pageSize, offset } = parseOrderListPagination(req);
         const result = await findOrdersPage({
             where: scopedWhere,
-            include: [customerOrderInclude, paymentsOrderInclude, orderItemsBasicInclude],
+            include: [customerOrderInclude, paymentsOrderInclude, tableOrderInclude, orderItemsBasicInclude],
             order: [['createdAt', 'DESC']],
             page,
             pageSize,
@@ -299,7 +325,7 @@ exports.getOrdersExcludeStatus = async (req, res) => {
         const { page, pageSize, offset } = parseOrderListPagination(req);
         const result = await findOrdersPage({
             where: scopedWhere,
-            include: [customerOrderInclude, paymentsOrderInclude, orderItemsFullInclude],
+            include: [customerOrderInclude, paymentsOrderInclude, tableOrderInclude, orderItemsFullInclude],
             order: [['createdAt', 'DESC']],
             page,
             pageSize,
@@ -337,7 +363,7 @@ exports.getAllOrders = async (req, res) => {
         const { page, pageSize, offset } = parseOrderListPagination(req);
         const result = await findOrdersPage({
             where: scopedWhere,
-            include: [customerOrderInclude, paymentsOrderInclude, orderItemsFullInclude],
+            include: [customerOrderInclude, paymentsOrderInclude, tableOrderInclude, orderItemsFullInclude],
             order: [['createdAt', 'DESC']],
             page,
             pageSize,
@@ -355,7 +381,7 @@ exports.getOrderById = async (req, res) => {
     try {
         const { id } = req.params;
         const order = await Order.findByPk(id, {
-            include: [customerOrderInclude, paymentsOrderInclude, orderItemsFullInclude],
+            include: [customerOrderInclude, paymentsOrderInclude, tableOrderInclude, orderItemsFullInclude],
         });
         if (!order) {
             return res.status(404).json({ message: 'Order not found' });
@@ -364,7 +390,7 @@ exports.getOrderById = async (req, res) => {
             return res.status(404).json({ message: 'Order not found' });
         }
 
-        const payload = attachDerivedPaymentFieldsToOrderJson(order.toJSON());
+        const payload = applyOrderTableDisplay(attachDerivedPaymentFieldsToOrderJson(order.toJSON()));
         await enrichOrderJsonItemsForDetail(payload);
         res.json(payload);
     } catch (error) {
@@ -382,6 +408,7 @@ exports.createOrder = async (req, res) => {
             totalAmount,
             orderType,
             tableNumber,
+            tableId,
             orderDiscount,
             tax,
             orderNote,
@@ -402,6 +429,7 @@ exports.createOrder = async (req, res) => {
         const deliveryChargeIdNorm = req.body.deliveryChargeId ?? req.body.delivery_charge_id;
         const deliveryChargeSelectedIdNorm =
             req.body.deliveryChargeSelectedId ?? req.body.delivery_charge_selected_id;
+        const tableIdNorm = tableId ?? req.body.table_id;
 
         let { customerId } = req.body;
 
@@ -414,7 +442,15 @@ exports.createOrder = async (req, res) => {
         const effectiveDeliveryChargeAmount = parseFloat(deliveryChargeAmountNorm) || 0;
         const effectiveOrderAmount = parseFloat(orderAmountNorm) || 0;
         const effectiveDeliveryChargeId = deliveryChargeIdNorm || deliveryChargeSelectedIdNorm || null;
+        const effectiveTableId = parseTableId(tableIdNorm);
         const effectiveTaxAmount = parseFloat(taxAmountNorm) || 0;
+        let selectedTable = null;
+        if (orderType === 'dining' && effectiveTableId != null) {
+            selectedTable = await Table.findByPk(effectiveTableId, { transaction: t });
+            if (!selectedTable) {
+                throw new Error('Selected table not found');
+            }
+        }
         if (customerMobile) {
             let customer = await Customer.findOne({ where: { mobile: customerMobile }, transaction: t });
             if (!customer && customerName) {
@@ -435,6 +471,7 @@ exports.createOrder = async (req, res) => {
             customerId,
             totalAmount: effectiveOrderAmount,
             orderType,
+            tableId: effectiveTableId,
             tableNumber,
             orderDiscount: parsedOrderDiscount,
             tax: effectiveTaxAmount,
@@ -500,17 +537,22 @@ exports.createOrder = async (req, res) => {
         await t.commit();
 
         const fullOrder = await Order.findByPk(order.id, {
-            include: [customerOrderInclude, paymentsOrderInclude, orderItemsFullInclude],
+            include: [customerOrderInclude, paymentsOrderInclude, tableOrderInclude, orderItemsFullInclude],
         });
 
         await logActivity({
             userId: req.user.id,
             branchId: userDetail?.branchId || 1,
             activityType: 'Order Placed',
-            description: `New order ${order.id} placed for ${orderType} at ${tableNumber || 'N/A'}`,
+            description: `New order ${order.id} placed for ${orderType} at ${selectedTable?.table_name || tableNumber || 'N/A'}`,
             orderId: order.id,
             amount: finalTotals.totalAmount,
-            metadata: { orderType, tableNumber, totalAmount: finalTotals.totalAmount }
+            metadata: {
+                orderType,
+                tableId: effectiveTableId,
+                tableNumber: selectedTable?.table_name || tableNumber,
+                totalAmount: finalTotals.totalAmount
+            }
         });
 
         try {
@@ -531,6 +573,7 @@ exports.createOrder = async (req, res) => {
             // Fetch full order with all necessary includes for the template
             const printOrder = await Order.findByPk(order.id, {
                 include: [
+                    tableOrderInclude,
                     {
                         model: OrderItem,
                         as: 'items',
@@ -564,7 +607,7 @@ exports.createOrder = async (req, res) => {
             console.error('[OrderController] Failed to queue kitchen print job for order', order.id, ':', printError);
         }
 
-        const createdPayload = attachDerivedPaymentFieldsToOrderJson(fullOrder.toJSON());
+        const createdPayload = applyOrderTableDisplay(attachDerivedPaymentFieldsToOrderJson(fullOrder.toJSON()));
         await enrichOrderJsonItemsForDetail(createdPayload);
         res.status(201).json(createdPayload);
     } catch (error) {
@@ -576,10 +619,10 @@ exports.createOrder = async (req, res) => {
 
 async function loadOrderWithDerivedFields(orderId) {
     const full = await Order.findByPk(orderId, {
-        include: [customerOrderInclude, paymentsOrderInclude, orderItemsFullInclude],
+        include: [customerOrderInclude, paymentsOrderInclude, tableOrderInclude, orderItemsFullInclude],
     });
     if (!full) return null;
-    const json = attachDerivedPaymentFieldsToOrderJson(full.toJSON());
+    const json = applyOrderTableDisplay(attachDerivedPaymentFieldsToOrderJson(full.toJSON()));
     await enrichOrderJsonItemsForDetail(json);
     return json;
 }
@@ -765,6 +808,7 @@ exports.updateOrder = async (req, res) => {
             totalAmount,
             orderType,
             tableNumber,
+            tableId,
             orderDiscount,
             tax,
             orderNote,
@@ -787,6 +831,7 @@ exports.updateOrder = async (req, res) => {
         const deliveryChargeIdFromBody = req.body.deliveryChargeId ?? req.body.delivery_charge_id;
         const deliveryChargeSelectedIdFromBody =
             req.body.deliveryChargeSelectedId ?? req.body.delivery_charge_selected_id;
+        const tableIdFromBody = tableId ?? req.body.table_id;
 
         const order = await Order.findByPk(id, { transaction: t });
         if (!order) {
@@ -842,6 +887,15 @@ exports.updateOrder = async (req, res) => {
             deliveryChargeIdFromBody !== undefined || deliveryChargeSelectedIdFromBody !== undefined
                 ? deliveryChargeIdFromBody || deliveryChargeSelectedIdFromBody || null
                 : order.deliveryChargeId;
+        const effectiveTableId =
+            tableIdFromBody !== undefined ? parseTableId(tableIdFromBody) : order.tableId ?? null;
+        if (orderType === 'dining' && effectiveTableId != null) {
+            const selectedTable = await Table.findByPk(effectiveTableId, { transaction: t });
+            if (!selectedTable) {
+                await t.rollback();
+                return res.status(400).json({ message: 'Selected table not found' });
+            }
+        }
 
         if (order_products) {
             const orderItems = await OrderItem.findAll({ where: { orderId: id }, transaction: t });
@@ -884,6 +938,7 @@ exports.updateOrder = async (req, res) => {
         const updatePayload = {
             customerId,
             orderType,
+            tableId: effectiveTableId,
             tableNumber,
             orderDiscount: effectiveOrderDiscount,
             tax: finalTotals.tax,
@@ -925,10 +980,10 @@ exports.updateOrder = async (req, res) => {
 
         await t.commit();
         const fullOrder = await Order.findByPk(order.id, {
-            include: [customerOrderInclude, paymentsOrderInclude, orderItemsFullInclude],
+            include: [customerOrderInclude, paymentsOrderInclude, tableOrderInclude, orderItemsFullInclude],
         });
 
-        const payload = attachDerivedPaymentFieldsToOrderJson(fullOrder.toJSON());
+        const payload = applyOrderTableDisplay(attachDerivedPaymentFieldsToOrderJson(fullOrder.toJSON()));
         await enrichOrderJsonItemsForDetail(payload);
         payload.payment_status = payload.paymentStatus;
         const clientPayStatus = bodyPaymentStatus !== undefined ? bodyPaymentStatus : bodyPaymentStatusSnake;
