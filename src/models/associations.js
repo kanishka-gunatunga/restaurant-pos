@@ -37,6 +37,7 @@ const ProductBundleItem = require('./ProductBundleItem');
 const ServiceCharge = require('./ServiceCharge');
 const BogoPromotion = require('./BogoPromotion');
 const BogoPromotionBranch = require('./BogoPromotionBranch');
+const CustomerCategoryDiscount = require('./CustomerCategoryDiscount');
 
 // User <-> UserDetail: One-to-One
 User.hasOne(UserDetail, { foreignKey: 'userId', as: 'UserDetail' });
