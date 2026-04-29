@@ -1,9 +1,9 @@
 const express = require('express');
 const router = express.Router();
 const controller = require('../controllers/CustomerCategoryDiscountController');
-const auth = require('../middleware/auth');
+const { authenticate } = require('../middleware/auth');
 
-router.get('/', auth, controller.getAllDiscounts);
-router.post('/', auth, controller.upsertDiscounts);
+router.get('/', authenticate, controller.getAllDiscounts);
+router.post('/', authenticate, controller.upsertDiscounts);
 
 module.exports = router;
