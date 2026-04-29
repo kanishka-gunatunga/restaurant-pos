@@ -38,6 +38,7 @@ const ServiceCharge = require('./ServiceCharge');
 const BogoPromotion = require('./BogoPromotion');
 const BogoPromotionBranch = require('./BogoPromotionBranch');
 const CustomerCategoryDiscount = require('./CustomerCategoryDiscount');
+const Table = require('./Table');
 
 // User <-> UserDetail: One-to-One
 User.hasOne(UserDetail, { foreignKey: 'userId', as: 'UserDetail' });
@@ -288,4 +289,48 @@ VariationOption.hasMany(BogoPromotion, { foreignKey: 'buyVariationOptionId' });
 // BogoPromotion - VariationOption Association (Get Variation)
 BogoPromotion.belongsTo(VariationOption, { foreignKey: 'getVariationOptionId', as: 'getVariationOption' });
 VariationOption.hasMany(BogoPromotion, { foreignKey: 'getVariationOptionId' });
+
+module.exports = {
+    User,
+    UserDetail,
+    Branch,
+    Order,
+    Payment,
+    Session,
+    SessionTransaction,
+    Customer,
+    OrderItem,
+    OrderItemModification,
+    Product,
+    ProductBranch,
+    Variation,
+    VariationOption,
+    ModificationItem,
+    Category,
+    VariationPrice,
+    Modification,
+    ProductModification,
+    ProductModificationPrice,
+    ProductModificationItemPrice,
+    Discount,
+    DiscountItem,
+    DiscountBranch,
+    ActivityLog,
+    Supplier,
+    Material,
+    MaterialBranch,
+    StockItem,
+    ProductAssignment,
+    PrintJob,
+    DeliveryCharge,
+    DeliveryChargeBranch,
+    ProductBundle,
+    ProductBundleBranch,
+    ProductBundleItem,
+    ServiceCharge,
+    BogoPromotion,
+    BogoPromotionBranch,
+    CustomerCategoryDiscount,
+    Table
+};
 

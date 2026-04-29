@@ -33,6 +33,7 @@ const serviceChargeRoutes = require('./routes/serviceChargeRoutes');
 const productBundleRoutes = require('./routes/productBundleRoutes');
 const bogoPromotionRoutes = require('./routes/bogoPromotionRoutes');
 const customerCategoryDiscountRoutes = require('./routes/customerCategoryDiscountRoutes');
+const tableRoutes = require('./routes/tableRoutes');
 
 const app = express();
 app.set('trust proxy', 1);
@@ -101,6 +102,7 @@ app.use('/api/service-charge', serviceChargeRoutes);
 app.use('/api/product-bundles', productBundleRoutes);
 app.use('/api/bogo-promotions', bogoPromotionRoutes);
 app.use('/api/customer-category-discounts', customerCategoryDiscountRoutes);
+app.use('/api/tables', tableRoutes);
 
 // Global error handler (do not log request body to avoid leaking tokens/passwords)
 app.use((err, req, res, next) => {
