@@ -9,7 +9,7 @@ const Customer = require('../models/Customer');
 const User = require('../models/User');
 const Payment = require('../models/Payment');
 const sequelize = require('../config/database');
-const { Op, Transaction } = require('sequelize');
+const { Op, Transaction, QueryTypes } = require('sequelize');
 const { decrypt } = require('../utils/crypto');
 const Session = require('../models/Session');
 const SessionTransaction = require('../models/SessionTransaction');
@@ -96,6 +96,88 @@ const orderItemsBasicInclude = {
 };
 
 const orderItemsFullInclude = orderItemsBasicInclude;
+
+const RECEIPT_NO_PREFIX = 'ONUM';
+const RECEIPT_NO_WIDTH = 5;
+const RECEIPT_TIME_ZONE = 'Asia/Colombo';
+
+function getColomboDateString(date = new Date()) {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+        timeZone: RECEIPT_TIME_ZONE,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+    }).formatToParts(date);
+    const map = {};
+    for (const part of parts) {
+        map[part.type] = part.value;
+    }
+    return `${map.year}-${map.month}-${map.day}`;
+}
+
+function getReceiptDayRange(date = new Date()) {
+    const day = getColomboDateString(date);
+    return {
+        day,
+        start: new Date(`${day}T00:00:00+05:30`),
+        end: new Date(`${day}T23:59:59.999+05:30`),
+    };
+}
+
+function formatOrderNo(sequence) {
+    return `${RECEIPT_NO_PREFIX}${String(sequence).padStart(RECEIPT_NO_WIDTH, '0')}`;
+}
+
+function parseReceiptSequence(orderNo) {
+    const match = String(orderNo || '').match(new RegExp(`^${RECEIPT_NO_PREFIX}(\\d+)$`));
+    return match ? parseInt(match[1], 10) : 0;
+}
+
+async function withDailyReceiptLock(transaction, day, work) {
+    const lockName = `orders_receipt_no_${day}`;
+    const [lockRow] = await sequelize.query(
+        'SELECT GET_LOCK(:lockName, 10) AS acquired',
+        {
+            replacements: { lockName },
+            type: QueryTypes.SELECT,
+            transaction,
+        }
+    );
+
+    if (Number(lockRow?.acquired) !== 1) {
+        throw new Error('Unable to generate receipt number right now. Please try again.');
+    }
+
+    try {
+        return await work();
+    } finally {
+        await sequelize.query('SELECT RELEASE_LOCK(:lockName)', {
+            replacements: { lockName },
+            type: QueryTypes.SELECT,
+            transaction,
+        });
+    }
+}
+
+async function generateNextOrderNo(transaction, now = new Date()) {
+    const { day, start, end } = getReceiptDayRange(now);
+
+    return withDailyReceiptLock(transaction, day, async () => {
+        const lastOrderToday = await Order.findOne({
+            where: {
+                createdAt: { [Op.between]: [start, end] },
+                orderNo: { [Op.ne]: null },
+            },
+            attributes: ['orderNo'],
+            order: [['id', 'DESC']],
+            transaction,
+            lock: Transaction.LOCK.UPDATE,
+        });
+
+        const nextSequence = parseReceiptSequence(lastOrderToday?.orderNo) + 1;
+        return formatOrderNo(nextSequence);
+    });
+}
 
 function buildOrderItemModificationRows(orderItemId, modifications) {
     if (!modifications?.length) {
@@ -291,6 +373,7 @@ exports.getOrderById = async (req, res) => {
 };
 
 exports.createOrder = async (req, res) => {
+    console.log('[OrderController] Creating order with payload:', JSON.stringify(req.body, null, 2));
     const t = await sequelize.transaction();
     try {
         const {
@@ -313,6 +396,8 @@ exports.createOrder = async (req, res) => {
         const order_products =
             req.body.order_products ?? req.body.orderProducts ?? req.body.order_lines;
         const serviceChargeNorm = req.body.serviceCharge ?? req.body.service_charge;
+        const orderAmountNorm = req.body.totalAmount ?? req.body.total_amount;
+        const taxAmountNorm = req.body.tax ?? req.body.tax;
         const deliveryChargeAmountNorm = req.body.deliveryChargeAmount ?? req.body.delivery_charge_amount;
         const deliveryChargeIdNorm = req.body.deliveryChargeId ?? req.body.delivery_charge_id;
         const deliveryChargeSelectedIdNorm =
@@ -327,8 +412,9 @@ exports.createOrder = async (req, res) => {
 
         const effectiveServiceCharge = parseFloat(serviceChargeNorm) || 0;
         const effectiveDeliveryChargeAmount = parseFloat(deliveryChargeAmountNorm) || 0;
+        const effectiveOrderAmount = parseFloat(orderAmountNorm) || 0;
         const effectiveDeliveryChargeId = deliveryChargeIdNorm || deliveryChargeSelectedIdNorm || null;
-
+        const effectiveTaxAmount = parseFloat(taxAmountNorm) || 0;
         if (customerMobile) {
             let customer = await Customer.findOne({ where: { mobile: customerMobile }, transaction: t });
             if (!customer && customerName) {
@@ -341,15 +427,17 @@ exports.createOrder = async (req, res) => {
 
         const userDetail = await UserDetail.findOne({ where: { userId: req.user.id }, transaction: t });
 
-        const preliminaryTotals = computeOrderTotalsFromLines(order_products || [], parsedOrderDiscount, effectiveServiceCharge, effectiveDeliveryChargeAmount);
+        // const preliminaryTotals = computeOrderTotalsFromLines(order_products || [], parsedOrderDiscount, effectiveServiceCharge, effectiveDeliveryChargeAmount);
+        const orderNo = await generateNextOrderNo(t);
 
         const order = await Order.create({
+            orderNo,
             customerId,
-            totalAmount: preliminaryTotals.totalAmount,
+            totalAmount: effectiveOrderAmount,
             orderType,
             tableNumber,
             orderDiscount: parsedOrderDiscount,
-            tax: preliminaryTotals.tax,
+            tax: effectiveTaxAmount,
             orderNote,
             kitchenNote,
             orderTimer,
@@ -912,4 +1000,3 @@ exports.updateOrderItemStatus = async (req, res) => {
         res.status(400).json({ message: error.message });
     }
 };
-

@@ -1,6 +1,8 @@
 /**
  * Service to generate receipt HTML templates.
  */
+const formatOrderReference = (order) => order?.orderNo || order?.receipt_no || order?.id?.toString().padStart(8, '0') || 'N/A';
+
 exports.generateReceiptHtml = (order, payment, branch) => {
     const pad = (str, len, char = ' ', right = false) => {
         str = String(str);
@@ -54,7 +56,7 @@ exports.generateReceiptHtml = (order, payment, branch) => {
             </div>
             
             <div style="border-top: 1px solid #000; margin: 4px 0;"></div>
-            <div style="display: flex; justify-content: flex-end; font-weight: bold; font-size: 1.2em;"><span>${order.id.toString().padStart(8, '0')}</span></div>
+            <div style="display: flex; justify-content: flex-end; font-weight: bold; font-size: 1.2em;"><span>${formatOrderReference(order)}</span></div>
 
             <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
                 <span>CASHIER: ${order.user?.name || 'Staff'}</span>
@@ -189,7 +191,7 @@ exports.generateKitchenReceiptHtml = (order, branch) => {
         <div style="width: 550px; font-family: 'Courier New', Courier, monospace; line-height: 1.2; color: #000; background: #fff; padding: 10px;">
             <div style="text-align: center; border: 2px solid #000; padding: 5px; margin-bottom: 10px;">
                 <div style="font-size: 1.8em; font-weight: bold; text-transform: uppercase;">KITCHEN COPY</div>
-                <div style="font-size: 1.2em;">Order #${order.id.toString().padStart(8, '0')}</div>
+                <div style="font-size: 1.2em;">Order #${formatOrderReference(order)}</div>
             </div>
 
             <div style="display: flex; justify-content: space-between; margin-bottom: 10px; font-weight: bold; font-size: 1.1em;">
@@ -236,7 +238,7 @@ const capitalize = (str) => {
 const formatDateTime = (date) => {
     if (!date) return date;
     const d = new Date(date);
-    
+
     try {
         const formatter = new Intl.DateTimeFormat('en-GB', {
             timeZone: 'Asia/Colombo',
@@ -248,11 +250,11 @@ const formatDateTime = (date) => {
             second: '2-digit',
             hour12: false
         });
-        
+
         const parts = formatter.formatToParts(d);
         const map = {};
         parts.forEach(p => map[p.type] = p.value);
-        
+
         return `${map.year}-${map.month}-${map.day} ${map.hour}:${map.minute}:${map.second}`;
     } catch (e) {
         // Fallback to old behavior if Intl fails
@@ -273,6 +275,7 @@ exports.generateReceiptStructuredData = (order, payment, branch) => {
     return {
         type: 'receipt',
         orderId: order.id.toString().padStart(8, '0'),
+        orderNo: order.orderNo,
         orderType: capitalize(order.orderType || 'N/A'),
         dateTime: formatDateTime(order.createdAt),
         cashier: order.user?.name || 'Staff',
@@ -301,7 +304,7 @@ exports.generateReceiptStructuredData = (order, payment, branch) => {
             };
         }),
         totals: {
-            subTotal: (parseFloat(order.totalAmount || 0) - parseFloat(order.serviceCharge || 0) - parseFloat(order.deliveryChargeAmount || 0)).toFixed(2),
+            subTotal: (parseFloat(order.totalAmount || 0) + parseFloat(order.orderDiscount || 0) - parseFloat(order.serviceCharge || 0) - parseFloat(order.deliveryChargeAmount || 0)).toFixed(2),
             discount: parseFloat(order.orderDiscount || 0).toFixed(2),
             serviceCharge: parseFloat(order.serviceCharge || 0).toFixed(2),
             deliveryCharge: parseFloat(order.deliveryChargeAmount || 0).toFixed(2),
@@ -334,6 +337,7 @@ exports.generateKitchenStructuredData = (order, branch) => {
     return {
         type: 'kitchen',
         orderId: order.id.toString().padStart(8, '0'),
+        orderNo: order.orderNo,
         dateTime: formatDateTime(order.createdAt),
         orderType: capitalize(order.orderType || 'N/A'),
         tableNumber: order.tableNumber || 'N/A',
@@ -370,10 +374,10 @@ exports.generateSalesReportStructuredData = (reportData, summary, headerInfo, br
             mobile: branch?.mobile || '0112175275'
         },
         summary: {
-            totalSalesAmount: summary["Total Sales Amount"],
+            totalSalesAmount: summary["Total Sales (Before Discount)"],
             totalDiscountsGiven: summary["Total Discounts Given"],
-            totalTaxCollected: summary["Total Tax Collected"],
-            netSales: summary["Net Sales"]
+            totalDeliveryCharges: summary["Total Delivery Charges"],
+            netSales: summary["Final Total"]
         },
         data: reportData.map(item => ({
             date: item["Date"],
