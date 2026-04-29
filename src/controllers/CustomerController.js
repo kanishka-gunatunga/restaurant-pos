@@ -1,4 +1,5 @@
 const Customer = require('../models/Customer');
+const CustomerCategoryDiscount = require('../models/CustomerCategoryDiscount');
 const Order = require('../models/Order');
 const MobitelSmsService = require('../services/MobitelSmsService');
 const { Op, fn, col } = require('sequelize');
@@ -22,7 +23,10 @@ exports.findOrCreate = async (req, res) => {
         if (mobile) {
             customer = await Customer.findOne({ where: { mobile } });
             if (customer) {
-                return res.json(customer);
+                const discount = await CustomerCategoryDiscount.findOne({ where: { category: customer.category || 'normal' } });
+                const plainCustomer = customer.get({ plain: true });
+                plainCustomer.discount_percentage = discount ? discount.discount_percentage : 0;
+                return res.json(plainCustomer);
             }
         }
         
@@ -37,7 +41,11 @@ exports.findOrCreate = async (req, res) => {
             metadata: { customerId: customer.id, name, mobile }
         });
 
-        res.status(201).json(customer);
+        const discount = await CustomerCategoryDiscount.findOne({ where: { category: customer.category || 'normal' } });
+        const plainCustomer = customer.get({ plain: true });
+        plainCustomer.discount_percentage = discount ? discount.discount_percentage : 0;
+
+        res.status(201).json(plainCustomer);
     } catch (error) {
         console.error('Customers:', error);
         res.status(500).json({ message: error.message || 'Internal server error' });
@@ -82,7 +90,11 @@ exports.createCustomer = async (req, res) => {
             metadata: { customerId: customer.id, name, mobile }
         });
 
-        res.status(201).json(customer);
+        const discount = await CustomerCategoryDiscount.findOne({ where: { category: customer.category || 'normal' } });
+        const plainCustomer = customer.get({ plain: true });
+        plainCustomer.discount_percentage = discount ? discount.discount_percentage : 0;
+
+        res.status(201).json(plainCustomer);
     } catch (error) {
         console.error('Customers:', error);
         res.status(500).json({ message: error.message || 'Internal server error' });
@@ -96,7 +108,10 @@ exports.getByMobile = async (req, res) => {
         if (!customer) {
             return res.status(404).json({ message: 'Customer not found' });
         }
-        res.json(customer);
+        const discount = await CustomerCategoryDiscount.findOne({ where: { category: customer.category || 'normal' } });
+        const plainCustomer = customer.get({ plain: true });
+        plainCustomer.discount_percentage = discount ? discount.discount_percentage : 0;
+        res.json(plainCustomer);
     } catch (error) {
         console.error('Customers:', error);
         res.status(500).json({ message: error.message || 'Internal server error' });
@@ -215,7 +230,10 @@ exports.getCustomerById = async (req, res) => {
         if (!customer) {
             return res.status(404).json({ message: 'Customer not found' });
         }
-        res.json(customer);
+        const discount = await CustomerCategoryDiscount.findOne({ where: { category: customer.category || 'normal' } });
+        const plainCustomer = customer.get({ plain: true });
+        plainCustomer.discount_percentage = discount ? discount.discount_percentage : 0;
+        res.json(plainCustomer);
     } catch (error) {
         console.error('Customers:', error);
         res.status(500).json({ message: error.message || 'Internal server error' });
