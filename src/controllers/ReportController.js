@@ -169,8 +169,10 @@ exports.getSalesReport = async (req, res) => {
         const itemSummaries = {};
         let totalGrossSalesAmount = 0;
         let totalDiscountsGiven = 0;
+        let totalDeliveryCharges = 0;
 
         orders.forEach(order => {
+            totalDeliveryCharges += parseFloat(order.deliveryChargeAmount || 0);
             const orderSubtotal = order.items.reduce((sum, item) => sum + (parseFloat(item.unitPrice) * item.quantity), 0);
 
             order.items.forEach(item => {
@@ -221,7 +223,8 @@ exports.getSalesReport = async (req, res) => {
         const summary = {
             "Total Sales (Before Discount)": totalGrossSalesAmount.toFixed(2),
             "Total Discounts Given": totalDiscountsGiven.toFixed(2),
-            "Final Total (After Discount)": (totalGrossSalesAmount - totalDiscountsGiven).toFixed(2)
+            "Total Delivery Charges": totalDeliveryCharges.toFixed(2),
+            "Final Total": (totalGrossSalesAmount - totalDiscountsGiven + totalDeliveryCharges).toFixed(2)
         };
 
         if (exportType === 'excel') {
@@ -608,8 +611,10 @@ exports.getItemizedSalesList = async (req, res) => {
         const reportData = [];
         let totalGrossSalesAmount = 0;
         let totalDiscountsGiven = 0;
+        let totalDeliveryCharges = 0;
 
         orders.forEach(order => {
+            totalDeliveryCharges += parseFloat(order.deliveryChargeAmount || 0);
             const orderSubtotal = order.items.reduce((sum, item) => sum + (parseFloat(item.unitPrice) * item.quantity), 0);
 
             order.items.forEach(item => {
@@ -646,7 +651,8 @@ exports.getItemizedSalesList = async (req, res) => {
         const summary = {
             "Total Sales (Before Discount)": totalGrossSalesAmount.toFixed(2),
             "Total Discounts Given": totalDiscountsGiven.toFixed(2),
-            "Final Total (After Discount)": (totalGrossSalesAmount - totalDiscountsGiven).toFixed(2)
+            "Total Delivery Charges": totalDeliveryCharges.toFixed(2),
+            "Final Total": (totalGrossSalesAmount - totalDiscountsGiven + totalDeliveryCharges).toFixed(2)
         };
 
         if (exportType === 'excel') {

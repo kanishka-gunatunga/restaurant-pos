@@ -344,10 +344,10 @@ exports.generateSalesReportStructuredData = (reportData, summary, headerInfo, br
             mobile: branch?.mobile || '0112175275'
         },
         summary: {
-            totalSalesAmount: summary["Total Sales Amount"],
+            totalSalesAmount: summary["Total Sales (Before Discount)"],
             totalDiscountsGiven: summary["Total Discounts Given"],
-            totalTaxCollected: summary["Total Tax Collected"],
-            netSales: summary["Net Sales"]
+            totalDeliveryCharges: summary["Total Delivery Charges"],
+            netSales: summary["Final Total"]
         },
         data: reportData.map(item => ({
             date: item["Date"],
