@@ -161,24 +161,36 @@ exports.getSalesReport = async (req, res) => {
                     model: Payment,
                     as: 'payments',
                     attributes: ['paymentMethod']
+                },
+                {
+                    model: Customer,
+                    as: 'customer',
+                    attributes: ['category']
                 }
             ],
             order: [['createdAt', 'DESC']]
         });
 
-        const itemSummaries = {};
-        let totalGrossSalesAmount = 0;
-        let totalDiscountsGiven = 0;
-        let totalDeliveryCharges = 0;
+        const categorySummaries = {
+            normal: { gross: 0, discount: 0, delivery: 0 },
+            staff: { gross: 0, discount: 0, delivery: 0 },
+            management: { gross: 0, discount: 0, delivery: 0 }
+        };
 
         orders.forEach(order => {
-            totalDeliveryCharges += parseFloat(order.deliveryChargeAmount || 0);
+            const customerCategory = order.customer?.category || 'normal';
+            const catStats = categorySummaries[customerCategory] || categorySummaries.normal;
+            
+            const deliveryCharge = parseFloat(order.deliveryChargeAmount || 0);
+            totalDeliveryCharges += deliveryCharge;
+            catStats.delivery += deliveryCharge;
             const orderSubtotal = order.items.reduce((sum, item) => sum + (parseFloat(item.unitPrice) * item.quantity), 0);
 
             order.items.forEach(item => {
+                const customerCategory = order.customer?.category || 'normal';
                 const productId = item.productId;
                 const variationOptionId = item.variationOptionId || 0;
-                const key = `${productId}_${variationOptionId}`;
+                const key = `${customerCategory}_${productId}_${variationOptionId}`;
 
                 if (!itemSummaries[key]) {
                     const productName = item.product?.name || 'Unknown';
@@ -189,6 +201,7 @@ exports.getSalesReport = async (req, res) => {
                     const fullName = `${productName}${variationSuffix}`;
 
                     itemSummaries[key] = {
+                        "Customer Category": customerCategory.charAt(0).toUpperCase() + customerCategory.slice(1),
                         "Product No": item.product?.sku || item.product?.code || 'N/A',
                         "Product Name": fullName,
                         "Category": item.product?.category?.name || 'Uncategorized',
@@ -209,12 +222,17 @@ exports.getSalesReport = async (req, res) => {
 
                 totalGrossSalesAmount += itemSubtotal;
                 totalDiscountsGiven += itemDiscount;
+                
+                const catStats = categorySummaries[customerCategory] || categorySummaries.normal;
+                catStats.gross += itemSubtotal;
+                catStats.discount += itemDiscount;
             });
         });
 
         // Filter and round values
         const reportData = Object.values(itemSummaries)
             .filter(item => item["Qty Sold"] > 0)
+            .sort((a, b) => a["Customer Category"].localeCompare(b["Customer Category"]))
             .map(item => ({
                 ...item,
                 "Total Amount": item["Total Amount"].toFixed(2)
@@ -224,13 +242,17 @@ exports.getSalesReport = async (req, res) => {
             "Total Sales (Before Discount)": totalGrossSalesAmount.toFixed(2),
             "Total Discounts Given": totalDiscountsGiven.toFixed(2),
             "Total Delivery Charges": totalDeliveryCharges.toFixed(2),
-            "Final Total": (totalGrossSalesAmount - totalDiscountsGiven + totalDeliveryCharges).toFixed(2)
+            "Final Total": (totalGrossSalesAmount - totalDiscountsGiven + totalDeliveryCharges).toFixed(2),
+            "---": "---",
+            "Normal Customer Sales": (categorySummaries.normal.gross - categorySummaries.normal.discount + categorySummaries.normal.delivery).toFixed(2),
+            "Staff Sales": (categorySummaries.staff.gross - categorySummaries.staff.discount + categorySummaries.staff.delivery).toFixed(2),
+            "Management Sales": (categorySummaries.management.gross - categorySummaries.management.discount + categorySummaries.management.delivery).toFixed(2)
         };
 
         if (exportType === 'excel') {
             return exportToExcel(res, "Sales_Report_Item_Wise", reportData, summary);
         } else if (exportType === 'pdf') {
-            const headers = ["Product No", "Product Name", "Category", "Qty Sold", "Unit Price", "Discount", "Total Amount"];
+            const headers = ["Customer Category", "Product No", "Product Name", "Category", "Qty Sold", "Unit Price", "Discount", "Total Amount"];
             return exportToPDF(res, "Sales Report (Item-Wise)", { dateRange: `${startDate} to ${endDate}` }, headers, reportData, summary);
         }
 
@@ -312,7 +334,7 @@ exports.getOrdersReport = async (req, res) => {
         const orders = await Order.findAll({
             where: whereCondition,
             include: [
-                { model: Customer, as: 'customer' },
+                { model: Customer, as: 'customer', attributes: ['name', 'category'] },
                 { model: OrderItem, as: 'items', attributes: ['id'] }
             ],
             order: [['createdAt', 'DESC']]
@@ -334,6 +356,7 @@ exports.getOrdersReport = async (req, res) => {
                 "Order No": order.orderNo,
                 "Order Date": new Date(order.createdAt).toLocaleDateString(),
                 "Customer Name": order.customer?.name || 'Guest',
+                "Customer Category": (order.customer?.category || 'normal').charAt(0).toUpperCase() + (order.customer?.category || 'normal').slice(1),
                 "Order Type": order.orderType,
                 "Items Count": order.items?.length || 0,
                 "Order Status": order.status,
@@ -355,7 +378,7 @@ exports.getOrdersReport = async (req, res) => {
         if (exportType === 'excel') {
             return exportToExcel(res, "Orders_Report", reportData, summary);
         } else if (exportType === 'pdf') {
-            const headers = ["Order ID", "Order Date", "Customer Name", "Order Type", "Items Count", "Order Status", "Subtotal", "Discount", "Tax", "Total Amount"];
+            const headers = ["Order ID", "Order Date", "Customer Name", "Customer Category", "Order Type", "Items Count", "Order Status", "Subtotal", "Discount", "Tax", "Total Amount"];
             return exportToPDF(res, "Orders Report", { dateRange: `${startDate} to ${endDate}` }, headers, reportData, summary);
         }
 
@@ -603,6 +626,11 @@ exports.getItemizedSalesList = async (req, res) => {
                     model: Payment,
                     as: 'payments',
                     attributes: ['paymentMethod']
+                },
+                {
+                    model: Customer,
+                    as: 'customer',
+                    attributes: ['category']
                 }
             ],
             order: [['createdAt', 'DESC']]
@@ -627,10 +655,12 @@ exports.getItemizedSalesList = async (req, res) => {
                 const itemDiscount = parseFloat(item.productDiscount || 0) * item.quantity;
                 
                 const totalAmount = itemSubtotal - itemDiscount;
+                const customerCategory = order.customer?.category || 'normal';
 
                 reportData.push({
                     "Order ID": order.id,
                     "Order No": order.orderNo,
+                    "Customer Category": customerCategory.charAt(0).toUpperCase() + customerCategory.slice(1),
                     "Date": new Date(order.createdAt).toLocaleString(),
                     "Product No": item.product?.sku || item.product?.code || 'N/A',
                     "Product Name": fullName,
@@ -658,7 +688,7 @@ exports.getItemizedSalesList = async (req, res) => {
         if (exportType === 'excel') {
             return exportToExcel(res, "Itemized_Sales_List", reportData, summary);
         } else if (exportType === 'pdf') {
-            const headers = ["Order ID", "Date", "Product No", "Product Name", "Category", "Qty Sold", "Unit Price", "Subtotal", "Discount", "Total Amount", "Payment Method"];
+            const headers = ["Order ID", "Date", "Customer Category", "Product No", "Product Name", "Category", "Qty Sold", "Unit Price", "Subtotal", "Discount", "Total Amount", "Payment Method"];
             return exportToPDF(res, "Itemized Sales List", { dateRange: `${startDate} to ${endDate}` }, headers, reportData, summary);
         }
 

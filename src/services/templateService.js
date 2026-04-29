@@ -377,12 +377,16 @@ exports.generateSalesReportStructuredData = (reportData, summary, headerInfo, br
             totalSalesAmount: summary["Total Sales (Before Discount)"],
             totalDiscountsGiven: summary["Total Discounts Given"],
             totalDeliveryCharges: summary["Total Delivery Charges"],
-            netSales: summary["Final Total"]
+            netSales: summary["Final Total"],
+            normalSales: summary["Normal Customer Sales"],
+            staffSales: summary["Staff Sales"],
+            managementSales: summary["Management Sales"]
         },
         data: reportData.map(item => ({
             date: item["Date"],
             invoiceNo: item["Invoice No"],
             productName: item["Product Name"],
+            customerCategory: item["Customer Category"],
             qtySold: item["Qty Sold"],
             totalAmount: item["Total Amount"]
         }))
