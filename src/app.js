@@ -32,6 +32,7 @@ const deliveryChargeRoutes = require('./routes/deliveryChargeRoutes');
 const serviceChargeRoutes = require('./routes/serviceChargeRoutes');
 const productBundleRoutes = require('./routes/productBundleRoutes');
 const bogoPromotionRoutes = require('./routes/bogoPromotionRoutes');
+const chatbotRoutes = require('./routes/chatbotRoutes');
 const customerCategoryDiscountRoutes = require('./routes/customerCategoryDiscountRoutes');
 const tableRoutes = require('./routes/tableRoutes');
 
@@ -101,6 +102,7 @@ app.use('/api/delivery-charges', deliveryChargeRoutes);
 app.use('/api/service-charge', serviceChargeRoutes);
 app.use('/api/product-bundles', productBundleRoutes);
 app.use('/api/bogo-promotions', bogoPromotionRoutes);
+app.use('/api/chatbot', chatbotRoutes);
 app.use('/api/customer-category-discounts', customerCategoryDiscountRoutes);
 app.use('/api/tables', tableRoutes);
 
