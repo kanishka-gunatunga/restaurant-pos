@@ -1,4 +1,5 @@
 const Customer = require('../models/Customer');
+const CustomerCategoryDiscount = require('../models/CustomerCategoryDiscount');
 const Order = require('../models/Order');
 const MobitelSmsService = require('../services/MobitelSmsService');
 const { Op, fn, col } = require('sequelize');
@@ -8,7 +9,7 @@ const UserDetail = require('../models/UserDetail');
 
 exports.findOrCreate = async (req, res) => {
     try {
-        let { mobile, name, address, email } = req.body;
+        let { mobile, name, address, email, category } = req.body;
         
         if (!name || name.trim() === '') {
             name = 'guest';
@@ -22,11 +23,14 @@ exports.findOrCreate = async (req, res) => {
         if (mobile) {
             customer = await Customer.findOne({ where: { mobile } });
             if (customer) {
-                return res.json(customer);
+                const discount = await CustomerCategoryDiscount.findOne({ where: { category: customer.category || 'normal' } });
+                const plainCustomer = customer.get({ plain: true });
+                plainCustomer.discount_percentage = discount ? discount.discount_percentage : 0;
+                return res.json(plainCustomer);
             }
         }
         
-        customer = await Customer.create({ mobile, name, address, email, status: 'active' });
+        customer = await Customer.create({ mobile, name, address, email, category: category || 'normal', status: 'active' });
 
         const userDetail = await UserDetail.findOne({ where: { userId: req.user.id } });
         await logActivity({
@@ -37,7 +41,11 @@ exports.findOrCreate = async (req, res) => {
             metadata: { customerId: customer.id, name, mobile }
         });
 
-        res.status(201).json(customer);
+        const discount = await CustomerCategoryDiscount.findOne({ where: { category: customer.category || 'normal' } });
+        const plainCustomer = customer.get({ plain: true });
+        plainCustomer.discount_percentage = discount ? discount.discount_percentage : 0;
+
+        res.status(201).json(plainCustomer);
     } catch (error) {
         console.error('Customers:', error);
         res.status(500).json({ message: error.message || 'Internal server error' });
@@ -46,7 +54,7 @@ exports.findOrCreate = async (req, res) => {
 
 exports.createCustomer = async (req, res) => {
     try {
-        let { mobile, name, address, email, promotions_enabled } = req.body;
+        let { mobile, name, address, email, promotions_enabled, category } = req.body;
         
         if (!name || name.trim() === '') {
             name = 'guest';
@@ -69,7 +77,8 @@ exports.createCustomer = async (req, res) => {
             address,
             email,
             status: 'active',
-            promotions_enabled: promotions_enabled !== undefined ? promotions_enabled : true
+            promotions_enabled: promotions_enabled !== undefined ? promotions_enabled : true,
+            category: category || 'normal'
         });
 
         const userDetail = await UserDetail.findOne({ where: { userId: req.user.id } });
@@ -81,7 +90,11 @@ exports.createCustomer = async (req, res) => {
             metadata: { customerId: customer.id, name, mobile }
         });
 
-        res.status(201).json(customer);
+        const discount = await CustomerCategoryDiscount.findOne({ where: { category: customer.category || 'normal' } });
+        const plainCustomer = customer.get({ plain: true });
+        plainCustomer.discount_percentage = discount ? discount.discount_percentage : 0;
+
+        res.status(201).json(plainCustomer);
     } catch (error) {
         console.error('Customers:', error);
         res.status(500).json({ message: error.message || 'Internal server error' });
@@ -95,7 +108,10 @@ exports.getByMobile = async (req, res) => {
         if (!customer) {
             return res.status(404).json({ message: 'Customer not found' });
         }
-        res.json(customer);
+        const discount = await CustomerCategoryDiscount.findOne({ where: { category: customer.category || 'normal' } });
+        const plainCustomer = customer.get({ plain: true });
+        plainCustomer.discount_percentage = discount ? discount.discount_percentage : 0;
+        res.json(plainCustomer);
     } catch (error) {
         console.error('Customers:', error);
         res.status(500).json({ message: error.message || 'Internal server error' });
@@ -214,7 +230,10 @@ exports.getCustomerById = async (req, res) => {
         if (!customer) {
             return res.status(404).json({ message: 'Customer not found' });
         }
-        res.json(customer);
+        const discount = await CustomerCategoryDiscount.findOne({ where: { category: customer.category || 'normal' } });
+        const plainCustomer = customer.get({ plain: true });
+        plainCustomer.discount_percentage = discount ? discount.discount_percentage : 0;
+        res.json(plainCustomer);
     } catch (error) {
         console.error('Customers:', error);
         res.status(500).json({ message: error.message || 'Internal server error' });
@@ -224,7 +243,7 @@ exports.getCustomerById = async (req, res) => {
 exports.updateCustomer = async (req, res) => {
     try {
         const { id } = req.params;
-        let { name, mobile, address, email } = req.body;
+        let { name, mobile, address, email, category } = req.body;
         const customer = await Customer.findByPk(id);
         if (!customer) {
             return res.status(404).json({ message: 'Customer not found' });
@@ -238,6 +257,7 @@ exports.updateCustomer = async (req, res) => {
         }
         if (address !== undefined) customer.address = address;
         if (email !== undefined) customer.email = email;
+        if (category !== undefined) customer.category = category;
         await customer.save();
 
         const userDetail = await UserDetail.findOne({ where: { userId: req.user.id } });

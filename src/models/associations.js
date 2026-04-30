@@ -37,6 +37,8 @@ const ProductBundleItem = require('./ProductBundleItem');
 const ServiceCharge = require('./ServiceCharge');
 const BogoPromotion = require('./BogoPromotion');
 const BogoPromotionBranch = require('./BogoPromotionBranch');
+const CustomerCategoryDiscount = require('./CustomerCategoryDiscount');
+const Table = require('./Table');
 
 // User <-> UserDetail: One-to-One
 User.hasOne(UserDetail, { foreignKey: 'userId', as: 'UserDetail' });
@@ -86,6 +88,10 @@ Customer.hasMany(Order, { foreignKey: 'customerId', as: 'orders' });
 // Order <-> DeliveryCharge
 Order.belongsTo(DeliveryCharge, { foreignKey: 'deliveryChargeId', as: 'deliveryCharge' });
 DeliveryCharge.hasMany(Order, { foreignKey: 'deliveryChargeId', as: 'orders' });
+
+// Order <-> Table
+Order.belongsTo(Table, { foreignKey: 'tableId', as: 'table' });
+Table.hasMany(Order, { foreignKey: 'tableId', as: 'orders' });
 
 // Order - OrderItem Association
 Order.hasMany(OrderItem, { foreignKey: 'orderId', as: 'items', onDelete: 'CASCADE', hooks: true });
@@ -287,4 +293,48 @@ VariationOption.hasMany(BogoPromotion, { foreignKey: 'buyVariationOptionId' });
 // BogoPromotion - VariationOption Association (Get Variation)
 BogoPromotion.belongsTo(VariationOption, { foreignKey: 'getVariationOptionId', as: 'getVariationOption' });
 VariationOption.hasMany(BogoPromotion, { foreignKey: 'getVariationOptionId' });
+
+module.exports = {
+    User,
+    UserDetail,
+    Branch,
+    Order,
+    Payment,
+    Session,
+    SessionTransaction,
+    Customer,
+    OrderItem,
+    OrderItemModification,
+    Product,
+    ProductBranch,
+    Variation,
+    VariationOption,
+    ModificationItem,
+    Category,
+    VariationPrice,
+    Modification,
+    ProductModification,
+    ProductModificationPrice,
+    ProductModificationItemPrice,
+    Discount,
+    DiscountItem,
+    DiscountBranch,
+    ActivityLog,
+    Supplier,
+    Material,
+    MaterialBranch,
+    StockItem,
+    ProductAssignment,
+    PrintJob,
+    DeliveryCharge,
+    DeliveryChargeBranch,
+    ProductBundle,
+    ProductBundleBranch,
+    ProductBundleItem,
+    ServiceCharge,
+    BogoPromotion,
+    BogoPromotionBranch,
+    CustomerCategoryDiscount,
+    Table
+};
 
