@@ -326,7 +326,7 @@ exports.createPayment = async (req, res) => {
                 );
             }
 
-            await syncBalanceDuePayment(orderId, t);
+            // persistOrderPaymentAggregate runs syncBalanceDuePayment first — avoid calling sync twice.
             await persistOrderPaymentAggregate(orderId, t);
 
             const logUnderpay =
@@ -403,7 +403,9 @@ exports.createPayment = async (req, res) => {
                 metadata: { paymentMethod, transactionId, status: paymentRecord.status, settled: settled.settled },
             });
 
-            await queueReceiptPrintJob(orderId, paymentRecord, status, req.user.id);
+            void queueReceiptPrintJob(orderId, paymentRecord, status, req.user.id).catch((err) => {
+                console.error('[PaymentController] queueReceiptPrintJob failed', err);
+            });
 
             if (settled.settled) {
                 return jsonPaymentWithOrderSummary(orderId, paymentRecord, res, 200);
@@ -425,7 +427,6 @@ exports.createPayment = async (req, res) => {
             { transaction: t }
         );
 
-        await syncBalanceDuePayment(orderId, t);
         await persistOrderPaymentAggregate(orderId, t);
 
         await t.commit();
@@ -436,7 +437,9 @@ exports.createPayment = async (req, res) => {
             metadata: { orderId, paymentId: payment.id, amount: payment.amount, status: payment.status },
         });
 
-        await queueReceiptPrintJob(orderId, payment, status, req.user.id);
+        void queueReceiptPrintJob(orderId, payment, status, req.user.id).catch((err) => {
+            console.error('[PaymentController] queueReceiptPrintJob failed', err);
+        });
 
         const userDetail = await UserDetail.findOne({ where: { userId: req.user.id } });
         await logActivity({
@@ -575,7 +578,6 @@ exports.updatePaymentStatus = async (req, res) => {
             await t.rollback();
             return res.status(404).json({ message: 'Order not found for this payment' });
         }
-        await syncBalanceDuePayment(orderId, t);
         await persistOrderPaymentAggregate(orderId, t);
 
         await t.commit();
