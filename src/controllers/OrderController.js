@@ -211,7 +211,7 @@ function buildOrderItemModificationRows(orderItemId, modifications) {
     }
     const rows = [];
     for (const mod of modifications) {
-        const modId = mod.id ?? mod.modificationItemId ?? mod.modificationId;
+        const modId = mod.modificationId ?? mod.modificationItemId ?? mod.id;
         if (modId == null) {
             continue;
         }
@@ -1067,6 +1067,191 @@ exports.updateOrderItemStatus = async (req, res) => {
 
         res.status(404).json({ message: 'Order item not found' });
     } catch (error) {
+        res.status(400).json({ message: error.message });
+    }
+};
+
+
+
+
+exports.createOrderByCustomer = async (req, res) => {
+    const t = await sequelize.transaction();
+    try {
+        const {
+            customerMobile,
+            customerName,
+            totalAmount,
+            orderType,
+            tableNumber,
+            orderDiscount,
+            tax,
+            orderNote,
+            kitchenNote,
+            orderTimer,
+            deliveryAddress,
+            landmark,
+            zipcode,
+            deliveryInstructions,
+            branchId
+        } = req.body;
+
+        const order_products =
+            req.body.order_products ?? req.body.orderProducts ?? req.body.order_lines;
+        const serviceChargeNorm = req.body.serviceCharge ?? req.body.service_charge;
+        const deliveryChargeAmountNorm = req.body.deliveryChargeAmount ?? req.body.delivery_charge_amount;
+        const deliveryChargeIdNorm = req.body.deliveryChargeId ?? req.body.delivery_charge_id;
+        const deliveryChargeSelectedIdNorm =
+            req.body.deliveryChargeSelectedId ?? req.body.delivery_charge_selected_id;
+
+        let { customerId } = req.body;
+
+        const parsedOrderDiscount =
+            orderDiscount !== undefined && orderDiscount !== null
+                ? Math.max(0, parseFloat(orderDiscount) || 0)
+                : 0;
+
+        const effectiveServiceCharge = parseFloat(serviceChargeNorm) || 0;
+        const effectiveDeliveryChargeAmount = parseFloat(deliveryChargeAmountNorm) || 0;
+        const effectiveDeliveryChargeId = deliveryChargeIdNorm || deliveryChargeSelectedIdNorm || null;
+
+        if (customerMobile) {
+            let customer = await Customer.findOne({ where: { mobile: customerMobile }, transaction: t });
+            if (!customer && customerName) {
+                customer = await Customer.create({ mobile: customerMobile, name: customerName }, { transaction: t });
+            }
+            if (customer) {
+                customerId = customer.id;
+            }
+        }
+
+        const preliminaryTotals = computeOrderTotalsFromLines(order_products || [], parsedOrderDiscount, effectiveServiceCharge, effectiveDeliveryChargeAmount);
+
+        const order = await Order.create({
+            customerId,
+            totalAmount: preliminaryTotals.totalAmount,
+            orderType,
+            tableNumber,
+            orderDiscount: parsedOrderDiscount,
+            tax: preliminaryTotals.tax,
+            orderNote,
+            kitchenNote,
+            orderTimer,
+            deliveryAddress,
+            landmark,
+            zipcode,
+            deliveryInstructions,
+            status: 'pending',
+            userId: null,
+            branchId: branchId ?? null,
+            serviceCharge: effectiveServiceCharge,
+            deliveryChargeAmount: effectiveDeliveryChargeAmount,
+            deliveryChargeId: effectiveDeliveryChargeId,
+        }, { transaction: t });
+
+
+        if (order_products && order_products.length > 0) {
+            for (const item of order_products) {
+                const variationOptionId = item.variationId ?? item.variation_id ?? item.variationOptionId ?? null;
+                const orderItem = await OrderItem.create({
+                    orderId: order.id,
+                    productId: item.productId || null,
+                    variationOptionId,
+                    productBundleId: item.productBundleId ?? item.product_bundle_id ?? null,
+                    bogoPromotionId: item.bogoPromotionId ?? item.bogo_promotion_id ?? null,
+                    quantity: item.quantity,
+                    unitPrice: item.unitPrice,
+                    productDiscount: item.productDiscount,
+                    status: 'pending'
+                }, { transaction: t });
+
+                const modRows = buildOrderItemModificationRows(orderItem.id, item.modifications);
+                if (modRows.length > 0) {
+                    await OrderItemModification.bulkCreate(modRows, { transaction: t });
+                }
+            }
+        }
+
+        const savedItems = await OrderItem.findAll({
+            where: { orderId: order.id },
+            include: [{ model: OrderItemModification, as: 'modifications' }],
+            transaction: t
+        });
+        const finalTotals = computeOrderTotalsFromLines(savedItems, parsedOrderDiscount, effectiveServiceCharge, effectiveDeliveryChargeAmount);
+        logTotalsMismatchIfAny(order.id, tax, totalAmount, finalTotals, 'createOrderByCustomer');
+        await order.update(
+            {
+                tax: finalTotals.tax,
+                totalAmount: finalTotals.totalAmount,
+                orderDiscount: parsedOrderDiscount,
+                serviceCharge: effectiveServiceCharge,
+                deliveryChargeAmount: effectiveDeliveryChargeAmount
+            },
+            { transaction: t }
+        );
+
+        await syncBalanceDuePayment(order.id, t);
+        await persistOrderPaymentAggregate(order.id, t);
+
+        await t.commit();
+
+        const fullOrder = await Order.findByPk(order.id, {
+            include: [customerOrderInclude, paymentsOrderInclude, orderItemsFullInclude],
+        });
+
+        // Pusher trigger without activity log (no staff user)
+        try {
+            await pusher.trigger('orders-channel', 'new-order', {
+                message: 'New QR order received',
+                orderId: order.id,
+            });
+        } catch (error) {
+            console.error('Pusher trigger error:', error);
+        }
+
+        // Queue Kitchen Print Job
+        try {
+            const branch = await Branch.findByPk(branchId || 1);
+            const printOrder = await Order.findByPk(order.id, {
+                include: [
+                    {
+                        model: OrderItem,
+                        as: 'items',
+                        include: [
+                            { model: Product, as: 'product' },
+                            {
+                                model: VariationOption,
+                                as: 'variationOption',
+                                include: [{ model: Variation, as: 'Variation' }]
+                            },
+                            {
+                                model: OrderItemModification,
+                                as: 'modifications',
+                                include: [{ model: ModificationItem, as: 'modification' }]
+                            }
+                        ]
+                    }
+                ]
+            });
+
+            const data = templateService.generateKitchenStructuredData(printOrder, branch);
+            const content = JSON.stringify(data);
+            await PrintJob.create({
+                order_id: order.id,
+                printer_name: 'XP-80',
+                content,
+                type: 'kitchen',
+                status: 'pending'
+            });
+        } catch (printError) {
+            console.error('[OrderController] Failed to queue kitchen print job for customer order', order.id, ':', printError);
+        }
+
+        const createdPayload = attachDerivedPaymentFieldsToOrderJson(fullOrder.toJSON());
+        await enrichOrderJsonItemsForDetail(createdPayload);
+        res.status(201).json(createdPayload);
+    } catch (error) {
+        if (t && !t.finished) await t.rollback();
+        console.error('Create Customer Order Error:', error);
         res.status(400).json({ message: error.message });
     }
 };
