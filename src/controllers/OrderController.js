@@ -559,14 +559,14 @@ exports.createOrder = async (req, res) => {
             }
         });
 
-        try {
-            await pusher.trigger('orders-channel', 'new-order', {
-                message: 'New order created',
-                orderId: order.id,
-            });
-        } catch (error) {
-            console.error('Pusher trigger error:', error);
-        }
+        // try {
+        //     await pusher.trigger('orders-channel', 'new-order', {
+        //         message: 'New order created',
+        //         orderId: order.id,
+        //     });
+        // } catch (error) {
+        //     console.error('Pusher trigger error:', error);
+        // }
 
         // Queue Kitchen Print Job
         try {
