@@ -544,76 +544,87 @@ exports.createOrder = async (req, res) => {
             include: [customerOrderInclude, paymentsOrderInclude, tableOrderInclude, orderItemsFullInclude],
         });
 
-        await logActivity({
-            userId: req.user.id,
-            branchId: userDetail?.branchId || 1,
-            activityType: 'Order Placed',
-            description: `New order ${order.id} placed for ${orderType} at ${selectedTable?.table_name || tableNumber || 'N/A'}`,
-            orderId: order.id,
-            amount: finalTotals.totalAmount,
-            metadata: {
-                orderType,
-                tableId: effectiveTableId,
-                tableNumber: selectedTable?.table_name || tableNumber,
-                totalAmount: finalTotals.totalAmount
-            }
-        });
-
-        try {
-            await pusher.trigger('orders-channel', 'new-order', {
-                message: 'New order created',
-                orderId: order.id,
-            });
-        } catch (error) {
-            console.error('Pusher trigger error:', error);
-        }
-
-        // Queue Kitchen Print Job
-        try {
-            const userDetail = await UserDetail.findOne({ where: { userId: req.user.id } });
-            const branchId = userDetail?.branchId || 1;
-            const branch = await Branch.findByPk(branchId);
-
-            // Fetch full order with all necessary includes for the template
-            const printOrder = await Order.findByPk(order.id, {
-                include: [
-                    tableOrderInclude,
-                    {
-                        model: OrderItem,
-                        as: 'items',
-                        include: [
-                            { model: Product, as: 'product' },
-                            {
-                                model: VariationOption,
-                                as: 'variationOption',
-                                include: [{ model: Variation, as: 'Variation' }]
-                            },
-                            {
-                                model: OrderItemModification,
-                                as: 'modifications',
-                                include: [{ model: ModificationItem, as: 'modification' }]
-                            }
-                        ]
-                    }
-                ]
-            });
-
-            const data = templateService.generateKitchenStructuredData(printOrder, branch);
-            const content = JSON.stringify(data);
-            await PrintJob.create({
-                order_id: order.id,
-                printer_name: 'XP-80',
-                content,
-                type: 'kitchen',
-                status: 'pending'
-            });
-        } catch (printError) {
-            console.error('[OrderController] Failed to queue kitchen print job for order', order.id, ':', printError);
-        }
-
         const createdPayload = applyOrderTableDisplay(attachDerivedPaymentFieldsToOrderJson(fullOrder.toJSON()));
         await enrichOrderJsonItemsForDetail(createdPayload);
         res.status(201).json(createdPayload);
+
+        // Side effects that must not block the client (Pusher, print prep, activity log can each take seconds).
+        const branchIdForSideEffects = userDetail?.branchId || 1;
+        const tableLabelForLog = selectedTable?.table_name || tableNumber || 'N/A';
+        setImmediate(() => {
+            void (async () => {
+                try {
+                    await logActivity({
+                        userId: req.user.id,
+                        branchId: branchIdForSideEffects,
+                        activityType: 'Order Placed',
+                        description: `New order ${order.id} placed for ${orderType} at ${tableLabelForLog}`,
+                        orderId: order.id,
+                        amount: finalTotals.totalAmount,
+                        metadata: {
+                            orderType,
+                            tableId: effectiveTableId,
+                            tableNumber: selectedTable?.table_name || tableNumber,
+                            totalAmount: finalTotals.totalAmount,
+                        },
+                    });
+                } catch (err) {
+                    console.error('[OrderController] logActivity after createOrder:', err);
+                }
+
+                try {
+                    await pusher.trigger('orders-channel', 'new-order', {
+                        message: 'New order created',
+                        orderId: order.id,
+                    });
+                } catch (error) {
+                    console.error('Pusher trigger error:', error);
+                }
+
+                try {
+                    const branch = await Branch.findByPk(branchIdForSideEffects);
+                    const printOrder = await Order.findByPk(order.id, {
+                        include: [
+                            tableOrderInclude,
+                            {
+                                model: OrderItem,
+                                as: 'items',
+                                include: [
+                                    { model: Product, as: 'product' },
+                                    {
+                                        model: VariationOption,
+                                        as: 'variationOption',
+                                        include: [{ model: Variation, as: 'Variation' }],
+                                    },
+                                    {
+                                        model: OrderItemModification,
+                                        as: 'modifications',
+                                        include: [{ model: ModificationItem, as: 'modification' }],
+                                    },
+                                ],
+                            },
+                        ],
+                    });
+
+                    const data = templateService.generateKitchenStructuredData(printOrder, branch);
+                    const content = JSON.stringify(data);
+                    await PrintJob.create({
+                        order_id: order.id,
+                        printer_name: 'XP-80',
+                        content,
+                        type: 'kitchen',
+                        status: 'pending',
+                    });
+                } catch (printError) {
+                    console.error(
+                        '[OrderController] Failed to queue kitchen print job for order',
+                        order.id,
+                        ':',
+                        printError
+                    );
+                }
+            })();
+        });
     } catch (error) {
         if (t && !t.finished) await t.rollback();
         console.error('Create Order Error:', error);
