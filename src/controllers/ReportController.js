@@ -9,6 +9,7 @@ const UserDetail = require('../models/UserDetail');
 const Product = require('../models/Product');
 const Variation = require('../models/Variation');
 const VariationOption = require('../models/VariationOption');
+const VariationPrice = require('../models/VariationPrice');
 const Category = require('../models/Category');
 const Branch = require('../models/Branch');
 const Customer = require('../models/Customer');
@@ -677,3 +678,94 @@ exports.getItemizedSalesList = async (req, res) => {
         res.status(500).json({ message: error.message });
     }
 };
+
+/**
+ * 6. Products Report
+ */
+exports.getProductsReport = async (req, res) => {
+    try {
+        const { export: exportType } = req.query;
+
+        const products = await Product.findAll({
+            include: [
+                { model: Category, as: 'category' },
+                {
+                    model: Variation,
+                    as: 'variations',
+                    include: [
+                        {
+                            model: VariationOption,
+                            as: 'options',
+                            include: [
+                                {
+                                    model: VariationPrice,
+                                    as: 'prices'
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ],
+            order: [['name', 'ASC']]
+        });
+
+        const reportData = [];
+
+        products.forEach(product => {
+            if (product.variations && product.variations.length > 0) {
+                product.variations.forEach(variation => {
+                    if (variation.options && variation.options.length > 0) {
+                        variation.options.forEach(option => {
+                            let priceStr = "N/A";
+                            if (option.prices && option.prices.length > 0) {
+                                priceStr = parseFloat(option.prices[0].price).toFixed(2);
+                            }
+                            
+                            reportData.push({
+                                "Product Name": `${product.name} (${variation.name} - ${option.name})`,
+                                "SKU": product.sku || product.code || "-",
+                                "Price": priceStr
+                            });
+                        });
+                    }
+                });
+            } else {
+                reportData.push({
+                    "Product Name": product.name,
+                    "SKU": product.sku || product.code || "-",
+                    "Price": "N/A"
+                });
+            }
+        });
+
+        if (reportData.length === 0) {
+            return res.status(404).json({ message: 'No products available for the report.' });
+        }
+
+        const summary = {
+            "Total Products": reportData.length
+        };
+
+        if (exportType === 'excel') {
+            return exportToExcel(res, "Products_Report", reportData, summary);
+        } else if (exportType === 'pdf') {
+            const headers = ["Product Name", "SKU", "Price"];
+            return exportToPDF(res, "Products Report", { dateRange: `N/A` }, headers, reportData, summary);
+        }
+
+        res.json({
+            header: {
+                reportName: 'Products Report',
+                dateRange: `N/A`,
+                generatedOn: new Date()
+            },
+            data: reportData,
+            summary: summary
+        });
+
+    } catch (error) {
+        console.error('Products Report Error:', error);
+        res.status(500).json({ message: error.message });
+    }
+};
+
