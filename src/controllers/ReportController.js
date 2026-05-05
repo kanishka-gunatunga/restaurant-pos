@@ -722,7 +722,7 @@ exports.getProductsReport = async (req, res) => {
                             }
                             
                             reportData.push({
-                                "Product Name": `${product.name} (${variation.name} - ${option.name})`,
+                                "Product Name": `${product.name} - ${option.name}`,
                                 "SKU": product.sku || product.code || "-",
                                 "Price": priceStr
                             });
