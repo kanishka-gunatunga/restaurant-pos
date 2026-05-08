@@ -23,7 +23,7 @@ async function testReturns() {
     try {
         // 1. Search for an order
         console.log('Searching for order...');
-        const orderResponse = await axios.get(`${API_URL}/returns/search-order/ONUM00001`, {
+        const orderResponse = await axios.get(`${API_URL}/returns/search-order/1`, {
             headers: { Authorization: `Bearer ${token}` }
         });
         const order = orderResponse.data;

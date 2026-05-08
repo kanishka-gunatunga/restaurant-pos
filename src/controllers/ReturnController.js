@@ -12,17 +12,20 @@ const { Op } = require('sequelize');
 const templateService = require('../services/templateService');
 const { logActivity } = require('./ActivityLogController');
 
-exports.searchOrderByNo = async (req, res) => {
+exports.searchOrderById = async (req, res) => {
     try {
-        const { orderNo } = req.params;
-        const order = await Order.findOne({
-            where: { orderNo },
+        const { id } = req.params;
+        const order = await Order.findByPk(id, {
             include: [
                 {
                     model: OrderItem,
                     as: 'items',
                     include: [
-                        { model: Product, as: 'product' },
+                        { 
+                            model: Product, 
+                            as: 'product',
+                            attributes: ['id', 'name', 'isReturnable']
+                        },
                         { model: VariationOption, as: 'variationOption' }
                     ]
                 },
