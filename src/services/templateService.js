@@ -393,3 +393,36 @@ exports.generateSalesReportStructuredData = (reportData, summary, headerInfo, br
         }))
     };
 };
+
+/**
+ * Generate structured JSON for Return receipts (for ESC/POS)
+ */
+exports.generateReturnStructuredData = (returnObj, branch) => {
+    return {
+        type: 'return_receipt',
+        returnId: returnObj.id.toString().padStart(8, '0'),
+        orderNo: returnObj.orderNo,
+        dateTime: formatDateTime(returnObj.createdAt),
+        branch: {
+            name: 'CATERING BY AHAS GAWWA',
+            location: branch?.location || 'No. 226, Arakawila, Handapangoda',
+            mobile: branch?.mobile || '0112175275'
+        },
+        items: returnObj.items.map(item => {
+            const name = item.product?.name || 'Item';
+            const variation = item.variationOption?.name || '';
+            return {
+                name: name,
+                variation: variation,
+                price: parseFloat(item.unitPrice).toFixed(2),
+                qty: parseFloat(item.quantity).toFixed(2),
+                amount: (item.quantity * item.unitPrice).toFixed(2)
+            };
+        }),
+        totals: {
+            total: parseFloat(returnObj.totalAmount).toFixed(2)
+        },
+        refundMethod: capitalize(returnObj.refundMethod.replace('_', ' ')),
+        qrCode: returnObj.qrCode
+    };
+};

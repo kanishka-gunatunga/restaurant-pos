@@ -39,6 +39,8 @@ const BogoPromotion = require('./BogoPromotion');
 const BogoPromotionBranch = require('./BogoPromotionBranch');
 const CustomerCategoryDiscount = require('./CustomerCategoryDiscount');
 const Table = require('./Table');
+const Return = require('./Return');
+const ReturnItem = require('./ReturnItem');
 
 // User <-> UserDetail: One-to-One
 User.hasOne(UserDetail, { foreignKey: 'userId', as: 'UserDetail' });
@@ -294,6 +296,21 @@ VariationOption.hasMany(BogoPromotion, { foreignKey: 'buyVariationOptionId' });
 BogoPromotion.belongsTo(VariationOption, { foreignKey: 'getVariationOptionId', as: 'getVariationOption' });
 VariationOption.hasMany(BogoPromotion, { foreignKey: 'getVariationOptionId' });
 
+VariationOption.hasMany(BogoPromotion, { foreignKey: 'getVariationOptionId' });
+
+// Return Associations
+Order.hasMany(Return, { foreignKey: 'orderId', as: 'returns' });
+Return.belongsTo(Order, { foreignKey: 'orderId', as: 'order' });
+
+Return.hasMany(ReturnItem, { foreignKey: 'returnId', as: 'items', onDelete: 'CASCADE', hooks: true });
+ReturnItem.belongsTo(Return, { foreignKey: 'returnId', as: 'return' });
+
+ReturnItem.belongsTo(Product, { foreignKey: 'productId', as: 'product' });
+ReturnItem.belongsTo(VariationOption, { foreignKey: 'variationOptionId', as: 'variationOption' });
+
+Return.belongsTo(User, { foreignKey: 'userId', as: 'user' });
+Return.belongsTo(Branch, { foreignKey: 'branchId', as: 'branch' });
+
 module.exports = {
     User,
     UserDetail,
@@ -335,6 +352,8 @@ module.exports = {
     BogoPromotion,
     BogoPromotionBranch,
     CustomerCategoryDiscount,
-    Table
+    Table,
+    Return,
+    ReturnItem
 };
 

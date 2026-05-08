@@ -497,7 +497,7 @@ exports.createProduct = async (req, res) => {
 
         let {
             name, code, shortDescription, description, sku, barcode, categoryId, subCategoryId,
-            variations, modifications, branches
+            variations, modifications, branches, isReturnable
         } = productData;
 
         // Parse JSON strings if they come from multipart/form-data
@@ -521,7 +521,8 @@ exports.createProduct = async (req, res) => {
 
         // 1. Create base product
         const product = await Product.create({
-            name, code, image: imageUrl, shortDescription, description, sku, barcode, categoryId, subCategoryId, status: 'active'
+            name, code, image: imageUrl, shortDescription, description, sku, barcode, categoryId, subCategoryId, status: 'active',
+            isReturnable: isReturnable === 'true' || isReturnable === true
         }, { transaction: t });
 
         // 1.5. Create Product Branches
@@ -641,7 +642,7 @@ exports.updateProduct = async (req, res) => {
 
         let {
             name, code, shortDescription, description, sku, barcode, categoryId, subCategoryId,
-            variations, modifications, branches
+            variations, modifications, branches, isReturnable
         } = productData;
 
         // Parse JSON strings if they come from multipart/form-data
@@ -689,7 +690,8 @@ exports.updateProduct = async (req, res) => {
 
         // 1. Update base product
         await Product.update({
-            name, code, image: imageUrl, shortDescription, description, sku, barcode, categoryId, subCategoryId
+            name, code, image: imageUrl, shortDescription, description, sku, barcode, categoryId, subCategoryId,
+            isReturnable: isReturnable === 'true' || isReturnable === true
         }, { where: { id }, transaction: t });
 
         // 1.5. Sync Branches

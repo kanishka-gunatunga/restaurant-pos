@@ -52,6 +52,11 @@ const Product = sequelize.define('Product', {
         type: DataTypes.ENUM('active', 'inactive'),
         defaultValue: 'active',
     },
+    isReturnable: {
+        type: DataTypes.BOOLEAN,
+        defaultValue: false,
+        field: 'is_returnable'
+    },
 }, {
     tableName: 'products',
 });
