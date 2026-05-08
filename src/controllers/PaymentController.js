@@ -590,7 +590,6 @@ exports.updatePaymentStatus = async (req, res) => {
             await t.rollback();
             return res.status(404).json({ message: 'Order not found for this payment' });
         }
-        await syncBalanceDuePayment(orderId, t);
         await persistOrderPaymentAggregate(orderId, t);
 
         await t.commit();
