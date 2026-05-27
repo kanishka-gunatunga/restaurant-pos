@@ -331,7 +331,7 @@ exports.getOrdersReport = async (req, res) => {
             totalOrderValue += parseFloat(order.totalAmount);
 
             return {
-                "Order ID":order.id,
+                "Order ID": order.id,
                 "Order No": order.orderNo,
                 "Order Date": new Date(order.createdAt).toLocaleDateString(),
                 "Customer Name": order.customer?.name || 'Guest',
@@ -626,7 +626,7 @@ exports.getItemizedSalesList = async (req, res) => {
 
                 const itemSubtotal = parseFloat(item.unitPrice) * item.quantity;
                 const itemDiscount = parseFloat(item.productDiscount || 0) * item.quantity;
-                
+
                 const totalAmount = itemSubtotal - itemDiscount;
 
                 reportData.push({
@@ -720,7 +720,7 @@ exports.getProductsReport = async (req, res) => {
                             if (option.prices && option.prices.length > 0) {
                                 priceStr = parseFloat(option.prices[0].price).toFixed(2);
                             }
-                            
+
                             reportData.push({
                                 "Product Name": `${product.name} - ${option.name}`,
                                 "SKU": product.sku || product.code || "-",
@@ -737,6 +737,14 @@ exports.getProductsReport = async (req, res) => {
                 });
             }
         });
+// Sort the reportData by SKU to ensure SKU order
+reportData.sort((a, b) => {
+  const skuA = a["SKU"] || "";
+  const skuB = b["SKU"] || "";
+  if (skuA < skuB) return -1;
+  if (skuA > skuB) return 1;
+  return 0;
+});
 
         if (reportData.length === 0) {
             return res.status(404).json({ message: 'No products available for the report.' });
