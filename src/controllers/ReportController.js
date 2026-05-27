@@ -215,11 +215,18 @@ exports.getSalesReport = async (req, res) => {
 
         // Filter and round values
         const reportData = Object.values(itemSummaries)
-            .filter(item => item["Qty Sold"] > 0)
-            .map(item => ({
-                ...item,
-                "Total Amount": item["Total Amount"].toFixed(2)
-            }));
+    .filter(item => item["Qty Sold"] > 0)
+    .map(item => ({
+        ...item,
+        "Total Amount": item["Total Amount"].toFixed(2)
+    }))
+    .sort((a, b) => {
+        const skuA = a["Product No"] || '';
+        const skuB = b["Product No"] || '';
+        if (skuA < skuB) return -1;
+        if (skuA > skuB) return 1;
+        return 0;
+    });
 
         const summary = {
             "Total Sales (Before Discount)": totalGrossSalesAmount.toFixed(2),
