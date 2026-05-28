@@ -77,19 +77,29 @@ const exportToPDF = async (res, title, headerInfo, tableHeaders, tableRows, summ
     doc.text(`Generated On: ${new Date().toLocaleString()}`);
     doc.moveDown();
 
-    const table = {
-        title: "Report Table",
-        headers: tableHeaders.map(h => ({ label: h, property: h.toLowerCase().replace(/\s+/g, ''), width: 50 })),
-        rows: tableRows.map(row => Object.values(row).map(v => String(v)))
-    };
-
-    // Since headers might be complex, we customize column width and labels
-    const mappedHeaders = tableHeaders.map(h => h); // Placeholder
+    const mappedHeaders = tableHeaders.map(h => {
+        if (typeof h === 'string') {
+            const lower = h.toLowerCase();
+            const isRightAligned = lower.includes('price') || 
+                                   lower.includes('amount') || 
+                                   lower.includes('subtotal') || 
+                                   lower.includes('discount') || 
+                                   lower.includes('tax') || 
+                                   lower.includes('total sales');
+            return {
+                label: h,
+                property: h.toLowerCase().replace(/\s+/g, ''),
+                align: isRightAligned ? 'right' : 'left',
+                headerAlign: isRightAligned ? 'right' : 'left'
+            };
+        }
+        return h;
+    });
 
     await doc.table({
         title: title,
         subtitle: `Date Range: ${headerInfo.dateRange}`,
-        headers: tableHeaders,
+        headers: mappedHeaders,
         rows: tableRows.map(r => Object.values(r).map(v => String(v))),
     }, {
         prepareHeader: () => doc.font("Helvetica-Bold").fontSize(8),
