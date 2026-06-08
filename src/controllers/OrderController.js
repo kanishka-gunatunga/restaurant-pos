@@ -765,6 +765,24 @@ exports.updateOrder = async (req, res) => {
             return res.status(404).json({ message: 'Order not found' });
         }
 
+        const originalItems = await OrderItem.findAll({
+            where: { orderId: id },
+            include: [
+                { model: Product, as: 'product' },
+                {
+                    model: VariationOption,
+                    as: 'variationOption',
+                    include: [{ model: Variation, as: 'Variation' }]
+                },
+                {
+                    model: OrderItemModification,
+                    as: 'modifications',
+                    include: [{ model: ModificationItem, as: 'modification' }]
+                }
+            ],
+            transaction: t
+        });
+
         const editorUserDetail = await UserDetail.findOne({
             where: { userId: req.user.id },
             transaction: t,
@@ -892,8 +910,84 @@ exports.updateOrder = async (req, res) => {
             include: [customerOrderInclude, paymentsOrderInclude, orderItemsFullInclude],
         });
 
+        const branchIdForSideFx = editorUserDetail?.branchId || order.branchId || 1;
+
+        const deltaItems = [];
+        const processedKeys = new Set();
+
+        const getItemKey = (item) => {
+            const modsKey = (item.modifications || [])
+                .map(m => m.modificationId ?? m.id)
+                .filter(id => id != null)
+                .sort()
+                .join(',');
+            return `${item.productId}_${item.variationOptionId || ''}_${modsKey}`;
+        };
+
+        for (const item of fullOrder.items) {
+            const key = getItemKey(item);
+            processedKeys.add(key);
+
+            const originalQty = originalItems
+                .filter(orig => getItemKey(orig) === key)
+                .reduce((sum, orig) => sum + parseFloat(orig.quantity), 0);
+
+            const deltaQty = parseFloat(item.quantity) - originalQty;
+            if (deltaQty > 0.001) {
+                const clonedItem = item.toJSON ? item.toJSON() : JSON.parse(JSON.stringify(item));
+                clonedItem.quantity = deltaQty;
+                deltaItems.push(clonedItem);
+            }
+        }
+
+        for (const orig of originalItems) {
+            const key = getItemKey(orig);
+            if (!processedKeys.has(key)) {
+                processedKeys.add(key);
+                const deltaQty = 0 - parseFloat(orig.quantity);
+                if (deltaQty > 0.001) {
+                    const clonedItem = orig.toJSON ? orig.toJSON() : JSON.parse(JSON.stringify(orig));
+                    clonedItem.quantity = deltaQty;
+                    deltaItems.push(clonedItem);
+                }
+            }
+        }
+
+        const queueKitchenPrintJob = (async () => {
+            if (deltaItems.length === 0) {
+                console.log(`[OrderController] No item changes detected for order ${order.id}. Skipping KOT print.`);
+                return;
+            }
+            try {
+                const branch = await Branch.findByPk(branchIdForSideFx);
+                const deltaOrder = {
+                    id: fullOrder.id,
+                    orderNo: fullOrder.orderNo,
+                    createdAt: fullOrder.createdAt,
+                    orderType: fullOrder.orderType,
+                    tableNumber: fullOrder.tableNumber,
+                    kitchenNote: fullOrder.kitchenNote,
+                    items: deltaItems
+                };
+                const data = templateService.generateKitchenStructuredData(deltaOrder, branch);
+                const content = JSON.stringify(data);
+                await PrintJob.create({
+                    order_id: order.id,
+                    printer_name: 'XP-80',
+                    content,
+                    type: 'kitchen',
+                    status: 'pending'
+                });
+            } catch (printError) {
+                console.error('[OrderController] Failed to queue kitchen print job for order', order.id, ':', printError);
+            }
+        })();
+
         const payload = attachDerivedPaymentFieldsToOrderJson(fullOrder.toJSON());
-        await enrichOrderJsonItemsForDetail(payload);
+        await Promise.all([
+            enrichOrderJsonItemsForDetail(payload),
+            queueKitchenPrintJob
+        ]);
         payload.payment_status = payload.paymentStatus;
         const clientPayStatus = bodyPaymentStatus !== undefined ? bodyPaymentStatus : bodyPaymentStatusSnake;
         logIgnoredClientPaymentStatus(id, clientPayStatus, payload.paymentStatus);
