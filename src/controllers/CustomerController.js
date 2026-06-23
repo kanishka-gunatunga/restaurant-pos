@@ -1,6 +1,7 @@
 const Customer = require('../models/Customer');
 const Order = require('../models/Order');
 const MobitelSmsService = require('../services/MobitelSmsService');
+const NewMobitelSmsService = require('../services/NewMobitelSmsService');
 const { Op, fn, col } = require('sequelize');
 const sequelize = require('../config/database');
 const { logActivity } = require('./ActivityLogController');
@@ -9,7 +10,7 @@ const UserDetail = require('../models/UserDetail');
 exports.findOrCreate = async (req, res) => {
     try {
         let { mobile, name, address, email } = req.body;
-        
+
         if (!name || name.trim() === '') {
             name = 'guest';
         }
@@ -25,7 +26,7 @@ exports.findOrCreate = async (req, res) => {
                 return res.json(customer);
             }
         }
-        
+
         customer = await Customer.create({ mobile, name, address, email, status: 'active' });
 
         const userDetail = await UserDetail.findOne({ where: { userId: req.user.id } });
@@ -47,7 +48,7 @@ exports.findOrCreate = async (req, res) => {
 exports.createCustomer = async (req, res) => {
     try {
         let { mobile, name, address, email, promotions_enabled } = req.body;
-        
+
         if (!name || name.trim() === '') {
             name = 'guest';
         }
@@ -62,7 +63,7 @@ exports.createCustomer = async (req, res) => {
                 return res.status(400).json({ message: 'Customer with this mobile already exists' });
             }
         }
-        
+
         const customer = await Customer.create({
             mobile,
             name,
@@ -207,12 +208,12 @@ exports.updateCustomer = async (req, res) => {
         if (!customer) {
             return res.status(404).json({ message: 'Customer not found' });
         }
-        
+
         if (name !== undefined) {
-             customer.name = (!name || name.trim() === '') ? 'guest' : name;
+            customer.name = (!name || name.trim() === '') ? 'guest' : name;
         }
         if (mobile !== undefined) {
-             customer.mobile = (mobile && mobile.trim() !== '') ? mobile : null;
+            customer.mobile = (mobile && mobile.trim() !== '') ? mobile : null;
         }
         if (address !== undefined) customer.address = address;
         if (email !== undefined) customer.email = email;
@@ -264,7 +265,7 @@ exports.sendBulkPromotions = async (req, res) => {
             return res.status(400).json({ message: 'Message content is required' });
         }
         const customers = await Customer.findAll({
-            where: { 
+            where: {
                 promotions_enabled: true,
                 mobile: { [Op.not]: null }
             }
@@ -281,7 +282,7 @@ exports.sendBulkPromotions = async (req, res) => {
             }
             return num;
         });
-        const smsResponse = await MobitelSmsService.sendInstantSms(numbers, message);
+        const smsResponse = await NewMobitelSmsService.sendPromotionMessage(numbers, message);
         res.json({
             message: `Promotions sent to ${numbers.length} customers`,
             mobitel_response: smsResponse
