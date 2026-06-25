@@ -11,9 +11,21 @@ const ProductBundle = sequelize.define('ProductBundle', {
         type: DataTypes.STRING,
         allowNull: false,
     },
+    description: {
+        type: DataTypes.TEXT,
+        allowNull: true,
+    },
+    expire_date: {
+        type: DataTypes.DATEONLY,
+        allowNull: true,
+    },
     status: {
         type: DataTypes.ENUM('active', 'inactive'),
         defaultValue: 'active',
+    },
+    image: {
+        type: DataTypes.STRING,
+        allowNull: true,
     },
 }, {
     tableName: 'product_bundles',

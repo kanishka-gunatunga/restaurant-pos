@@ -15,6 +15,10 @@ const VariationOption = sequelize.define('VariationOption', {
         type: DataTypes.STRING,
         allowNull: false,
     },
+    barcode: {
+        type: DataTypes.STRING,
+        unique: true,
+    },
     status: {
         type: DataTypes.ENUM('active', 'inactive'),
         defaultValue: 'active',

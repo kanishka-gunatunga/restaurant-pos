@@ -1,25 +1,62 @@
+const { Op } = require('sequelize');
 const ProductBundle = require('../models/ProductBundle');
+
 const ProductBundleBranch = require('../models/ProductBundleBranch');
 const ProductBundleItem = require('../models/ProductBundleItem');
 const Branch = require('../models/Branch');
 const Product = require('../models/Product');
+const VariationOption = require('../models/VariationOption');
+const VariationPrice = require('../models/VariationPrice');
+const ModificationItem = require('../models/ModificationItem');
+const ProductModificationItemPrice = require('../models/ProductModificationItemPrice');
 const sequelize = require('../config/database');
 const { logActivity } = require('./ActivityLogController');
 const UserDetail = require('../models/UserDetail');
+const { put } = require('@vercel/blob');
+
 
 exports.createBundle = async (req, res) => {
     const transaction = await sequelize.transaction();
     try {
-        const { name, branches, items } = req.body;
+        let bundleData = req.body;
+        if (typeof req.body.data === 'string') {
+            bundleData = JSON.parse(req.body.data);
+        }
 
-        const bundle = await ProductBundle.create({ name }, { transaction });
+        let { name, description, expire_date, branches, items } = bundleData;
+        let imageUrl = null;
+
+        if (req.file) {
+            const blob = await put(`product_bundles/${Date.now()}-${req.file.originalname}`, req.file.buffer, {
+                access: 'public',
+                token: process.env.BLOB_READ_WRITE_TOKEN
+            });
+            imageUrl = blob.url;
+        }
+
+        // Parse JSON strings if they come from multipart/form-data
+        if (typeof branches === 'string') branches = JSON.parse(branches);
+        if (typeof items === 'string') items = JSON.parse(items);
+
+        const bundle = await ProductBundle.create({
+            name,
+            description,
+            expire_date,
+            image: imageUrl
+        }, { transaction });
 
         if (branches && branches.length > 0) {
-            const branchRecords = branches.map(b => ({
-                productBundleId: bundle.id,
-                branchId: b.branchId,
-                price: b.price
-            }));
+            const branchRecords = branches.map(b => {
+                const branchId = b.branchId || b;
+                const isObject = typeof b === 'object' && b !== null;
+                return {
+                    productBundleId: bundle.id,
+                    branchId: branchId,
+                    original_price: isObject ? b.original_price : null,
+                    price: isObject ? b.price : null,
+                    customer_saves: isObject ? b.customer_saves : null
+                };
+            });
             await ProductBundleBranch.bulkCreate(branchRecords, { transaction });
         }
 
@@ -27,6 +64,8 @@ exports.createBundle = async (req, res) => {
             const itemRecords = items.map(i => ({
                 productBundleId: bundle.id,
                 productId: i.productId,
+                variationOptionId: i.variationOptionId,
+                modificationItemId: i.modificationItemId,
                 quantity: i.quantity || 1
             }));
             await ProductBundleItem.bulkCreate(itemRecords, { transaction });
@@ -46,20 +85,30 @@ exports.createBundle = async (req, res) => {
         const createdBundle = await ProductBundle.findByPk(bundle.id, {
             include: [
                 { model: ProductBundleBranch, as: 'branches', include: [{ model: Branch, as: 'branch' }] },
-                { model: ProductBundleItem, as: 'items', include: [{ model: Product, as: 'product' }] }
+                { 
+                    model: ProductBundleItem, 
+                    as: 'items', 
+                    include: [
+                        { model: Product, as: 'product' },
+                        { model: VariationOption, as: 'variationOption' },
+                        { model: ModificationItem, as: 'modificationItem' }
+                    ] 
+                }
             ]
         });
 
         res.status(201).json(createdBundle);
     } catch (error) {
-        await transaction.rollback();
+        if (transaction && !transaction.finished) {
+            await transaction.rollback();
+        }
         res.status(400).json({ message: error.message });
     }
 };
 
 exports.getAllBundles = async (req, res) => {
     try {
-        const { status } = req.query;
+        const { status, excludeExpired } = req.query;
         let where = { status: 'active' };
 
         if (status === 'inactive') {
@@ -68,11 +117,29 @@ exports.getAllBundles = async (req, res) => {
             where = {};
         }
 
+        if (excludeExpired === 'true') {
+            const today = new Date().toISOString().split('T')[0];
+            where.expire_date = {
+                [Op.or]: [
+                    { [Op.gte]: today },
+                    { [Op.is]: null }
+                ]
+            };
+        }
+
         const bundles = await ProductBundle.findAll({
             where,
             include: [
                 { model: ProductBundleBranch, as: 'branches', include: [{ model: Branch, as: 'branch' }] },
-                { model: ProductBundleItem, as: 'items', include: [{ model: Product, as: 'product' }] }
+                { 
+                    model: ProductBundleItem, 
+                    as: 'items', 
+                    include: [
+                        { model: Product, as: 'product' },
+                        { model: VariationOption, as: 'variationOption' },
+                        { model: ModificationItem, as: 'modificationItem' }
+                    ] 
+                }
             ],
             order: [['name', 'ASC']]
         });
@@ -88,7 +155,15 @@ exports.getBundleById = async (req, res) => {
         const bundle = await ProductBundle.findByPk(id, {
             include: [
                 { model: ProductBundleBranch, as: 'branches', include: [{ model: Branch, as: 'branch' }] },
-                { model: ProductBundleItem, as: 'items', include: [{ model: Product, as: 'product' }] }
+                { 
+                    model: ProductBundleItem, 
+                    as: 'items', 
+                    include: [
+                        { model: Product, as: 'product' },
+                        { model: VariationOption, as: 'variationOption' },
+                        { model: ModificationItem, as: 'modificationItem' }
+                    ] 
+                }
             ]
         });
         if (!bundle) {
@@ -104,7 +179,25 @@ exports.updateBundle = async (req, res) => {
     const transaction = await sequelize.transaction();
     try {
         const { id } = req.params;
-        const { name, branches, items } = req.body;
+        let bundleData = req.body;
+        if (typeof req.body.data === 'string') {
+            bundleData = JSON.parse(req.body.data);
+        }
+
+        let { name, description, expire_date, branches, items, image } = bundleData;
+        let imageUrl = image;
+
+        if (req.file) {
+            const blob = await put(`product_bundles/${Date.now()}-${req.file.originalname}`, req.file.buffer, {
+                access: 'public',
+                token: process.env.BLOB_READ_WRITE_TOKEN
+            });
+            imageUrl = blob.url;
+        }
+
+        // Parse JSON strings if they come from multipart/form-data
+        if (typeof branches === 'string') branches = JSON.parse(branches);
+        if (typeof items === 'string') items = JSON.parse(items);
 
         const bundle = await ProductBundle.findByPk(id);
         if (!bundle) {
@@ -112,16 +205,27 @@ exports.updateBundle = async (req, res) => {
             return res.status(404).json({ message: 'Product Bundle not found' });
         }
 
-        await bundle.update({ name }, { transaction });
+        await bundle.update({
+            name,
+            description,
+            expire_date,
+            image: imageUrl
+        }, { transaction });
 
         if (branches !== undefined) {
             await ProductBundleBranch.destroy({ where: { productBundleId: id }, transaction });
             if (branches && branches.length > 0) {
-                const branchRecords = branches.map(b => ({
-                    productBundleId: id,
-                    branchId: b.branchId,
-                    price: b.price
-                }));
+                const branchRecords = branches.map(b => {
+                    const branchId = b.branchId || b;
+                    const isObject = typeof b === 'object' && b !== null;
+                    return {
+                        productBundleId: id,
+                        branchId: branchId,
+                        original_price: isObject ? b.original_price : null,
+                        price: isObject ? b.price : null,
+                        customer_saves: isObject ? b.customer_saves : null
+                    };
+                });
                 await ProductBundleBranch.bulkCreate(branchRecords, { transaction });
             }
         }
@@ -132,6 +236,8 @@ exports.updateBundle = async (req, res) => {
                 const itemRecords = items.map(i => ({
                     productBundleId: id,
                     productId: i.productId,
+                    variationOptionId: i.variationOptionId,
+                    modificationItemId: i.modificationItemId,
                     quantity: i.quantity || 1
                 }));
                 await ProductBundleItem.bulkCreate(itemRecords, { transaction });
@@ -143,7 +249,15 @@ exports.updateBundle = async (req, res) => {
         const updatedBundle = await ProductBundle.findByPk(id, {
             include: [
                 { model: ProductBundleBranch, as: 'branches', include: [{ model: Branch, as: 'branch' }] },
-                { model: ProductBundleItem, as: 'items', include: [{ model: Product, as: 'product' }] }
+                { 
+                    model: ProductBundleItem, 
+                    as: 'items', 
+                    include: [
+                        { model: Product, as: 'product' },
+                        { model: VariationOption, as: 'variationOption' },
+                        { model: ModificationItem, as: 'modificationItem' }
+                    ] 
+                }
             ]
         });
 
@@ -158,7 +272,9 @@ exports.updateBundle = async (req, res) => {
 
         res.json(updatedBundle);
     } catch (error) {
-        await transaction.rollback();
+        if (transaction && !transaction.finished) {
+            await transaction.rollback();
+        }
         res.status(400).json({ message: error.message });
     }
 };
@@ -200,6 +316,82 @@ exports.activateBundle = async (req, res) => {
             return res.json({ message: 'Product Bundle activated' });
         }
         throw new Error('Product Bundle not found');
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
+exports.getBundlesByBranch = async (req, res) => {
+    try {
+        const { excludeExpired } = req.query;
+        const userDetail = await UserDetail.findOne({ where: { userId: req.user.id } });
+        const branchId = userDetail?.branchId || 1;
+
+        let where = { 
+            status: 'active',
+            [Op.or]: [
+                sequelize.where(sequelize.col('branches.branchId'), branchId),
+                sequelize.where(sequelize.col('branches.id'), { [Op.is]: null })
+            ]
+        };
+
+        if (excludeExpired === 'true') {
+            const today = new Date().toISOString().split('T')[0];
+            where.expire_date = {
+                [Op.or]: [
+                    { [Op.gte]: today },
+                    { [Op.is]: null }
+                ]
+            };
+        }
+
+        const bundles = await ProductBundle.findAll({
+            where,
+
+            include: [
+                {
+                    model: ProductBundleBranch,
+                    as: 'branches',
+                    required: false,
+                    include: [{ model: Branch, as: 'branch' }]
+                },
+                {
+                    model: ProductBundleItem,
+                    as: 'items',
+                    include: [
+                        { model: Product, as: 'product' },
+                        {
+                            model: VariationOption,
+                            as: 'variationOption',
+                            include: [
+                                {
+                                    model: VariationPrice,
+                                    as: 'prices',
+                                    where: { branchId },
+                                    required: false
+                                }
+                            ]
+                        },
+                        {
+                            model: ModificationItem,
+                            as: 'modificationItem',
+                            include: [
+                                {
+                                    model: ProductModificationItemPrice,
+                                    as: 'itemPrices',
+                                    where: { branchId },
+                                    required: false
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ],
+            order: [['name', 'ASC']]
+        });
+
+
+        res.json(bundles);
     } catch (error) {
         res.status(500).json({ message: error.message });
     }

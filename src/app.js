@@ -73,6 +73,11 @@ const printRoutes = require('./routes/printRoutes');
 const deliveryChargeRoutes = require('./routes/deliveryChargeRoutes');
 const serviceChargeRoutes = require('./routes/serviceChargeRoutes');
 const productBundleRoutes = require('./routes/productBundleRoutes');
+const bogoPromotionRoutes = require('./routes/bogoPromotionRoutes');
+const chatbotRoutes = require('./routes/chatbotRoutes');
+const customerCategoryDiscountRoutes = require('./routes/customerCategoryDiscountRoutes');
+const tableRoutes = require('./routes/tableRoutes');
+const returnRoutes = require('./routes/returnRoutes');
 
 
 app.set('trust proxy', 1);
@@ -139,6 +144,11 @@ app.use('/api/print', printRoutes);
 app.use('/api/delivery-charges', deliveryChargeRoutes);
 app.use('/api/service-charge', serviceChargeRoutes);
 app.use('/api/product-bundles', productBundleRoutes);
+app.use('/api/bogo-promotions', bogoPromotionRoutes);
+app.use('/api/chatbot', chatbotRoutes);
+app.use('/api/customer-category-discounts', customerCategoryDiscountRoutes);
+app.use('/api/tables', tableRoutes);
+app.use('/api/returns', returnRoutes);
 
 // Global error handler (do not log request body to avoid leaking tokens/passwords)
 app.use((err, req, res, next) => {

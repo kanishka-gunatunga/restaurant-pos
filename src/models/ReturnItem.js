@@ -1,51 +1,41 @@
 const { DataTypes } = require('sequelize');
 const sequelize = require('../config/database');
 
-const OrderItem = sequelize.define('OrderItem', {
+const ReturnItem = sequelize.define('ReturnItem', {
     id: {
         type: DataTypes.INTEGER,
         autoIncrement: true,
         primaryKey: true,
     },
-    orderId: {
+    returnId: {
         type: DataTypes.INTEGER,
         allowNull: false,
+        field: 'return_id'
     },
     productId: {
         type: DataTypes.INTEGER,
         allowNull: true,
-    },
-    productBundleId: {
-        type: DataTypes.INTEGER,
-        allowNull: true,
-    },
-    bogoPromotionId: {
-        type: DataTypes.INTEGER,
-        allowNull: true,
+        field: 'product_id'
     },
     variationOptionId: {
         type: DataTypes.INTEGER,
         allowNull: true,
+        field: 'variation_option_id'
     },
     quantity: {
         type: DataTypes.INTEGER,
         allowNull: false,
-        defaultValue: 1,
+        defaultValue: 1
     },
     unitPrice: {
         type: DataTypes.DECIMAL(10, 2),
         allowNull: false,
-    },
-    productDiscount: {
-        type: DataTypes.DECIMAL(10, 2),
-        defaultValue: 0.00,
-    },
-    status: {
-        type: DataTypes.ENUM('pending', 'complete'),
-        defaultValue: 'pending',
-    },
+        field: 'unit_price'
+    }
 }, {
-    tableName: 'orderitems',
+    tableName: 'return_items',
+    timestamps: true,
+    underscored: true
 });
 
-module.exports = OrderItem;
+module.exports = ReturnItem;

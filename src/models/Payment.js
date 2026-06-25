@@ -12,8 +12,13 @@ const Payment = sequelize.define('Payment', {
         allowNull: false,
     },
     paymentMethod: {
-        type: DataTypes.ENUM('cash', 'card'),
+        type: DataTypes.ENUM('cash', 'card', 'loyalty_points'),
         allowNull: true,
+    },
+    pointsUsed: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+        field: 'points_used'
     },
     amount: {
         type: DataTypes.DECIMAL(10, 2),
@@ -41,6 +46,14 @@ const Payment = sequelize.define('Payment', {
     },
     paidAmount: {
         type: DataTypes.DECIMAL(10, 2),
+        allowNull: true,
+    },
+    cardType: {
+        type: DataTypes.STRING,
+        allowNull: true,
+    },
+    cardLastFour: {
+        type: DataTypes.STRING(4),
         allowNull: true,
     },
 }, {

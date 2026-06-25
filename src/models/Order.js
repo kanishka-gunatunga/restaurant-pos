@@ -27,6 +27,13 @@ const Order = sequelize.define('Order', {
         type: DataTypes.STRING,
         allowNull: true,
     },
+    tableId: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+        field: 'table_id',
+        references: { model: 'tables', key: 'id' },
+        onDelete: 'SET NULL',
+    },
     orderDiscount: {
         type: DataTypes.DECIMAL(10, 2),
         defaultValue: 0.00,
@@ -103,6 +110,11 @@ const Order = sequelize.define('Order', {
     paymentStatus: {
         type: DataTypes.ENUM('pending', 'paid', 'partial_refund', 'refund'),
         defaultValue: 'pending',
+    },
+    loyaltyPointsEarned: {
+        type: DataTypes.INTEGER,
+        defaultValue: 0,
+        field: 'loyalty_points_earned'
     },
 }, {
     tableName: 'orders',

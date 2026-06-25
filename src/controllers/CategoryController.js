@@ -74,7 +74,8 @@ exports.createCategory = async (req, res) => {
             metadata: { categoryId: createdCategory.id, name }
         });
     } catch (error) {
-        await transaction.rollback();
+        if (transaction && !transaction.finished) await transaction.rollback();
+        console.error('Create Category Error:', error);
         res.status(400).json({ message: error.message });
     }
 };
@@ -141,7 +142,8 @@ exports.updateCategory = async (req, res) => {
 
         res.json({ message: 'Category and subcategories updated' });
     } catch (error) {
-        await transaction.rollback();
+        if (transaction && !transaction.finished) await transaction.rollback();
+        console.error('Update Category Error:', error);
         res.status(400).json({ message: error.message });
     }
 };
@@ -373,7 +375,8 @@ exports.importCategories = async (req, res) => {
 
         res.status(200).json({ message: `Successfully imported ${createdCategoriesCount} new categories and ${createdSubCategoriesCount} new subcategories.` });
     } catch (error) {
-        await t.rollback();
+        if (t && !t.finished) await t.rollback();
+        console.error('Import Category Error:', error);
         res.status(400).json({ message: error.message || 'Error parsing Excel file' });
     }
 };

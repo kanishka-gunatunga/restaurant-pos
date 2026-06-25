@@ -2,6 +2,7 @@
  * Service to generate receipt HTML templates.
  */
 const formatOrderReference = (order) => order?.orderNo || order?.receipt_no || order?.id?.toString().padStart(8, '0') || 'N/A';
+const resolveOrderTableLabel = (order) => order?.table?.table_name || order?.tableName || order?.tableNumber || 'N/A';
 
 exports.generateReceiptHtml = (order, payment, branch) => {
     const pad = (str, len, char = ' ', right = false) => {
@@ -22,7 +23,7 @@ exports.generateReceiptHtml = (order, payment, branch) => {
             }).join('');
         }
 
-        const name = (item.product?.name || 'Item');
+        const name = item.productBundle?.name || item.bogoPromotion?.name || item.product?.name || 'Item';
         const vOpt = item.variationOption || item.variation_option;
         const variationSummary = vOpt ? (vOpt.Variation?.name ? `${vOpt.Variation.name}: ${vOpt.name}` : vOpt.name) : '';
         const variation = variationSummary ? `(${variationSummary})` : '';
@@ -90,13 +91,32 @@ exports.generateReceiptHtml = (order, payment, branch) => {
             </div>
 
             <div style="margin-bottom: 15px; border-top: 1px dashed #000; padding-top: 8px;">
+                ${(order.payments && order.payments.length > 0) ? order.payments.map(p => `
+                <div style="display: flex; justify-content: space-between; font-size: 1.1em; margin-bottom: 4px;">
+                    <span>
+                        ${(p.paymentMethod || 'CASH').toUpperCase()}
+                        ${p.cardType ? `(${p.cardType})` : ''}
+                        ${p.cardLastFour ? ` **** ${p.cardLastFour}` : ''}
+                    </span>
+                    <span>${parseFloat(p.amount).toFixed(2)}</span>
+                </div>
+                `).join('') : `
                 <div style="display: flex; justify-content: space-between; font-size: 1.2em;">
                     <span>${(payment?.paymentMethod || 'CASH').toUpperCase()}</span>
                     <span>${parseFloat(payment?.paidAmount || payment?.amount || subTotal).toFixed(2)}</span>
                 </div>
+                `}
+                
+                <div style="margin-top: 8px; border-top: 1px solid #eee; padding-top: 4px;">
+                    <div style="display: flex; justify-content: space-between; font-size: 1.1em;">
+                        <span>TOTAL PAID</span>
+                        <span>${(order.payments && order.payments.length > 0 ? order.payments.reduce((s, p) => s + parseFloat(p.paidAmount || p.amount), 0) : parseFloat(payment?.paidAmount || payment?.amount || subTotal)).toFixed(2)}</span>
+                    </div>
+                </div>
+
                 <div style="display: flex; justify-content: space-between; font-weight: bold; font-size: 1.3em; margin-top: 4px;">
                     <span>BALANCE</span>
-                    <span>${(parseFloat(payment?.paidAmount || payment?.amount || subTotal) - parseFloat(subTotal)).toFixed(2)}</span>
+                    <span>${Math.max(0, (order.payments && order.payments.length > 0 ? order.payments.reduce((s, p) => s + parseFloat(p.paidAmount || p.amount), 0) : parseFloat(payment?.paidAmount || payment?.amount || subTotal)) - parseFloat(subTotal)).toFixed(2)}</span>
                 </div>
                 ${totalDiscount > 0 ? `
                 <div style="display: flex; justify-content: space-between; margin-top: 8px; font-weight: bold;">
@@ -152,7 +172,7 @@ exports.generateKitchenReceiptHtml = (order, branch) => {
             }).join('');
         }
 
-        const name = (item.product?.name || 'Item').substring(0, 25);
+        const name = (item.productBundle?.name || item.bogoPromotion?.name || item.product?.name || 'Item').substring(0, 25);
         const vOpt = item.variationOption || item.variation_option;
         const variationSummary = vOpt ? (vOpt.Variation?.name ? `${vOpt.Variation.name}: ${vOpt.name}` : vOpt.name) : '';
         const variation = variationSummary ? `(${variationSummary})` : '';
@@ -177,7 +197,7 @@ exports.generateKitchenReceiptHtml = (order, branch) => {
 
             <div style="display: flex; justify-content: space-between; margin-bottom: 10px; font-weight: bold; font-size: 1.1em;">
                 <span>TYPE: ${order.orderType || 'N/A'}</span>
-                <span>TABLE: ${order.tableNumber || 'N/A'}</span>
+                <span>TABLE: ${resolveOrderTableLabel(order)}</span>
             </div>
 
             <div style="margin-bottom: 10px; border-top: 1px dashed #000; border-bottom: 1px dashed #000; padding: 5px 0;">
@@ -269,7 +289,7 @@ exports.generateReceiptStructuredData = (order, payment, branch) => {
             mobile: branch?.mobile || '011 2 175 275'
         },
         items: order.items.map(item => {
-            const name = (item.product?.name || 'Item');
+            const name = item.productBundle?.name || item.bogoPromotion?.name || item.product?.name || 'Item';
             const vOpt = item.variationOption || item.variation_option;
             const variationSummary = vOpt ? (vOpt.Variation?.name ? `${vOpt.Variation.name}: ${vOpt.name}` : vOpt.name) : '';
 
@@ -295,8 +315,19 @@ exports.generateReceiptStructuredData = (order, payment, branch) => {
             method: capitalize(payment?.paymentMethod || 'Cash'),
             paidAmount: parseFloat(payment?.paidAmount || payment?.amount || order.totalAmount).toFixed(2),
             amount: parseFloat(payment?.amount || order.totalAmount).toFixed(2),
-            balance: (parseFloat(payment?.paidAmount || payment?.amount || order.totalAmount) - parseFloat(order.totalAmount || 0)).toFixed(2)
-        }
+            balance: Math.max(0, parseFloat(payment?.paidAmount || payment?.amount || order.totalAmount) - parseFloat(order.totalAmount || 0)).toFixed(2)
+        },
+        payments: (order.payments && order.payments.length > 0) ? order.payments.map(p => ({
+            method: capitalize(p.paymentMethod || 'Cash'),
+            amount: parseFloat(p.amount).toFixed(2),
+            paidAmount: parseFloat(p.paidAmount || p.amount).toFixed(2),
+            cardType: p.cardType,
+            cardLastFour: p.cardLastFour
+        })) : [{
+            method: capitalize(payment?.paymentMethod || 'Cash'),
+            amount: parseFloat(payment?.amount || order.totalAmount).toFixed(2),
+            paidAmount: parseFloat(payment?.paidAmount || payment?.amount || order.totalAmount).toFixed(2)
+        }]
     };
 };
 
@@ -310,10 +341,10 @@ exports.generateKitchenStructuredData = (order, branch) => {
         orderNo: order.orderNo,
         dateTime: formatDateTime(order.createdAt),
         orderType: capitalize(order.orderType || 'N/A'),
-        tableNumber: order.tableNumber || 'N/A',
+        tableNumber: resolveOrderTableLabel(order),
         kitchenNote: order.kitchenNote,
         items: order.items.map(item => {
-            const name = (item.product?.name || 'Item');
+            const name = item.productBundle?.name || item.bogoPromotion?.name || item.product?.name || 'Item';
             const vOpt = item.variationOption || item.variation_option;
             const variationSummary = vOpt ? (vOpt.Variation?.name ? `${vOpt.Variation.name}: ${vOpt.name}` : vOpt.name) : '';
 
@@ -347,14 +378,51 @@ exports.generateSalesReportStructuredData = (reportData, summary, headerInfo, br
             totalSalesAmount: summary["Total Sales (Before Discount)"],
             totalDiscountsGiven: summary["Total Discounts Given"],
             totalDeliveryCharges: summary["Total Delivery Charges"],
-            netSales: summary["Final Total"]
+            netSales: summary["Final Total"],
+            normalSales: summary["Normal Customer Sales"],
+            staffSales: summary["Staff Sales"],
+            managementSales: summary["Management Sales"]
         },
         data: reportData.map(item => ({
             date: item["Date"],
             invoiceNo: item["Invoice No"],
             productName: item["Product Name"],
+            customerCategory: item["Customer Category"],
             qtySold: item["Qty Sold"],
             totalAmount: item["Total Amount"]
         }))
+    };
+};
+
+/**
+ * Generate structured JSON for Return receipts (for ESC/POS)
+ */
+exports.generateReturnStructuredData = (returnObj, branch) => {
+    return {
+        type: 'return_receipt',
+        returnId: returnObj.id.toString().padStart(8, '0'),
+        orderNo: returnObj.orderNo,
+        dateTime: formatDateTime(returnObj.createdAt),
+        branch: {
+            name: 'CATERING BY AHAS GAWWA',
+            location: branch?.location || 'No. 226, Arakawila, Handapangoda',
+            mobile: branch?.mobile || '0112175275'
+        },
+        items: returnObj.items.map(item => {
+            const name = item.product?.name || 'Item';
+            const variation = item.variationOption?.name || '';
+            return {
+                name: name,
+                variation: variation,
+                price: parseFloat(item.unitPrice).toFixed(2),
+                qty: parseFloat(item.quantity).toFixed(2),
+                amount: (item.quantity * item.unitPrice).toFixed(2)
+            };
+        }),
+        totals: {
+            total: parseFloat(returnObj.totalAmount).toFixed(2)
+        },
+        refundMethod: capitalize(returnObj.refundMethod.replace('_', ' ')),
+        qrCode: returnObj.qrCode
     };
 };

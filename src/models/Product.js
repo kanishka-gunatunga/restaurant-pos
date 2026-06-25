@@ -28,6 +28,10 @@ const Product = sequelize.define('Product', {
         type: DataTypes.STRING,
         unique: true,
     },
+    barcode: {
+        type: DataTypes.STRING,
+        unique: true,
+    },
     categoryId: {
         type: DataTypes.INTEGER,
         allowNull: true,
@@ -47,6 +51,11 @@ const Product = sequelize.define('Product', {
     status: {
         type: DataTypes.ENUM('active', 'inactive'),
         defaultValue: 'active',
+    },
+    isReturnable: {
+        type: DataTypes.BOOLEAN,
+        defaultValue: false,
+        field: 'is_returnable'
     },
 }, {
     tableName: 'products',

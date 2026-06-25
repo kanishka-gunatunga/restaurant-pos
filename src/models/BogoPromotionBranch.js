@@ -1,17 +1,17 @@
 const { DataTypes } = require('sequelize');
 const sequelize = require('../config/database');
 
-const ProductBundleBranch = sequelize.define('ProductBundleBranch', {
+const BogoPromotionBranch = sequelize.define('BogoPromotionBranch', {
     id: {
         type: DataTypes.INTEGER,
         autoIncrement: true,
         primaryKey: true,
     },
-    productBundleId: {
+    bogoPromotionId: {
         type: DataTypes.INTEGER,
         allowNull: false,
         references: {
-            model: 'product_bundles',
+            model: 'bogo_promotions',
             key: 'id',
         },
     },
@@ -23,20 +23,8 @@ const ProductBundleBranch = sequelize.define('ProductBundleBranch', {
             key: 'id',
         },
     },
-    original_price: {
-        type: DataTypes.DECIMAL(10, 2),
-        allowNull: true,
-    },
-    price: {
-        type: DataTypes.DECIMAL(10, 2),
-        allowNull: true,
-    },
-    customer_saves: {
-        type: DataTypes.DECIMAL(10, 2),
-        allowNull: true,
-    },
 }, {
-    tableName: 'product_bundle_branches',
+    tableName: 'bogo_promotion_branches',
 });
 
-module.exports = ProductBundleBranch;
+module.exports = BogoPromotionBranch;

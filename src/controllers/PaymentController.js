@@ -18,6 +18,7 @@ const Variation = require('../models/Variation');
 const VariationOption = require('../models/VariationOption');
 const Branch = require('../models/Branch');
 const templateService = require('../services/templateService');
+const loyaltyService = require('../services/loyaltyService');
 const { roundMoney } = require('../utils/orderTotals');
 const { resolveOrderBranchWhereClause, orderBelongsToRequesterBranch } = require('../utils/orderBranchScope');
 const {
@@ -39,6 +40,7 @@ const {
     getOutstandingToleranceCents,
     sumNetCollected,
 } = require('../utils/orderPaymentState');
+const EReceiptService = require('../services/EReceiptService');
 
 /**
  * Single payment row for clients. Line settlement is `status` / `linePaymentStatus`.
@@ -102,6 +104,11 @@ async function queueReceiptPrintJob(orderId, paymentRecord, requestedStatus, use
                                 include: [{ model: ModificationItem, as: 'modification' }]
                             }
                         ]
+                    },
+                    {
+                        model: Payment,
+                        as: 'payments',
+                        attributes: PAYMENT_LIST_ATTRIBUTES
                     }
                 ]
             });
@@ -208,25 +215,31 @@ exports.createPayment = async (req, res) => {
     console.log('[PaymentController] Creating payment with payload:', JSON.stringify(req.body, null, 2));
     const t = await sequelize.transaction();
     try {
-        const { orderId, paymentMethod, amount, transactionId, status, paidAmount } = req.body;
-        const rawPaidAmount = paidAmount ?? req.body.paid_amount;
-        const rawPaymentRole = req.body.paymentRole ?? req.body.payment_role;
-        const clientPaymentRole =
-            rawPaymentRole !== undefined && rawPaymentRole !== null && String(rawPaymentRole).trim() !== ''
-                ? normalizePaymentRole(rawPaymentRole)
-                : null;
+        const { orderId, status } = req.body;
+        let payments = req.body.payments;
 
-        if (!orderId || !paymentMethod || amount === undefined || amount === null) {
-            await t.rollback();
-            return res.status(400).json({ message: 'Order ID, payment method, and amount are required' });
+        // Legacy support: if no payments array, wrap the flat fields into a single payment array
+        if (!Array.isArray(payments)) {
+            const { paymentMethod, amount, transactionId, paidAmount, paymentRole, cardType, cardLastFour } = req.body;
+            if (!paymentMethod || amount === undefined || amount === null) {
+                await t.rollback();
+                return res.status(400).json({ message: 'Order ID, payment method, and amount are required' });
+            }
+            payments = [{
+                paymentMethod,
+                amount,
+                transactionId,
+                paidAmount,
+                paymentRole,
+                cardType,
+                cardLastFour
+            }];
         }
 
-        const amountNum = parseFloat(amount);
-        if (!Number.isFinite(amountNum) || amountNum <= 0) {
+        if (!orderId) {
             await t.rollback();
-            return res.status(400).json({ message: 'Amount must be a positive number' });
+            return res.status(400).json({ message: 'Order ID is required' });
         }
-        const resolvedPaidAmount = rawPaidAmount !== undefined ? parseFloat(rawPaidAmount) : amountNum;
 
         const order = await Order.findByPk(orderId, {
             transaction: t,
@@ -243,6 +256,7 @@ exports.createPayment = async (req, res) => {
         }
 
         const effectiveStatus = status || 'pending';
+        const createdPayments = [];
 
         if (effectiveStatus === 'paid') {
             await reconcileOrderTotalAgainstLineItems(order, t);
@@ -252,144 +266,141 @@ exports.createPayment = async (req, res) => {
                 include: [orderItemsForBalanceInclude],
             });
 
-            let settled = await trySettleExistingPendingPayment({
-                orderId,
-                paymentMethod,
-                amount: amountNum,
-                paidAmount: resolvedPaidAmount,
-                transactionId,
-                userId: req.user?.id,
-                transaction: t,
-            });
+            for (const p of payments) {
+                let amountNum = parseFloat(p.amount);
 
-            if (!settled.settled) {
-                await order.reload({
-                    transaction: t,
-                    include: [orderItemsForBalanceInclude],
-                });
-                await reconcileOrderTotalAgainstLineItems(order, t);
-                const clearedStaleBd = await removeStaleBalanceDueRowsIfFullyPaid(orderId, order, t);
-                if (clearedStaleBd) {
-                    await syncBalanceDuePayment(orderId, t);
-                    await order.reload({
-                        transaction: t,
-                        include: [orderItemsForBalanceInclude],
-                    });
-                    settled = await trySettleExistingPendingPayment({
-                        orderId,
-                        paymentMethod,
-                        amount: amountNum,
-                        paidAmount: resolvedPaidAmount,
-                        transactionId,
-                        userId: req.user?.id,
-                        transaction: t,
-                    });
+                // Handle Loyalty Points Redemption
+                if (p.paymentMethod === 'loyalty_points') {
+                    if (!order.customerId) {
+                        await t.rollback();
+                        return res.status(400).json({ message: 'Loyalty points can only be used for orders with a registered customer' });
+                    }
+                    const pts = parseInt(p.pointsUsed ?? p.points_used, 10);
+                    if (!pts || pts <= 0) {
+                        await t.rollback();
+                        return res.status(400).json({ message: 'Valid loyalty points amount is required for point-based payment' });
+                    }
+                    try {
+                        const redemption = await loyaltyService.redeemLoyaltyPoints(order.customerId, pts, t);
+                        amountNum = redemption.monetaryValue;
+                        p.amount = amountNum; // Ensure standard validation passes
+                    } catch (redemptionError) {
+                        await t.rollback();
+                        return res.status(400).json({ message: redemptionError.message });
+                    }
                 }
-            }
 
-            let paymentRecord = settled.settled ? settled.payment : null;
-
-            if (!settled.settled) {
-                if (clientPaymentRole === 'balance_due') {
-                    // We previously returned 400 here, but the user wants to be able to save a payment even if it doesn't match a pending line perfectly.
-                    // We will allow it to fall through to Payment.create below.
-                    console.log(`[PaymentController] No pending balance_due line matches amount ${amountNum} for order ${orderId}. Creating new line instead.`);
-                }
-                const existing = await Payment.findAll({ where: { orderId }, transaction: t });
-                if (wouldDoubleCoverOrder(order.totalAmount, existing, amountNum)) {
+                if (!Number.isFinite(amountNum) || amountNum <= 0) {
                     await t.rollback();
-                    const orderTotalAmt = roundMoney(parseFloat(order.totalAmount) || 0);
-                    const netBefore = sumNetCollected(existing);
-                    return res.status(409).json({
-                        message:
-                            'This payment would over-cover the order (possible duplicate charge). Use order.totalAmount from the API for the charge amount, or POST the same amount as an open pending line to settle it.',
-                        orderTotalAmount: orderTotalAmt,
-                        order_total_amount: orderTotalAmt,
-                        paymentAmount: amountNum,
-                        payment_amount: amountNum,
-                        netCollectedBeforeThisPayment: netBefore,
-                        net_collected_before_this_payment: netBefore,
-                    });
+                    return res.status(400).json({ message: 'Each payment amount must be a positive number' });
                 }
-                paymentRecord = await Payment.create(
-                    {
+
+                const rawPaymentRole = p.paymentRole ?? p.payment_role;
+                const clientPaymentRole = rawPaymentRole ? normalizePaymentRole(rawPaymentRole) : null;
+
+                let settled = await trySettleExistingPendingPayment({
+                    orderId,
+                    paymentMethod: p.paymentMethod,
+                    amount: amountNum,
+                    transactionId: p.transactionId,
+                    userId: req.user?.id,
+                    transaction: t,
+                    paidAmount: p.paidAmount ?? p.paid_amount ?? amountNum
+                });
+
+                if (!settled.settled) {
+                    await order.reload({ transaction: t, include: [orderItemsForBalanceInclude] });
+                    await reconcileOrderTotalAgainstLineItems(order, t);
+                    const clearedStaleBd = await removeStaleBalanceDueRowsIfFullyPaid(orderId, order, t);
+                    if (clearedStaleBd) {
+                        await syncBalanceDuePayment(orderId, t);
+                        await order.reload({ transaction: t, include: [orderItemsForBalanceInclude] });
+                        settled = await trySettleExistingPendingPayment({
+                            orderId,
+                            paymentMethod: p.paymentMethod,
+                            amount: amountNum,
+                            transactionId: p.transactionId,
+                            userId: req.user?.id,
+                            transaction: t,
+                            paidAmount: p.paidAmount ?? p.paid_amount ?? amountNum
+                        });
+                    }
+                }
+
+                let paymentRecord;
+                if (settled.settled) {
+                    paymentRecord = settled.payment;
+                    // Update new fields if they were provided in the settlement
+                    await paymentRecord.update({
+                        cardType: p.cardType,
+                        cardLastFour: p.cardLastFour,
+                        pointsUsed: p.paymentMethod === 'loyalty_points' ? (p.pointsUsed ?? p.points_used) : null
+                    }, { transaction: t });
+                } else {
+                    if (clientPaymentRole === 'balance_due') {
+                        await t.rollback();
+                        return res.status(400).json({
+                            message: 'No pending balance-due line matches this amount.',
+                        });
+                    }
+
+                    paymentRecord = await Payment.create({
                         orderId,
-                        paymentMethod,
+                        paymentMethod: p.paymentMethod,
                         amount: amountNum,
-                        transactionId,
+                        transactionId: p.transactionId,
                         status: 'paid',
                         userId: req.user?.id,
-                        paymentRole: clientPaymentRole || 'sale',
-                        paidAmount: resolvedPaidAmount,
-                    },
-                    { transaction: t }
-                );
-            }
-
-            // persistOrderPaymentAggregate runs syncBalanceDuePayment first — avoid calling sync twice.
-            await persistOrderPaymentAggregate(orderId, t);
-
-            const logUnderpay =
-                process.env.NODE_ENV !== 'production' ||
-                ['1', 'true', 'yes'].includes(String(process.env.LOG_PAY_UNDERPAY || '').toLowerCase());
-            if (logUnderpay) {
-                await order.reload({ attributes: ['id', 'totalAmount', 'status'], transaction: t });
-                const pays = await Payment.findAll({ where: { orderId }, transaction: t });
-                const fin = resolveOrderTotalForBalanceFromOrderLike(order);
-                const oc = computeOutstandingCents(fin, pays);
-                const tolC = getOutstandingToleranceCents(fin);
-                if (oc > tolC) {
-                    console.warn('[payments] Paid capture but order still owes (check amount vs order.totalAmount / tax)', {
-                        orderId,
-                        orderTotal: fin,
-                        rawOutstandingCents: oc,
-                        toleranceCents: tolC,
-                        paymentRows: pays.map((p) => ({
-                            id: p.id,
-                            amount: p.amount,
-                            status: p.status,
-                            role: p.paymentRole,
-                        })),
-                    });
+                        paymentRole: 'sale',
+                        paidAmount: p.paidAmount ?? p.paid_amount ?? amountNum,
+                        cardType: p.cardType,
+                        cardLastFour: p.cardLastFour,
+                        pointsUsed: p.paymentMethod === 'loyalty_points' ? (p.pointsUsed ?? p.points_used) : null
+                    }, { transaction: t });
                 }
-            }
 
-            if (paymentMethod === 'cash') {
-                const session = await Session.findOne({
-                    where: { userId: req.user?.id, status: 'open' },
-                    transaction: t,
-                });
-                if (session) {
-                    const amountFloat = parseFloat(paymentRecord.amount);
-                    await session.update(
-                        { currentBalance: parseFloat(session.currentBalance) + amountFloat },
-                        { transaction: t }
-                    );
-                    await SessionTransaction.create(
-                        {
+                createdPayments.push(paymentRecord);
+
+                // Session logic for cash
+                if (p.paymentMethod === 'cash') {
+                    const session = await Session.findOne({
+                        where: { userId: req.user?.id, status: 'open' },
+                        transaction: t,
+                    });
+                    if (session) {
+                        const amountFloat = parseFloat(paymentRecord.amount);
+                        await session.update(
+                            { currentBalance: parseFloat(session.currentBalance) + amountFloat },
+                            { transaction: t }
+                        );
+                        await SessionTransaction.create({
                             sessionId: session.id,
                             type: 'sale',
                             amount: amountFloat,
                             paymentId: paymentRecord.id,
                             userId: req.user?.id,
-                            description: `Cash sale for Order #${orderId}`,
-                        },
-                        { transaction: t }
-                    );
+                            description: `Cash sale (split) for Order #${orderId}`,
+                        }, { transaction: t });
+                    }
                 }
             }
 
+            await syncBalanceDuePayment(orderId, t);
+            await persistOrderPaymentAggregate(orderId, t);
             await t.commit();
 
-            auditLog(settled.settled ? 'payment_settled' : 'payment_created', {
+            // Logs and Prints for each or total? 
+            // Usually we print ONE receipt for the whole order/payment action.
+            // auditLog and activity log per payment or summary? 
+            // I'll do one activity log summarizing the total.
+
+            const totalAmount = createdPayments.reduce((s, p) => s + parseFloat(p.amount), 0);
+            const methods = [...new Set(createdPayments.map(p => p.paymentMethod))].join(', ');
+
+            auditLog('payment_created', {
                 ip: req.ip,
                 userId: req.user.id,
-                metadata: {
-                    orderId,
-                    paymentId: paymentRecord.id,
-                    amount: paymentRecord.amount,
-                    settledExistingPending: settled.settled,
-                },
+                metadata: { orderId, paymentIds: createdPayments.map(p => p.id), amount: totalAmount },
             });
 
             const userDetail = await UserDetail.findOne({ where: { userId: req.user.id } });
@@ -397,62 +408,63 @@ exports.createPayment = async (req, res) => {
                 userId: req.user.id,
                 branchId: userDetail?.branchId || 1,
                 activityType: 'Payment Received',
-                description: `Payment of Rs.${paymentRecord.amount} for Order #${orderId} via ${paymentMethod}${settled.settled ? ' (settled pending line)' : ''}`,
+                description: `Split payment of Rs.${totalAmount} for Order #${orderId} via ${methods}`,
                 orderId,
-                amount: paymentRecord.amount,
-                metadata: { paymentMethod, transactionId, status: paymentRecord.status, settled: settled.settled },
+                amount: totalAmount,
+                metadata: { methods, paymentIds: createdPayments.map(p => p.id) },
             });
 
-            void queueReceiptPrintJob(orderId, paymentRecord, status, req.user.id).catch((err) => {
-                console.error('[PaymentController] queueReceiptPrintJob failed', err);
-            });
+            // Use the last payment record or the first for receipt? 
+            // Technically the receipt should show all now. 
+            // I'll pass the first one for legacy support but update templateService to fetch all.
+            await queueReceiptPrintJob(orderId, createdPayments[0], status, req.user.id);
 
-            if (settled.settled) {
-                return jsonPaymentWithOrderSummary(orderId, paymentRecord, res, 200);
+            // Trigger E-Receipt
+            if (status === 'paid' || !status) {
+                EReceiptService.processEReceipt(orderId, createdPayments[0], req.user.id).catch(err =>
+                    console.error('[PaymentController] E-Receipt trigger error:', err)
+                );
             }
-            return jsonPaymentWithOrderSummary(orderId, paymentRecord, res, 201);
+
+            return jsonPaymentWithOrderSummary(orderId, createdPayments[0], res, 201);
         }
 
-        const payment = await Payment.create(
-            {
+        // Handle non-'paid' status (e.g. pending lines)
+        for (const p of payments) {
+            const amountNum = parseFloat(p.amount);
+            const rawPaymentRole = p.paymentRole ?? p.payment_role;
+            const clientPaymentRole = rawPaymentRole ? normalizePaymentRole(rawPaymentRole) : null;
+
+            const payment = await Payment.create({
                 orderId,
-                paymentMethod,
+                paymentMethod: p.paymentMethod,
                 amount: amountNum,
-                transactionId,
+                transactionId: p.transactionId,
                 status: effectiveStatus,
                 userId: req.user?.id,
-                paymentRole: clientPaymentRole || 'sale',
-                paidAmount: resolvedPaidAmount,
-            },
-            { transaction: t }
-        );
+                paymentRole: clientPaymentRole === 'balance_due' ? 'balance_due' : 'sale',
+                paidAmount: p.paidAmount ?? p.paid_amount ?? amountNum,
+                cardType: p.cardType,
+                cardLastFour: p.cardLastFour
+            }, { transaction: t });
+            createdPayments.push(payment);
+        }
 
+        await syncBalanceDuePayment(orderId, t);
         await persistOrderPaymentAggregate(orderId, t);
-
         await t.commit();
 
-        auditLog('payment_created', {
-            ip: req.ip,
-            userId: req.user.id,
-            metadata: { orderId, paymentId: payment.id, amount: payment.amount, status: payment.status },
-        });
+        await queueReceiptPrintJob(orderId, createdPayments[0], status, req.user.id);
 
-        void queueReceiptPrintJob(orderId, payment, status, req.user.id).catch((err) => {
-            console.error('[PaymentController] queueReceiptPrintJob failed', err);
-        });
+        // Trigger E-Receipt
+        if (effectiveStatus === 'paid') {
+            EReceiptService.processEReceipt(orderId, createdPayments[0], req.user.id).catch(err =>
+                console.error('[PaymentController] E-Receipt trigger error:', err)
+            );
+        }
 
-        const userDetail = await UserDetail.findOne({ where: { userId: req.user.id } });
-        await logActivity({
-            userId: req.user.id,
-            branchId: userDetail?.branchId || 1,
-            activityType: 'Payment Recorded',
-            description: `Payment line of Rs.${amount} for Order #${orderId} via ${paymentMethod} (${payment.status})`,
-            orderId,
-            amount,
-            metadata: { paymentMethod, transactionId, status: payment.status },
-        });
+        return jsonPaymentWithOrderSummary(orderId, createdPayments[0], res, 201);
 
-        return jsonPaymentWithOrderSummary(orderId, payment, res, 201);
     } catch (error) {
         await t.rollback();
         res.status(500).json({ message: error.message });
@@ -610,6 +622,12 @@ exports.updatePaymentStatus = async (req, res) => {
             amount: isRefund ? actualRefundAmount : null,
             metadata: { paymentId: id, status: finalStatus, is_refund, refund_type, actualRefundAmount }
         });
+        if (finalStatus === 'paid' && !isRefund) {
+            EReceiptService.processEReceipt(orderId, payment, req.user.id).catch(err =>
+                console.error('[PaymentController] E-Receipt trigger error:', err)
+            );
+        }
+
         if (isRefund) {
             auditLog('refund', { ip: req.ip, userId: req.user.id, metadata: { paymentId: id, orderId: payment.orderId, amount: actualRefundAmount } });
         } else {

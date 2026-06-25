@@ -5,6 +5,7 @@ const Order = require('../models/Order');
 const OrderItem = require('../models/OrderItem');
 const OrderItemModification = require('../models/OrderItemModification');
 const { roundMoney, amountsRoughlyEqual, computeOrderTotalsFromLines } = require('./orderTotals');
+const loyaltyService = require('../services/loyaltyService');
 
 const orderItemsForBalanceInclude = {
     model: OrderItem,
@@ -332,6 +333,11 @@ async function persistOrderPaymentAggregate(orderId, transaction) {
             ? deriveCancelledAggregatePaymentStatus(payments)
             : deriveAggregatePaymentStatus(financialTotal, payments);
     await order.update({ paymentStatus: status }, { transaction });
+
+    // Award loyalty points if order is paid
+    if (status === 'paid') {
+        await loyaltyService.awardLoyaltyPoints(orderId, transaction);
+    }
 }
 
 async function syncBalanceDuePayment(orderId, transaction) {

@@ -35,6 +35,12 @@ const ProductBundle = require('./ProductBundle');
 const ProductBundleBranch = require('./ProductBundleBranch');
 const ProductBundleItem = require('./ProductBundleItem');
 const ServiceCharge = require('./ServiceCharge');
+const BogoPromotion = require('./BogoPromotion');
+const BogoPromotionBranch = require('./BogoPromotionBranch');
+const CustomerCategoryDiscount = require('./CustomerCategoryDiscount');
+const Table = require('./Table');
+const Return = require('./Return');
+const ReturnItem = require('./ReturnItem');
 
 // User <-> UserDetail: One-to-One
 User.hasOne(UserDetail, { foreignKey: 'userId', as: 'UserDetail' });
@@ -85,11 +91,17 @@ Customer.hasMany(Order, { foreignKey: 'customerId', as: 'orders' });
 Order.belongsTo(DeliveryCharge, { foreignKey: 'deliveryChargeId', as: 'deliveryCharge' });
 DeliveryCharge.hasMany(Order, { foreignKey: 'deliveryChargeId', as: 'orders' });
 
+// Order <-> Table
+Order.belongsTo(Table, { foreignKey: 'tableId', as: 'table' });
+Table.hasMany(Order, { foreignKey: 'tableId', as: 'orders' });
+
 // Order - OrderItem Association
 Order.hasMany(OrderItem, { foreignKey: 'orderId', as: 'items', onDelete: 'CASCADE', hooks: true });
 OrderItem.belongsTo(Order, { foreignKey: 'orderId' });
 OrderItem.belongsTo(Product, { foreignKey: 'productId', as: 'product' });
 OrderItem.belongsTo(VariationOption, { foreignKey: 'variationOptionId', as: 'variationOption' });
+OrderItem.belongsTo(ProductBundle, { foreignKey: 'productBundleId', as: 'productBundle' });
+OrderItem.belongsTo(BogoPromotion, { foreignKey: 'bogoPromotionId', as: 'bogoPromotion' });
 
 // OrderItem - OrderItemModification Association
 OrderItem.hasMany(OrderItemModification, { foreignKey: 'orderItemId', as: 'modifications', onDelete: 'CASCADE', hooks: true });
@@ -154,6 +166,10 @@ ProductModification.hasMany(ProductModificationItemPrice, { foreignKey: 'product
 ProductModificationItemPrice.belongsTo(ProductModification, { foreignKey: 'productModificationId' });
 ProductModificationItemPrice.belongsTo(ModificationItem, { foreignKey: 'modificationItemId', as: 'item' });
 ProductModificationItemPrice.belongsTo(Branch, { foreignKey: 'branchId' });
+
+// ModificationItem - ProductModificationItemPrice Association
+ModificationItem.hasMany(ProductModificationItemPrice, { foreignKey: 'modificationItemId', as: 'itemPrices', onDelete: 'CASCADE', hooks: true });
+
 
 // Discount - DiscountBranch Association
 Discount.hasMany(DiscountBranch, { foreignKey: 'discountId', as: 'branches', onDelete: 'CASCADE', hooks: true });
@@ -246,6 +262,98 @@ ProductBundleItem.belongsTo(ProductBundle, { foreignKey: 'productBundleId' });
 ProductBundleItem.belongsTo(Product, { foreignKey: 'productId', as: 'product' });
 Product.hasMany(ProductBundleItem, { foreignKey: 'productId' });
 
+ProductBundleItem.belongsTo(VariationOption, { foreignKey: 'variationOptionId', as: 'variationOption' });
+VariationOption.hasMany(ProductBundleItem, { foreignKey: 'variationOptionId' });
+
+ProductBundleItem.belongsTo(ModificationItem, { foreignKey: 'modificationItemId', as: 'modificationItem' });
+ModificationItem.hasMany(ProductBundleItem, { foreignKey: 'modificationItemId' });
+
 // ServiceCharge Associations
 Branch.hasOne(ServiceCharge, { foreignKey: 'branchId', as: 'serviceCharge' });
 ServiceCharge.belongsTo(Branch, { foreignKey: 'branchId', as: 'branch' });
+
+// BogoPromotion - BogoPromotionBranch Association
+BogoPromotion.hasMany(BogoPromotionBranch, { foreignKey: 'bogoPromotionId', as: 'branches', onDelete: 'CASCADE', hooks: true });
+BogoPromotionBranch.belongsTo(BogoPromotion, { foreignKey: 'bogoPromotionId' });
+
+// BogoPromotionBranch - Branch Association
+BogoPromotionBranch.belongsTo(Branch, { foreignKey: 'branchId', as: 'branch' });
+Branch.hasMany(BogoPromotionBranch, { foreignKey: 'branchId', as: 'bogoPromotions' });
+
+// BogoPromotion - Product Association (Buy Product)
+BogoPromotion.belongsTo(Product, { foreignKey: 'buyProductId', as: 'buyProduct' });
+Product.hasMany(BogoPromotion, { foreignKey: 'buyProductId', as: 'buyBogoPromotions' });
+
+// BogoPromotion - Product Association (Get Product)
+BogoPromotion.belongsTo(Product, { foreignKey: 'getProductId', as: 'getProduct' });
+Product.hasMany(BogoPromotion, { foreignKey: 'getProductId', as: 'getBogoPromotions' });
+
+// BogoPromotion - VariationOption Association (Buy Variation)
+BogoPromotion.belongsTo(VariationOption, { foreignKey: 'buyVariationOptionId', as: 'buyVariationOption' });
+VariationOption.hasMany(BogoPromotion, { foreignKey: 'buyVariationOptionId' });
+
+// BogoPromotion - VariationOption Association (Get Variation)
+BogoPromotion.belongsTo(VariationOption, { foreignKey: 'getVariationOptionId', as: 'getVariationOption' });
+VariationOption.hasMany(BogoPromotion, { foreignKey: 'getVariationOptionId' });
+
+VariationOption.hasMany(BogoPromotion, { foreignKey: 'getVariationOptionId' });
+
+// Return Associations
+Order.hasMany(Return, { foreignKey: 'orderId', as: 'returns' });
+Return.belongsTo(Order, { foreignKey: 'orderId', as: 'order' });
+
+Return.hasMany(ReturnItem, { foreignKey: 'returnId', as: 'items', onDelete: 'CASCADE', hooks: true });
+ReturnItem.belongsTo(Return, { foreignKey: 'returnId', as: 'return' });
+
+ReturnItem.belongsTo(Product, { foreignKey: 'productId', as: 'product' });
+ReturnItem.belongsTo(VariationOption, { foreignKey: 'variationOptionId', as: 'variationOption' });
+
+Return.belongsTo(User, { foreignKey: 'userId', as: 'user' });
+Return.belongsTo(Branch, { foreignKey: 'branchId', as: 'branch' });
+
+module.exports = {
+    User,
+    UserDetail,
+    Branch,
+    Order,
+    Payment,
+    Session,
+    SessionTransaction,
+    Customer,
+    OrderItem,
+    OrderItemModification,
+    Product,
+    ProductBranch,
+    Variation,
+    VariationOption,
+    ModificationItem,
+    Category,
+    VariationPrice,
+    Modification,
+    ProductModification,
+    ProductModificationPrice,
+    ProductModificationItemPrice,
+    Discount,
+    DiscountItem,
+    DiscountBranch,
+    ActivityLog,
+    Supplier,
+    Material,
+    MaterialBranch,
+    StockItem,
+    ProductAssignment,
+    PrintJob,
+    DeliveryCharge,
+    DeliveryChargeBranch,
+    ProductBundle,
+    ProductBundleBranch,
+    ProductBundleItem,
+    ServiceCharge,
+    BogoPromotion,
+    BogoPromotionBranch,
+    CustomerCategoryDiscount,
+    Table,
+    Return,
+    ReturnItem
+};
+
