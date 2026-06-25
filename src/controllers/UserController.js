@@ -324,7 +324,8 @@ exports.getUserById = async (req, res) => {
 exports.updateUser = async (req, res) => {
     try {
         const { id } = req.params;
-        const { name, email, branchId, employeeId, role, status, passcode } = req.body;
+        const { name, email, branchId, employeeId, role, status, passcode,password } = req.body;
+        const hashedPassword = await bcrypt.hash(password, 10);
 
         const user = await User.findByPk(id, {
             include: [{ model: UserDetail, as: 'UserDetail' }],
@@ -339,6 +340,7 @@ exports.updateUser = async (req, res) => {
         if (passcode !== undefined && ['admin', 'manager'].includes(user.role)) {
             user.passcode = encrypt(passcode);
         }
+         if (password !== undefined) user.password = hashedPassword;
         await user.save();
 
         // Update UserDetail table

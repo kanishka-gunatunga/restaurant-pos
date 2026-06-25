@@ -722,10 +722,208 @@ exports.updateOrderStatus = async (req, res) => {
     }
 };
 
+// exports.updateOrder = async (req, res) => {
+//     const t = await sequelize.transaction();
+//     try {
+//         const { id } = req.params;
+//         const {
+//             customerMobile,
+//             customerName,
+//             totalAmount,
+//             orderType,
+//             tableNumber,
+//             orderDiscount,
+//             tax,
+//             orderNote,
+//             kitchenNote,
+//             orderTimer,
+//             deliveryAddress,
+//             landmark,
+//             zipcode,
+//             deliveryInstructions,
+//             passcode,
+//             paymentStatus: bodyPaymentStatus,
+//             payment_status: bodyPaymentStatusSnake,
+//         } = req.body;
+
+//         const order_products =
+//             req.body.order_products ?? req.body.orderProducts ?? req.body.order_lines;
+//         const serviceChargeFromBody = req.body.serviceCharge ?? req.body.service_charge;
+//         const deliveryChargeAmountFromBody =
+//             req.body.deliveryChargeAmount ?? req.body.delivery_charge_amount;
+//         const deliveryChargeIdFromBody = req.body.deliveryChargeId ?? req.body.delivery_charge_id;
+//         const deliveryChargeSelectedIdFromBody =
+//             req.body.deliveryChargeSelectedId ?? req.body.delivery_charge_selected_id;
+
+//         const order = await Order.findByPk(id, { transaction: t });
+//         if (!order) {
+//             await t.rollback();
+//             return res.status(404).json({ message: 'Order not found' });
+//         }
+//         if (!(await orderBelongsToRequesterBranch(req, order))) {
+//             await t.rollback();
+//             return res.status(404).json({ message: 'Order not found' });
+//         }
+
+//         const editorUserDetail = await UserDetail.findOne({
+//             where: { userId: req.user.id },
+//             transaction: t,
+//         });
+
+//         if (order.status !== 'pending') {
+//             const isVerified = await verifyManagerPasscode(passcode);
+//             if (!isVerified) {
+//                 await t.rollback();
+//                 return invalidManagerPasscode(
+//                     res,
+//                     'Invalid or missing manager passcode for updating a non-pending order'
+//                 );
+//             }
+//         }
+
+//         let { customerId } = req.body;
+//         if (customerMobile) {
+//             let customer = await Customer.findOne({ where: { mobile: customerMobile }, transaction: t });
+//             if (!customer && customerName) {
+//                 customer = await Customer.create({ mobile: customerMobile, name: customerName }, { transaction: t });
+//             }
+//             if (customer) {
+//                 customerId = customer.id;
+//             }
+//         }
+
+//         const effectiveOrderDiscount =
+//             orderDiscount !== undefined && orderDiscount !== null
+//                 ? Math.max(0, parseFloat(orderDiscount) || 0)
+//                 : Math.max(0, parseFloat(order.orderDiscount) || 0);
+
+//         const effectiveServiceCharge =
+//             serviceChargeFromBody !== undefined
+//                 ? parseFloat(serviceChargeFromBody) || 0
+//                 : parseFloat(order.serviceCharge) || 0;
+//         const effectiveDeliveryChargeAmount =
+//             deliveryChargeAmountFromBody !== undefined
+//                 ? parseFloat(deliveryChargeAmountFromBody) || 0
+//                 : parseFloat(order.deliveryChargeAmount) || 0;
+//         const effectiveDeliveryChargeId =
+//             deliveryChargeIdFromBody !== undefined || deliveryChargeSelectedIdFromBody !== undefined
+//                 ? deliveryChargeIdFromBody || deliveryChargeSelectedIdFromBody || null
+//                 : order.deliveryChargeId;
+
+//         if (order_products) {
+//             const orderItems = await OrderItem.findAll({ where: { orderId: id }, transaction: t });
+//             for (const item of orderItems) {
+//                 await OrderItemModification.destroy({ where: { orderItemId: item.id }, transaction: t });
+//             }
+//             await OrderItem.destroy({ where: { orderId: id }, transaction: t });
+
+//             if (order_products.length > 0) {
+//                 for (const item of order_products) {
+//                     const variationOptionId = item.variationId ?? item.variation_id ?? item.variationOptionId ?? null;
+//                     const orderItem = await OrderItem.create({
+//                         orderId: order.id,
+//                         productId: item.productId,
+//                         variationOptionId,
+//                         quantity: item.quantity,
+//                         unitPrice: item.unitPrice,
+//                         productDiscount: item.productDiscount,
+//                         status: item.status || 'pending'
+//                     }, { transaction: t });
+
+//                     const modRows = buildOrderItemModificationRows(orderItem.id, item.modifications);
+//                     if (modRows.length > 0) {
+//                         await OrderItemModification.bulkCreate(modRows, { transaction: t });
+//                     }
+//                 }
+//             }
+//         }
+
+//         const savedItems = await OrderItem.findAll({
+//             where: { orderId: id },
+//             include: [{ model: OrderItemModification, as: 'modifications' }],
+//             transaction: t
+//         });
+//         const finalTotals = computeOrderTotalsFromLines(savedItems, effectiveOrderDiscount, effectiveServiceCharge, effectiveDeliveryChargeAmount);
+//         logTotalsMismatchIfAny(id, tax, totalAmount, finalTotals, 'updateOrder');
+
+//         const updatePayload = {
+//             customerId,
+//             orderType,
+//             tableNumber,
+//             orderDiscount: effectiveOrderDiscount,
+//             tax: finalTotals.tax,
+//             totalAmount: finalTotals.totalAmount,
+//             orderNote,
+//             kitchenNote,
+//             orderTimer,
+//             deliveryAddress,
+//             landmark,
+//             zipcode,
+//             deliveryInstructions,
+//             serviceCharge: effectiveServiceCharge,
+//             deliveryChargeAmount: effectiveDeliveryChargeAmount,
+//             deliveryChargeId: effectiveDeliveryChargeId,
+//         };
+
+//         if (order.branchId == null && editorUserDetail?.branchId != null) {
+//             updatePayload.branchId = editorUserDetail.branchId;
+//         }
+//         await order.update(updatePayload, { transaction: t });
+//         await order.reload({ transaction: t });
+
+//         await persistOrderPaymentAggregate(id, t);
+
+//         if (order_products) {
+//             auditLog('order_basket_updated', {
+//                 ip: req.ip,
+//                 userId: req.user?.id,
+//                 path: req.path,
+//                 metadata: {
+//                     orderId: Number(id),
+//                     totalAmount: finalTotals.totalAmount,
+//                     tax: finalTotals.tax,
+//                     lineSubtotalSum: finalTotals.lineSubtotalSum,
+//                 },
+//             });
+//         }
+
+//         await t.commit();
+//         const fullOrder = await Order.findByPk(order.id, {
+//             include: [customerOrderInclude, paymentsOrderInclude, orderItemsFullInclude],
+//         });
+
+//         const payload = attachDerivedPaymentFieldsToOrderJson(fullOrder.toJSON());
+//         await enrichOrderJsonItemsForDetail(payload);
+//         payload.payment_status = payload.paymentStatus;
+//         const clientPayStatus = bodyPaymentStatus !== undefined ? bodyPaymentStatus : bodyPaymentStatusSnake;
+//         logIgnoredClientPaymentStatus(id, clientPayStatus, payload.paymentStatus);
+
+//         if (['1', 'true', 'yes'].includes(String(process.env.LOG_PAYMENT_CONSISTENCY || '').toLowerCase())) {
+//             console.log(
+//                 JSON.stringify({
+//                     ts: new Date().toISOString(),
+//                     event: 'order_put_read_after_commit',
+//                     orderId: Number(id),
+//                     paymentStatus: payload.paymentStatus,
+//                     totalAmount: payload.totalAmount,
+//                     balanceDue: payload.balanceDue,
+//                     requiresAdditionalPayment: payload.requiresAdditionalPayment,
+//                 })
+//             );
+//         }
+
+//         res.json(payload);
+//     } catch (error) {
+//         await t.rollback();
+//         res.status(400).json({ message: error.message });
+//     }
+// };
 exports.updateOrder = async (req, res) => {
     const t = await sequelize.transaction();
+
     try {
         const { id } = req.params;
+
         const {
             customerMobile,
             customerName,
@@ -748,22 +946,38 @@ exports.updateOrder = async (req, res) => {
 
         const order_products =
             req.body.order_products ?? req.body.orderProducts ?? req.body.order_lines;
+
         const serviceChargeFromBody = req.body.serviceCharge ?? req.body.service_charge;
         const deliveryChargeAmountFromBody =
             req.body.deliveryChargeAmount ?? req.body.delivery_charge_amount;
-        const deliveryChargeIdFromBody = req.body.deliveryChargeId ?? req.body.delivery_charge_id;
+        const deliveryChargeIdFromBody =
+            req.body.deliveryChargeId ?? req.body.delivery_charge_id;
         const deliveryChargeSelectedIdFromBody =
             req.body.deliveryChargeSelectedId ?? req.body.delivery_charge_selected_id;
 
         const order = await Order.findByPk(id, { transaction: t });
+
         if (!order) {
             await t.rollback();
             return res.status(404).json({ message: 'Order not found' });
         }
+
         if (!(await orderBelongsToRequesterBranch(req, order))) {
             await t.rollback();
             return res.status(404).json({ message: 'Order not found' });
         }
+
+        // ✅ ORIGINAL ITEMS (needed for delta KOT)
+        const originalItems = await OrderItem.findAll({
+            where: { orderId: id },
+            include: [
+                {
+                    model: OrderItemModification,
+                    as: 'modifications',
+                }
+            ],
+            transaction: t
+        });
 
         const editorUserDetail = await UserDetail.findOne({
             where: { userId: req.user.id },
@@ -782,18 +996,27 @@ exports.updateOrder = async (req, res) => {
         }
 
         let { customerId } = req.body;
+
         if (customerMobile) {
-            let customer = await Customer.findOne({ where: { mobile: customerMobile }, transaction: t });
+            let customer = await Customer.findOne({
+                where: { mobile: customerMobile },
+                transaction: t
+            });
+
             if (!customer && customerName) {
-                customer = await Customer.create({ mobile: customerMobile, name: customerName }, { transaction: t });
+                customer = await Customer.create(
+                    { mobile: customerMobile, name: customerName },
+                    { transaction: t }
+                );
             }
+
             if (customer) {
                 customerId = customer.id;
             }
         }
 
         const effectiveOrderDiscount =
-            orderDiscount !== undefined && orderDiscount !== null
+            orderDiscount != null
                 ? Math.max(0, parseFloat(orderDiscount) || 0)
                 : Math.max(0, parseFloat(order.orderDiscount) || 0);
 
@@ -801,25 +1024,48 @@ exports.updateOrder = async (req, res) => {
             serviceChargeFromBody !== undefined
                 ? parseFloat(serviceChargeFromBody) || 0
                 : parseFloat(order.serviceCharge) || 0;
+
         const effectiveDeliveryChargeAmount =
             deliveryChargeAmountFromBody !== undefined
                 ? parseFloat(deliveryChargeAmountFromBody) || 0
                 : parseFloat(order.deliveryChargeAmount) || 0;
+
         const effectiveDeliveryChargeId =
             deliveryChargeIdFromBody !== undefined || deliveryChargeSelectedIdFromBody !== undefined
-                ? deliveryChargeIdFromBody || deliveryChargeSelectedIdFromBody || null
+                ? (deliveryChargeIdFromBody || deliveryChargeSelectedIdFromBody || null)
                 : order.deliveryChargeId;
 
+        // =========================
+        // UPDATE ITEMS
+        // =========================
         if (order_products) {
-            const orderItems = await OrderItem.findAll({ where: { orderId: id }, transaction: t });
-            for (const item of orderItems) {
-                await OrderItemModification.destroy({ where: { orderItemId: item.id }, transaction: t });
+
+            const existingItems = await OrderItem.findAll({
+                where: { orderId: id },
+                transaction: t
+            });
+
+            for (const item of existingItems) {
+                await OrderItemModification.destroy({
+                    where: { orderItemId: item.id },
+                    transaction: t
+                });
             }
-            await OrderItem.destroy({ where: { orderId: id }, transaction: t });
+
+            await OrderItem.destroy({
+                where: { orderId: id },
+                transaction: t
+            });
 
             if (order_products.length > 0) {
                 for (const item of order_products) {
-                    const variationOptionId = item.variationId ?? item.variation_id ?? item.variationOptionId ?? null;
+
+                    const variationOptionId =
+                        item.variationId ??
+                        item.variation_id ??
+                        item.variationOptionId ??
+                        null;
+
                     const orderItem = await OrderItem.create({
                         orderId: order.id,
                         productId: item.productId,
@@ -830,7 +1076,11 @@ exports.updateOrder = async (req, res) => {
                         status: item.status || 'pending'
                     }, { transaction: t });
 
-                    const modRows = buildOrderItemModificationRows(orderItem.id, item.modifications);
+                    const modRows = buildOrderItemModificationRows(
+                        orderItem.id,
+                        item.modifications
+                    );
+
                     if (modRows.length > 0) {
                         await OrderItemModification.bulkCreate(modRows, { transaction: t });
                     }
@@ -838,12 +1088,22 @@ exports.updateOrder = async (req, res) => {
             }
         }
 
+        // =========================
+        // RE-CALCULATE TOTALS
+        // =========================
         const savedItems = await OrderItem.findAll({
             where: { orderId: id },
             include: [{ model: OrderItemModification, as: 'modifications' }],
             transaction: t
         });
-        const finalTotals = computeOrderTotalsFromLines(savedItems, effectiveOrderDiscount, effectiveServiceCharge, effectiveDeliveryChargeAmount);
+
+        const finalTotals = computeOrderTotalsFromLines(
+            savedItems,
+            effectiveOrderDiscount,
+            effectiveServiceCharge,
+            effectiveDeliveryChargeAmount
+        );
+
         logTotalsMismatchIfAny(id, tax, totalAmount, finalTotals, 'updateOrder');
 
         const updatePayload = {
@@ -868,6 +1128,7 @@ exports.updateOrder = async (req, res) => {
         if (order.branchId == null && editorUserDetail?.branchId != null) {
             updatePayload.branchId = editorUserDetail.branchId;
         }
+
         await order.update(updatePayload, { transaction: t });
         await order.reload({ transaction: t });
 
@@ -887,38 +1148,126 @@ exports.updateOrder = async (req, res) => {
             });
         }
 
+        // =========================
+        // COMMIT FIRST
+        // =========================
         await t.commit();
+
+        // =========================
+        // RELOAD FULL ORDER
+        // =========================
         const fullOrder = await Order.findByPk(order.id, {
             include: [customerOrderInclude, paymentsOrderInclude, orderItemsFullInclude],
         });
 
-        const payload = attachDerivedPaymentFieldsToOrderJson(fullOrder.toJSON());
-        await enrichOrderJsonItemsForDetail(payload);
-        payload.payment_status = payload.paymentStatus;
-        const clientPayStatus = bodyPaymentStatus !== undefined ? bodyPaymentStatus : bodyPaymentStatusSnake;
-        logIgnoredClientPaymentStatus(id, clientPayStatus, payload.paymentStatus);
+        // =========================
+        // DELTA KOT LOGIC (POST COMMIT)
+        // =========================
 
-        if (['1', 'true', 'yes'].includes(String(process.env.LOG_PAYMENT_CONSISTENCY || '').toLowerCase())) {
-            console.log(
-                JSON.stringify({
-                    ts: new Date().toISOString(),
-                    event: 'order_put_read_after_commit',
-                    orderId: Number(id),
-                    paymentStatus: payload.paymentStatus,
-                    totalAmount: payload.totalAmount,
-                    balanceDue: payload.balanceDue,
-                    requiresAdditionalPayment: payload.requiresAdditionalPayment,
-                })
-            );
+        const branchIdForSideFx =
+            editorUserDetail?.branchId || order.branchId || 1;
+
+        const getItemKey = (item) => {
+            const modsKey = (item.modifications || [])
+                .map(m => m.modificationId ?? m.id)
+                .filter(Boolean)
+                .sort()
+                .join(',');
+
+            return `${item.productId}_${item.variationOptionId || ''}_${modsKey}`;
+        };
+
+        const deltaItems = [];
+        const processedKeys = new Set();
+
+        for (const item of fullOrder.items) {
+            const key = getItemKey(item);
+            processedKeys.add(key);
+
+            const originalQty = originalItems
+                .filter(orig => getItemKey(orig) === key)
+                .reduce((sum, orig) => sum + parseFloat(orig.quantity), 0);
+
+            const deltaQty = parseFloat(item.quantity) - originalQty;
+
+            if (deltaQty > 0.001) {
+                const cloned = item.toJSON ? item.toJSON() : JSON.parse(JSON.stringify(item));
+                cloned.quantity = deltaQty;
+                deltaItems.push(cloned);
+            }
         }
 
+        for (const orig of originalItems) {
+            const key = getItemKey(orig);
+
+            if (!processedKeys.has(key)) {
+                const deltaQty = 0 - parseFloat(orig.quantity);
+
+                if (deltaQty > 0.001) {
+                    const cloned = orig.toJSON ? orig.toJSON() : JSON.parse(JSON.stringify(orig));
+                    cloned.quantity = deltaQty;
+                    deltaItems.push(cloned);
+                }
+            }
+        }
+
+        // =========================
+        // QUEUE KOT PRINT
+        // =========================
+        (async () => {
+            if (deltaItems.length === 0) {
+                console.log(`[updateOrder] No item changes for order ${order.id}`);
+                return;
+            }
+
+            try {
+                const branch = await Branch.findByPk(branchIdForSideFx);
+
+                const deltaOrder = {
+                    id: fullOrder.id,
+                    orderNo: fullOrder.orderNo,
+                    createdAt: fullOrder.createdAt,
+                    orderType: fullOrder.orderType,
+                    tableNumber: fullOrder.tableNumber,
+                    kitchenNote: fullOrder.kitchenNote,
+                    items: deltaItems
+                };
+
+                const data = templateService.generateKitchenStructuredData(deltaOrder, branch);
+
+                await PrintJob.create({
+                    order_id: order.id,
+                    printer_name: 'XP-80',
+                    content: JSON.stringify(data),
+                    type: 'kitchen',
+                    status: 'pending'
+                });
+
+            } catch (err) {
+                console.error('[updateOrder] KOT print error:', err);
+            }
+        })();
+
+        const payload = attachDerivedPaymentFieldsToOrderJson(fullOrder.toJSON());
+
+        await enrichOrderJsonItemsForDetail(payload);
+
+        payload.payment_status = payload.paymentStatus;
+
+        const clientPayStatus =
+            bodyPaymentStatus !== undefined
+                ? bodyPaymentStatus
+                : bodyPaymentStatusSnake;
+
+        logIgnoredClientPaymentStatus(id, clientPayStatus, payload.paymentStatus);
+
         res.json(payload);
+
     } catch (error) {
         await t.rollback();
         res.status(400).json({ message: error.message });
     }
 };
-
 exports.updateOrderItemStatus = async (req, res) => {
     try {
         const { itemId } = req.params;

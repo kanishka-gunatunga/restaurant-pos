@@ -1,4 +1,14 @@
 const express = require('express');
+const app = express();
+app.use('/pos', (req, res, next) => {
+    next();
+});
+app.use((req, res, next) => {
+    if (req.url.startsWith('/pos')) {
+        req.url = req.url.replace('/pos', '');
+    }
+    next();
+});
 const cors = require('cors');
 const helmet = require('helmet');
 const sequelize = require('./config/database');
@@ -6,6 +16,38 @@ require('dotenv').config();
 
 require('./models/associations');
 
+app.get('/test-api', async (req, res) => {
+    try {
+        const dbStatus = await sequelize.authenticate()
+            .then(() => 'connected')
+            .catch((err) => err.message);
+
+        res.json({
+            message: 'API working',
+
+            env: {
+                NODE_ENV: process.env.NODE_ENV,
+                PORT: process.env.PORT
+            },
+
+            db: {
+                host: process.env.DB_HOST,
+                name: process.env.DB_NAME,
+                user: process.env.DB_USER,
+                port: process.env.DB_PORT,
+                password: process.env.DB_PASS,
+                poolMax: process.env.DB_POOL_MAX || 'not set',
+                status: dbStatus
+            }
+        });
+
+    } catch (err) {
+        res.status(500).json({
+            message: 'Error in test route',
+            error: err.message
+        });
+    }
+});
 const authRoutes = require('./routes/authRoutes');
 const userRoutes = require('./routes/userRoutes');
 const productRoutes = require('./routes/productRoutes');
@@ -32,7 +74,7 @@ const deliveryChargeRoutes = require('./routes/deliveryChargeRoutes');
 const serviceChargeRoutes = require('./routes/serviceChargeRoutes');
 const productBundleRoutes = require('./routes/productBundleRoutes');
 
-const app = express();
+
 app.set('trust proxy', 1);
 app.param('id', (req, res, next, id) => {
     const err = validatePositiveInt(id, 'id');
