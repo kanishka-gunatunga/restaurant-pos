@@ -344,7 +344,9 @@ exports.generateKitchenStructuredData = (order, branch) => {
         tableNumber: resolveOrderTableLabel(order),
         kitchenNote: order.kitchenNote,
         items: order.items.filter(item => {
-            const name = item.productBundle?.name || item.bogoPromotion?.name || item.product?.name || 'Item';
+            // Exclude items with no product/bundle/bogo — these are voucher lines
+            if (!item.productId && !item.productBundleId && !item.bogoPromotionId) return false;
+            const name = item.productBundle?.name || item.bogoPromotion?.name || item.product?.name || '';
             return !name.toLowerCase().includes('voucher');
         }).map(item => {
             const name = item.productBundle?.name || item.bogoPromotion?.name || item.product?.name || 'Item';

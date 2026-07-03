@@ -625,10 +625,17 @@ exports.createOrder = async (req, res) => {
                     const crypto = require('crypto');
                     const IssuedVoucher = require('../models/IssuedVoucher');
 
-                    const hasFoodItems = printOrder.items.some(item => {
-                        const name = item.productBundle?.name || item.bogoPromotion?.name || item.product?.name || 'Item';
-                        return !name.toLowerCase().includes('voucher');
-                    });
+                    const isVoucherItem = (item) => {
+                        // Primary: frontend sends itemType: 'voucher'
+                        if (item.itemType === 'voucher') return true;
+                        // Secondary: productId is null, not a bundle or bogo — must be a voucher
+                        if (!item.productId && !item.productBundleId && !item.bogoPromotionId) return true;
+                        // Tertiary: product name check (for legacy data)
+                        const name = item.productBundle?.name || item.bogoPromotion?.name || item.product?.name || '';
+                        return name.toLowerCase().includes('voucher');
+                    };
+
+                    const hasFoodItems = printOrder.items.some(item => !isVoucherItem(item));
                     
                     if (hasFoodItems) {
                         const data = templateService.generateKitchenStructuredData(printOrder, branch);
@@ -644,10 +651,7 @@ exports.createOrder = async (req, res) => {
                         }
                     }
 
-                    const voucherItems = printOrder.items.filter(item => {
-                        const name = item.productBundle?.name || item.bogoPromotion?.name || item.product?.name || 'Item';
-                        return name.toLowerCase().includes('voucher');
-                    });
+                    const voucherItems = printOrder.items.filter(item => isVoucherItem(item));
                     
                     if (voucherItems.length > 0) {
                         for (const item of voucherItems) {
