@@ -79,7 +79,7 @@ const customerCategoryDiscountRoutes = require('./routes/customerCategoryDiscoun
 const tableRoutes = require('./routes/tableRoutes');
 const returnRoutes = require('./routes/returnRoutes');
 const voucherTemplateRoutes = require('./routes/voucherTemplateRoutes');
-
+const issuedVoucherRoutes = require('./routes/issuedVoucherRoutes');
 
 app.set('trust proxy', 1);
 app.param('id', (req, res, next, id) => {
@@ -151,6 +151,7 @@ app.use('/api/customer-category-discounts', customerCategoryDiscountRoutes);
 app.use('/api/tables', tableRoutes);
 app.use('/api/returns', returnRoutes);
 app.use('/api/voucher-templates', voucherTemplateRoutes);
+app.use('/api/issued-vouchers', issuedVoucherRoutes);
 
 // Global error handler (do not log request body to avoid leaking tokens/passwords)
 app.use((err, req, res, next) => {

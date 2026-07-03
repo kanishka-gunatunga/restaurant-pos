@@ -343,7 +343,10 @@ exports.generateKitchenStructuredData = (order, branch) => {
         orderType: capitalize(order.orderType || 'N/A'),
         tableNumber: resolveOrderTableLabel(order),
         kitchenNote: order.kitchenNote,
-        items: order.items.map(item => {
+        items: order.items.filter(item => {
+            const name = item.productBundle?.name || item.bogoPromotion?.name || item.product?.name || 'Item';
+            return !name.toLowerCase().includes('voucher');
+        }).map(item => {
             const name = item.productBundle?.name || item.bogoPromotion?.name || item.product?.name || 'Item';
             const vOpt = item.variationOption || item.variation_option;
             const variationSummary = vOpt ? (vOpt.Variation?.name ? `${vOpt.Variation.name}: ${vOpt.name}` : vOpt.name) : '';
@@ -357,6 +360,25 @@ exports.generateKitchenStructuredData = (order, branch) => {
                 ) || []
             };
         })
+    };
+};
+
+/**
+ * Generate structured JSON for Voucher receipts (for ESC/POS)
+ */
+exports.generateVoucherStructuredData = (voucher, branch) => {
+    return {
+        type: 'voucher',
+        voucherId: voucher.id.toString().padStart(8, '0'),
+        code: voucher.code,
+        barcode: voucher.barcode,
+        dateTime: formatDateTime(voucher.createdAt),
+        branchName: voucher.branchName,
+        valueFormatted: voucher.valueFormatted,
+        validityLabel: voucher.validityLabel,
+        expiryDate: voucher.expiryDate,
+        issuedToName: voucher.issuedToName,
+        issuedToPhone: voucher.issuedToPhone
     };
 };
 

@@ -42,6 +42,7 @@ const Table = require('./Table');
 const Return = require('./Return');
 const ReturnItem = require('./ReturnItem');
 const VoucherTemplate = require('./VoucherTemplate');
+const IssuedVoucher = require('./IssuedVoucher');
 
 // User <-> UserDetail: One-to-One
 User.hasOne(UserDetail, { foreignKey: 'userId', as: 'UserDetail' });
@@ -312,6 +313,10 @@ ReturnItem.belongsTo(VariationOption, { foreignKey: 'variationOptionId', as: 'va
 Return.belongsTo(User, { foreignKey: 'userId', as: 'user' });
 Return.belongsTo(Branch, { foreignKey: 'branchId', as: 'branch' });
 
+// IssuedVoucher Associations
+Order.hasMany(IssuedVoucher, { foreignKey: 'orderId', as: 'issuedVouchers' });
+IssuedVoucher.belongsTo(Order, { foreignKey: 'orderId', as: 'order' });
+
 module.exports = {
     User,
     UserDetail,
@@ -356,6 +361,7 @@ module.exports = {
     Table,
     Return,
     ReturnItem,
-    VoucherTemplate
+    VoucherTemplate,
+    IssuedVoucher
 };
 

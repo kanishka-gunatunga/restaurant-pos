@@ -622,15 +622,71 @@ exports.createOrder = async (req, res) => {
                             },
                         ],
                     });
-                    const data = templateService.generateKitchenStructuredData(printOrder, branch);
-                    const content = JSON.stringify(data);
-                    await PrintJob.create({
-                        order_id: orderIdForSideEffects,
-                        printer_name: 'XP-80',
-                        content,
-                        type: 'kitchen',
-                        status: 'pending',
+                    const crypto = require('crypto');
+                    const IssuedVoucher = require('../models/IssuedVoucher');
+
+                    const hasFoodItems = printOrder.items.some(item => {
+                        const name = item.productBundle?.name || item.bogoPromotion?.name || item.product?.name || 'Item';
+                        return !name.toLowerCase().includes('voucher');
                     });
+                    
+                    if (hasFoodItems) {
+                        const data = templateService.generateKitchenStructuredData(printOrder, branch);
+                        if (data.items && data.items.length > 0) {
+                            const content = JSON.stringify(data);
+                            await PrintJob.create({
+                                order_id: orderIdForSideEffects,
+                                printer_name: 'XP-80',
+                                content,
+                                type: 'kitchen',
+                                status: 'pending',
+                            });
+                        }
+                    }
+
+                    const voucherItems = printOrder.items.filter(item => {
+                        const name = item.productBundle?.name || item.bogoPromotion?.name || item.product?.name || 'Item';
+                        return name.toLowerCase().includes('voucher');
+                    });
+                    
+                    if (voucherItems.length > 0) {
+                        for (const item of voucherItems) {
+                            const qty = Math.max(1, parseInt(item.quantity) || 1);
+                            for (let i = 0; i < qty; i++) {
+                                const code1 = crypto.randomBytes(2).toString('hex').toUpperCase();
+                                const code2 = Math.floor(1000 + Math.random() * 9000);
+                                const code = `GV25-${code1}-${code2}`;
+                                const barcode = Math.floor(10000000 + Math.random() * 90000000).toString();
+
+                                const expiryDate = new Date();
+                                expiryDate.setMonth(expiryDate.getMonth() + 12);
+                                
+                                const issuedVoucher = await IssuedVoucher.create({
+                                    id: crypto.randomUUID(),
+                                    orderId: orderIdForSideEffects,
+                                    code,
+                                    barcode,
+                                    valueFormatted: `Rs.${parseFloat(item.unitPrice).toFixed(2)}`,
+                                    validityLabel: '12 months',
+                                    expiryDate,
+                                    issuedToName: printOrder.customer?.name || null,
+                                    issuedToPhone: printOrder.customer?.mobile || null,
+                                    branchName: branch?.location || 'CATERING BY AHAS GAWWA',
+                                    status: 'active'
+                                });
+
+                                const vData = templateService.generateVoucherStructuredData(issuedVoucher, branch);
+                                await PrintJob.create({
+                                    order_id: orderIdForSideEffects,
+                                    printer_name: 'XP-80',
+                                    content: JSON.stringify(vData),
+                                    type: 'voucher',
+                                    status: 'pending'
+                                });
+                            }
+                        }
+                    }
+
                 } catch (printError) {
                     console.error(
                         '[OrderController] Failed to queue kitchen print job for order',
