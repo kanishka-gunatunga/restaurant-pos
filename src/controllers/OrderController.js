@@ -239,19 +239,35 @@ exports.searchOrders = async (req, res) => {
                     {
                         [Op.or]: [
                             { id: { [Op.like]: `%${q}%` } },
-                            { '$customer.name$': { [Op.like]: `%${q}%` } },
-                            { '$customer.mobile$': { [Op.like]: `%${q}%` } },
+                            { orderNo: { [Op.like]: `%${q}%` } },
+                            sequelize.literal(`EXISTS (SELECT 1 FROM customers c WHERE c.id = \`Order\`.\`customerId\` AND (c.name LIKE '%${q}%' OR c.mobile LIKE '%${q}%'))`)
                         ],
                     },
                 ],
             };
         } else {
             const extra = {};
-            if (orderId) extra.id = { [Op.like]: `%${orderId}%` };
-            if (customerName) extra['$customer.name$'] = { [Op.like]: `%${customerName}%` };
-            if (phone) extra['$customer.mobile$'] = { [Op.like]: `%${phone}%` };
-            where =
-                Object.keys(extra).length > 0 ? { [Op.and]: [branchWhere, extra] } : branchWhere;
+            const andConditions = [];
+            if (orderId) {
+                andConditions.push({
+                    [Op.or]: [
+                        { id: { [Op.like]: `%${orderId}%` } },
+                        { orderNo: { [Op.like]: `%${orderId}%` } }
+                    ]
+                });
+            }
+            if (customerName) {
+                andConditions.push(sequelize.literal(`EXISTS (SELECT 1 FROM customers c WHERE c.id = \`Order\`.\`customerId\` AND c.name LIKE '%${customerName}%')`));
+            }
+            if (phone) {
+                andConditions.push(sequelize.literal(`EXISTS (SELECT 1 FROM customers c WHERE c.id = \`Order\`.\`customerId\` AND c.mobile LIKE '%${phone}%')`));
+            }
+            
+            if (andConditions.length > 0) {
+                where = { [Op.and]: [branchWhere, ...andConditions] };
+            } else {
+                where = branchWhere;
+            }
         }
 
         const { where: scopedWhere, placedByMe } = mergePlacedByMeFilter(req, where);
@@ -457,6 +473,8 @@ exports.createOrder = async (req, res) => {
             let customer = await Customer.findOne({ where: { mobile: customerMobile }, transaction: t });
             if (!customer && customerName) {
                 customer = await Customer.create({ mobile: customerMobile, name: customerName }, { transaction: t });
+            } else if (customer && customerName && customer.name !== customerName) {
+                await customer.update({ name: customerName }, { transaction: t });
             }
             if (customer) {
                 customerId = customer.id;
@@ -1057,6 +1075,8 @@ exports.updateOrder = async (req, res) => {
             return res.status(404).json({ message: 'Order not found' });
         }
 
+        const effectiveTableId = tableIdFromBody !== undefined ? parseTableId(tableIdFromBody) : order.tableId;
+
         const originalItems = await OrderItem.findAll({
             where: { orderId: id },
             include: [
@@ -1104,6 +1124,8 @@ exports.updateOrder = async (req, res) => {
                     { mobile: customerMobile, name: customerName },
                     { transaction: t }
                 );
+            } else if (customer && customerName && customer.name !== customerName) {
+                await customer.update({ name: customerName }, { transaction: t });
             }
 
             if (customer) {
@@ -1282,7 +1304,7 @@ exports.updateOrder = async (req, res) => {
                 .reduce((sum, orig) => sum + parseFloat(orig.quantity), 0);
 
             const deltaQty = parseFloat(item.quantity) - originalQty;
-            if (deltaQty > 0.001) {
+            if (Math.abs(deltaQty) > 0.001) {
                 const clonedItem = item.toJSON ? item.toJSON() : JSON.parse(JSON.stringify(item));
                 clonedItem.quantity = deltaQty;
                 deltaItems.push(clonedItem);
@@ -1294,7 +1316,7 @@ exports.updateOrder = async (req, res) => {
             if (!processedKeys.has(key)) {
                 processedKeys.add(key);
                 const deltaQty = 0 - parseFloat(orig.quantity);
-                if (deltaQty > 0.001) {
+                if (Math.abs(deltaQty) > 0.001) {
                     const clonedItem = orig.toJSON ? orig.toJSON() : JSON.parse(JSON.stringify(orig));
                     clonedItem.quantity = deltaQty;
                     deltaItems.push(clonedItem);

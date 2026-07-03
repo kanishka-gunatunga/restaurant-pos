@@ -37,8 +37,8 @@ function lineSubtotal(item) {
     const qty = Math.max(0, parseInt(item.quantity, 10) || 0);
     const unit = parseFloat(item.unitPrice) || 0;
     const modSum = modificationSum(item.modifications);
-    // Product discount is already accounted for in the frontend's calculations
-    const raw = unit * qty + modSum;
+    const prodDisc = parseFloat(item.productDiscount) || 0;
+    const raw = (unit - prodDisc) * qty + modSum;
     return Math.max(0, roundMoney(raw));
 }
 

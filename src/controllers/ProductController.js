@@ -933,37 +933,143 @@ exports.activateProduct = async (req, res) => {
 
 exports.exportTemplate = async (req, res) => {
     try {
+        // Fetch all products with their related data
+        const products = await Product.findAll({
+            include: [
+                { model: Category, as: 'category', required: false },
+                { model: Category, as: 'subCategory', required: false },
+                {
+                    model: ProductBranch,
+                    as: 'branches',
+                    required: false,
+                    include: [{ model: Branch, as: 'branch', required: false }]
+                },
+                {
+                    model: Variation,
+                    as: 'variations',
+                    required: false,
+                    include: [
+                        {
+                            model: VariationOption,
+                            as: 'options',
+                            required: false,
+                            include: [
+                                {
+                                    model: VariationPrice,
+                                    as: 'prices',
+                                    required: false,
+                                    include: [{ model: Branch, required: false }]
+                                }
+                            ]
+                        }
+                    ]
+                },
+                {
+                    model: ProductModification,
+                    as: 'productModifications',
+                    required: false,
+                    include: [{ model: Modification, required: false }]
+                }
+            ],
+            order: [['id', 'ASC']]
+        });
+
         const wb = xlsx.utils.book_new();
 
-        // Sheet 1: Products
-        const productsWs = xlsx.utils.aoa_to_sheet([
-            ['Product Code', 'Name', 'SKU', 'Category Name', 'SubCategory Name', 'Short Description', 'Branches (Comma Separated Names)', 'Status'],
-            ['BURG-01', 'Classic Burger', 'BURG-C-01', 'Fast Food', 'Burgers', 'Delicious classic beef burger', 'Main Branch, City Center', 'active'],
-            ['PIZZA-01', 'Margherita Pizza', 'PZ-M-01', 'Italian', 'Pizza', 'Classic cheese and tomato pizza', 'Main Branch', 'active']
-        ]);
+        // ── Sheet 1: Products ────────────────────────────────────────────────
+        const productRows = [
+            ['Product Code', 'Name', 'SKU', 'Category Name', 'SubCategory Name', 'Short Description', 'Branches (Comma Separated Names)', 'Status']
+        ];
+
+        for (const p of products) {
+            const branchNames = (p.branches || [])
+                .map(pb => pb.branch ? pb.branch.name : null)
+                .filter(Boolean)
+                .join(', ');
+
+            productRows.push([
+                p.code || '',
+                p.name || '',
+                p.sku || '',
+                p.category ? p.category.name : '',
+                p.subCategory ? p.subCategory.name : '',
+                p.shortDescription || '',
+                branchNames,
+                p.status || 'active'
+            ]);
+        }
+
+        const productsWs = xlsx.utils.aoa_to_sheet(productRows);
         xlsx.utils.book_append_sheet(wb, productsWs, 'Products');
 
-        // Sheet 2: Variations & Prices
-        const variationsWs = xlsx.utils.aoa_to_sheet([
-            ['Product Code', 'Variation Name', 'Option Name', 'Branch Name', 'Price', 'Discount Price', 'Quantity', 'Batch No', 'Status'],
-            ['BURG-01', 'Size', 'Regular', 'Main Branch', '500.00', '', '100', 'BATCH1', 'active'],
-            ['BURG-01', 'Size', 'Large', 'Main Branch', '750.00', '700.00', '50', 'BATCH1', 'active'],
-            ['BURG-01', 'Size', 'Regular', 'City Center', '550.00', '', '100', 'BATCH1', 'active'],
-            ['PIZZA-01', 'Crust', 'Thin Crust', 'Main Branch', '1200.00', '', '20', '', 'active']
-        ]);
+        // ── Sheet 2: Variations & Prices ─────────────────────────────────────
+        const variationRows = [
+            ['Product Code', 'Variation Name', 'Option Name', 'Branch Name', 'Price', 'Discount Price', 'Quantity', 'Batch No', 'Status']
+        ];
+
+        for (const p of products) {
+            for (const variation of (p.variations || [])) {
+                for (const option of (variation.options || [])) {
+                    if ((option.prices || []).length === 0) {
+                        // Option exists but has no prices — export one row with empty price fields
+                        variationRows.push([
+                            p.code || '',
+                            variation.name || '',
+                            option.name || '',
+                            '',
+                            '',
+                            '',
+                            '',
+                            '',
+                            option.status || 'active'
+                        ]);
+                    } else {
+                        for (const price of option.prices) {
+                            const branchName = price.Branch ? price.Branch.name : (price.branchId || '');
+                            variationRows.push([
+                                p.code || '',
+                                variation.name || '',
+                                option.name || '',
+                                branchName,
+                                price.price !== null && price.price !== undefined ? parseFloat(price.price).toFixed(2) : '',
+                                price.discountPrice !== null && price.discountPrice !== undefined ? parseFloat(price.discountPrice).toFixed(2) : '',
+                                price.quantity !== null && price.quantity !== undefined ? price.quantity : 0,
+                                price.batchNo || '',
+                                option.status || 'active'
+                            ]);
+                        }
+                    }
+                }
+            }
+        }
+
+        const variationsWs = xlsx.utils.aoa_to_sheet(variationRows);
         xlsx.utils.book_append_sheet(wb, variationsWs, 'Variations & Prices');
 
-        // Sheet 3: Modifications
-        const modsWs = xlsx.utils.aoa_to_sheet([
-            ['Product Code', 'Variation Name (Optional)', 'Modification Name'],
-            ['BURG-01', '', 'Extra Toppings'],
-            ['PIZZA-01', 'Crust', 'Crust Options']
-        ]);
+        // ── Sheet 3: Modifications ───────────────────────────────────────────
+        const modRows = [
+            ['Product Code', 'Variation Name (Optional)', 'Modification Name']
+        ];
+
+        for (const p of products) {
+            for (const pm of (p.productModifications || [])) {
+                if (pm.Modification) {
+                    modRows.push([
+                        p.code || '',
+                        '',
+                        pm.Modification.title || ''
+                    ]);
+                }
+            }
+        }
+
+        const modsWs = xlsx.utils.aoa_to_sheet(modRows);
         xlsx.utils.book_append_sheet(wb, modsWs, 'Modifications');
 
         const excelBuffer = xlsx.write(wb, { type: 'buffer', bookType: 'xlsx' });
 
-        res.setHeader('Content-Disposition', 'attachment; filename=product_import_template.xlsx');
+        const today = new Date().toISOString().slice(0, 10);
+        res.setHeader('Content-Disposition', `attachment; filename=products-export-${today}.xlsx`);
         res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
         res.send(excelBuffer);
 
@@ -971,12 +1077,13 @@ exports.exportTemplate = async (req, res) => {
         await logActivity({
             userId: req.user.id,
             branchId: userDetail?.branchId || 1,
-            activityType: 'Exported Product Template',
-            description: `User downloaded the product import template`,
-            metadata: {}
+            activityType: 'Exported Products',
+            description: `User exported ${products.length} products`,
+            metadata: { count: products.length }
         });
 
     } catch (error) {
+        console.error('Export Products Error:', error);
         res.status(500).json({ message: error.message });
     }
 };
