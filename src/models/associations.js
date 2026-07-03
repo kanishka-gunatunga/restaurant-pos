@@ -41,6 +41,7 @@ const CustomerCategoryDiscount = require('./CustomerCategoryDiscount');
 const Table = require('./Table');
 const Return = require('./Return');
 const ReturnItem = require('./ReturnItem');
+const VoucherTemplate = require('./VoucherTemplate');
 
 // User <-> UserDetail: One-to-One
 User.hasOne(UserDetail, { foreignKey: 'userId', as: 'UserDetail' });
@@ -354,6 +355,7 @@ module.exports = {
     CustomerCategoryDiscount,
     Table,
     Return,
-    ReturnItem
+    ReturnItem,
+    VoucherTemplate
 };
 

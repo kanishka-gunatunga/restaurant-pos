@@ -1,11 +1,11 @@
 const express = require('express');
 const app = express();
-app.use('/pos', (req, res, next) => {
+app.use('/pos-full-version', (req, res, next) => {
     next();
 });
 app.use((req, res, next) => {
-    if (req.url.startsWith('/pos')) {
-        req.url = req.url.replace('/pos', '');
+    if (req.url.startsWith('/pos-full-version')) {
+        req.url = req.url.replace('/pos-full-version', '');
     }
     next();
 });
@@ -78,6 +78,7 @@ const chatbotRoutes = require('./routes/chatbotRoutes');
 const customerCategoryDiscountRoutes = require('./routes/customerCategoryDiscountRoutes');
 const tableRoutes = require('./routes/tableRoutes');
 const returnRoutes = require('./routes/returnRoutes');
+const voucherTemplateRoutes = require('./routes/voucherTemplateRoutes');
 
 
 app.set('trust proxy', 1);
@@ -149,6 +150,7 @@ app.use('/api/chatbot', chatbotRoutes);
 app.use('/api/customer-category-discounts', customerCategoryDiscountRoutes);
 app.use('/api/tables', tableRoutes);
 app.use('/api/returns', returnRoutes);
+app.use('/api/voucher-templates', voucherTemplateRoutes);
 
 // Global error handler (do not log request body to avoid leaking tokens/passwords)
 app.use((err, req, res, next) => {
