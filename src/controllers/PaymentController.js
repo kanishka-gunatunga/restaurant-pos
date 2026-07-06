@@ -290,6 +290,40 @@ exports.createPayment = async (req, res) => {
                     }
                 }
 
+                // Handle Voucher Redemption
+                if (p.paymentMethod === 'voucher') {
+                    const IssuedVoucher = require('../models/IssuedVoucher');
+                    const code = p.transactionId; // Frontend sends voucher code in transactionId
+                    if (!code) {
+                        await t.rollback();
+                        return res.status(400).json({ message: 'Voucher code is required for voucher payments' });
+                    }
+                    const voucher = await IssuedVoucher.findOne({ 
+                        where: { 
+                            [Op.or]: [{ code }, { barcode: code }] 
+                        }, 
+                        transaction: t 
+                    });
+                    if (!voucher) {
+                        await t.rollback();
+                        return res.status(404).json({ message: `Voucher ${code} not found` });
+                    }
+                    if (voucher.status !== 'active') {
+                        await t.rollback();
+                        return res.status(400).json({ message: `Voucher ${code} is ${voucher.status}` });
+                    }
+                    if (voucher.expiryDate && new Date(voucher.expiryDate) < new Date()) {
+                        await t.rollback();
+                        return res.status(400).json({ message: `Voucher ${code} has expired` });
+                    }
+                    const voucherValue = parseFloat(voucher.valueFormatted.replace(/[^0-9.-]+/g, '')) || 0;
+                    if (amountNum > voucherValue) {
+                        await t.rollback();
+                        return res.status(400).json({ message: `Payment amount exceeds voucher value of Rs.${voucherValue.toFixed(2)}` });
+                    }
+                    await voucher.update({ status: 'redeemed', orderId: orderId }, { transaction: t });
+                }
+
                 if (!Number.isFinite(amountNum) || amountNum <= 0) {
                     await t.rollback();
                     return res.status(400).json({ message: 'Each payment amount must be a positive number' });
@@ -721,7 +755,27 @@ exports.getAllPaymentDetails = async (req, res) => {
 
         const result = orders.map((order) => {
             const payments = order.payments || [];
-            const primary = payments.find((p) => p.status !== 'refund') || payments[0] || null;
+            
+            let methodToReturn = null;
+            if (payments.length > 0) {
+                // Get unique payment methods, ignoring nulls and refunds
+                const methodsSet = new Set(
+                    payments
+                        .filter(p => p.status !== 'refund' && p.paymentMethod)
+                        .map(p => p.paymentMethod)
+                );
+                
+                if (methodsSet.size > 1) {
+                    methodToReturn = 'split';
+                } else if (methodsSet.size === 1) {
+                    methodToReturn = [...methodsSet][0];
+                } else {
+                    // Fallback to primary if all were filtered out somehow
+                    const primary = payments.find((p) => p.status !== 'refund') || payments[0];
+                    methodToReturn = primary ? primary.paymentMethod : null;
+                }
+            }
+
             const refundedSum = payments.reduce((s, p) => s + (parseFloat(p.refundedAmount) || 0), 0);
             const plain = order.get({ plain: true });
             const totalForAgg = resolveOrderTotalForBalanceFromOrderLike(plain);
@@ -731,7 +785,7 @@ exports.getAllPaymentDetails = async (req, res) => {
                 customerName: order.customer ? order.customer.name : 'Walk-in',
                 customerMobile: order.customer ? order.customer.mobile : '-',
                 dateTime: order.createdAt,
-                method: primary ? primary.paymentMethod : null,
+                method: methodToReturn,
                 paymentStatus:
                     normalizeStoredPaymentStatus(order.paymentStatus) ??
                     deriveAggregatePaymentStatus(totalForAgg, payments),
@@ -785,7 +839,27 @@ exports.searchPaymentDetails = async (req, res) => {
 
         const result = orders.map((order) => {
             const payments = order.payments || [];
-            const primary = payments.find((p) => p.status !== 'refund') || payments[0] || null;
+            
+            let methodToReturn = null;
+            if (payments.length > 0) {
+                // Get unique payment methods, ignoring nulls and refunds
+                const methodsSet = new Set(
+                    payments
+                        .filter(p => p.status !== 'refund' && p.paymentMethod)
+                        .map(p => p.paymentMethod)
+                );
+                
+                if (methodsSet.size > 1) {
+                    methodToReturn = 'split';
+                } else if (methodsSet.size === 1) {
+                    methodToReturn = [...methodsSet][0];
+                } else {
+                    // Fallback to primary if all were filtered out somehow
+                    const primary = payments.find((p) => p.status !== 'refund') || payments[0];
+                    methodToReturn = primary ? primary.paymentMethod : null;
+                }
+            }
+
             const refundedSum = payments.reduce((s, p) => s + (parseFloat(p.refundedAmount) || 0), 0);
             const plain = order.get({ plain: true });
             const totalForAgg = resolveOrderTotalForBalanceFromOrderLike(plain);
@@ -795,7 +869,7 @@ exports.searchPaymentDetails = async (req, res) => {
                 customerName: order.customer ? order.customer.name : 'Walk-in',
                 customerMobile: order.customer ? order.customer.mobile : '-',
                 dateTime: order.createdAt,
-                method: primary ? primary.paymentMethod : null,
+                method: methodToReturn,
                 paymentStatus:
                     normalizeStoredPaymentStatus(order.paymentStatus) ??
                     deriveAggregatePaymentStatus(totalForAgg, payments),

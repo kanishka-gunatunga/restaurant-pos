@@ -413,7 +413,7 @@ exports.getKitchenDashboard = async (req, res) => {
                     as: 'items',
                     include: [
                         { model: Product, as: 'product', attributes: ['id', 'name'] },
-                        { model: VariationOption, as: 'variation', attributes: ['id', 'name'] },
+                        { model: VariationOption, as: 'variationOption', attributes: ['id', 'name'] },
                         {
                             model: OrderItemModification,
                             as: 'modifications',
@@ -459,7 +459,7 @@ exports.getKitchenDashboard = async (req, res) => {
                     quantity: item.quantity,
                     status: item.status,
                     productName: item.product?.name,
-                    variationName: item.variation?.name,
+                    variationName: item.variationOption?.name,
                     modifications: item.modifications.map(mod => mod.modification?.title).filter(Boolean)
                 }))
             };

@@ -261,6 +261,96 @@ exports.cashAction = async (req, res) => {
     }
 };
 
+exports.adjustInitialBalance = async (req, res) => {
+    let t;
+    try {
+        const userId = req.user.id;
+        const { currentAmount, newAmount, reason, passcode } = req.body;
+
+        if (!passcode) {
+            return res.status(400).json({ message: 'Manager passcode is required for adjusting initial balance' });
+        }
+
+        const manager = await verifyManagerPasscode(passcode);
+        if (!manager) {
+            return invalidManagerPasscode(res);
+        }
+
+        t = await sequelize.transaction();
+
+        const session = await Session.findOne({
+            where: {
+                userId,
+                status: 'open',
+            },
+            transaction: t,
+        });
+
+        if (!session) {
+            await t.rollback();
+            return res.status(404).json({ message: 'No active session found' });
+        }
+
+        const diff = parseFloat(newAmount) - parseFloat(currentAmount);
+        if (Math.abs(diff) < 0.01) {
+             await t.rollback();
+             return res.json({ session });
+        }
+
+        const newBalance = parseFloat(session.currentBalance) + diff;
+
+        if (newBalance < 0) {
+            await t.rollback();
+            return res.status(400).json({ message: 'Adjusting to this initial amount would result in negative drawer balance' });
+        }
+
+        await session.update({ 
+            startBalance: parseFloat(newAmount),
+            currentBalance: newBalance 
+        }, { transaction: t });
+
+        const type = diff > 0 ? 'add' : 'remove';
+        const description = reason ? `Initial amount correction: ${reason}` : 'Initial amount correction';
+
+        const transaction = await SessionTransaction.create({
+            sessionId: session.id,
+            type,
+            amount: Math.abs(diff),
+            description,
+            userId
+        }, { transaction: t });
+
+        await t.commit();
+        t = null;
+
+        const userDetail = await UserDetail.findOne({ where: { userId } });
+        await logActivity({
+            userId,
+            branchId: userDetail?.branchId || 1,
+            activityType: 'Initial Balance Adjusted',
+            description: `Initial balance adjusted from Rs.${currentAmount} to Rs.${newAmount} during session #${session.id}`,
+            managerId: manager.id,
+            amount: Math.abs(diff),
+            metadata: { sessionId: session.id, oldAmount: currentAmount, newAmount, reason }
+        });
+
+        const sessionWithLedger = await Session.findByPk(session.id, {
+            include: [activeSessionTransactionInclude],
+        });
+
+        res.json({ session: sessionWithLedger, transaction });
+    } catch (error) {
+        if (t && !t.finished) await t.rollback();
+        if (isConnectionAcquireTimeout(error)) {
+            return res.status(503).json({
+                message:
+                    'Database is temporarily busy (connection pool timeout). Try again in a moment. If this persists, avoid many parallel API calls or contact support.',
+            });
+        }
+        res.status(500).json({ message: error.message });
+    }
+};
+
 exports.closeSession = async (req, res) => {
     let t;
     try {
@@ -382,7 +472,9 @@ exports.getTodaySummary = async (req, res) => {
                     if (tx.type === 'sale') {
                         totalCashSales += parseFloat(tx.amount || 0);
                     } else if (tx.type === 'remove') {
-                        totalCashOuts += parseFloat(tx.amount || 0);
+                        if (!tx.description || !tx.description.toLowerCase().includes('initial')) {
+                            totalCashOuts += parseFloat(tx.amount || 0);
+                        }
                     } else if (tx.type === 'refund') {
                         // Refunds could be considered negative cash sales, but usually we just track sales.
                         // I'm not directly modifying cash sales by refund here for now as UI shows sales and outs
@@ -447,8 +539,10 @@ exports.getTodaySessions = async (req, res) => {
                         cashSales += parseFloat(tx.amount || 0);
                         cashSalesCount++;
                     } else if (tx.type === 'remove') {
-                        cashOuts += parseFloat(tx.amount || 0);
-                        cashOutsCount++;
+                        if (!tx.description || !tx.description.toLowerCase().includes('initial')) {
+                            cashOuts += parseFloat(tx.amount || 0);
+                            cashOutsCount++;
+                        }
                     } else if (tx.type === 'add') {
                         cashIns += parseFloat(tx.amount || 0);
                     }
@@ -549,8 +643,10 @@ exports.getAllHistory = async (req, res) => {
                         cashSales += parseFloat(tx.amount || 0);
                         cashSalesCount++;
                     } else if (tx.type === 'remove') {
-                        cashOuts += parseFloat(tx.amount || 0);
-                        cashOutsCount++;
+                        if (!tx.description || !tx.description.toLowerCase().includes('initial')) {
+                            cashOuts += parseFloat(tx.amount || 0);
+                            cashOutsCount++;
+                        }
                     }
                 });
             }

@@ -86,3 +86,43 @@ exports.updateIssuedVoucherStatus = async (req, res) => {
         return res.status(500).json({ message: error.message });
     }
 };
+
+exports.validateVoucher = async (req, res) => {
+    try {
+        const { code } = req.query;
+        if (!code) {
+            return res.status(400).json({ message: 'Voucher code is required' });
+        }
+
+        const voucher = await IssuedVoucher.findOne({ 
+            where: { 
+                [Op.or]: [{ code }, { barcode: code }] 
+            } 
+        });
+
+        if (!voucher) {
+            return res.status(404).json({ message: 'Voucher not found' });
+        }
+
+        if (voucher.status !== 'active') {
+            return res.status(400).json({ message: `Voucher is ${voucher.status}` });
+        }
+
+        // Check expiry date
+        if (voucher.expiryDate && new Date(voucher.expiryDate) < new Date()) {
+            return res.status(400).json({ message: 'Voucher has expired' });
+        }
+
+        const value = parseFloat(voucher.valueFormatted.replace(/[^0-9.-]+/g, '')) || 0;
+
+        return res.json({
+            id: voucher.id,
+            code: voucher.code,
+            amount: value,
+            status: voucher.status
+        });
+    } catch (error) {
+        console.error('Error validating voucher:', error);
+        return res.status(500).json({ message: error.message });
+    }
+};

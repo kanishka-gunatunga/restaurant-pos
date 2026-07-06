@@ -172,6 +172,11 @@ exports.getSalesReport = async (req, res) => {
             order: [['createdAt', 'DESC']]
         });
 
+        const itemSummaries = {};
+        let totalGrossSalesAmount = 0;
+        let totalDiscountsGiven = 0;
+        let totalDeliveryCharges = 0;
+
         const categorySummaries = {
             normal: { gross: 0, discount: 0, delivery: 0 },
             staff: { gross: 0, discount: 0, delivery: 0 },
