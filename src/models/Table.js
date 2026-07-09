@@ -15,6 +15,15 @@ const Table = sequelize.define('Table', {
         type: DataTypes.ENUM('available', 'unavailable', 'reserved'),
         defaultValue: 'available',
     },
+    branchId: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        references: {
+            model: 'branches',
+            key: 'id'
+        },
+        field: 'branch_id'
+    },
 }, {
     tableName: 'tables',
     underscored: true,

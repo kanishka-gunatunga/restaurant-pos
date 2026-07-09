@@ -97,6 +97,10 @@ DeliveryCharge.hasMany(Order, { foreignKey: 'deliveryChargeId', as: 'orders' });
 Order.belongsTo(Table, { foreignKey: 'tableId', as: 'table' });
 Table.hasMany(Order, { foreignKey: 'tableId', as: 'orders' });
 
+// Branch <-> Table
+Branch.hasMany(Table, { foreignKey: 'branchId', as: 'tables' });
+Table.belongsTo(Branch, { foreignKey: 'branchId', as: 'branch' });
+
 // Order - OrderItem Association
 Order.hasMany(OrderItem, { foreignKey: 'orderId', as: 'items', onDelete: 'CASCADE', hooks: true });
 OrderItem.belongsTo(Order, { foreignKey: 'orderId' });
