@@ -505,7 +505,21 @@ exports.getAdminDashboard = async (req, res) => {
         const todayActiveOrdersCount = await Order.count({ where: { ...todayOrderWhere, status: { [Op.in]: ['pending', 'preparing', 'ready'] } } });
         const todayCancelledOrdersCount = await Order.count({ where: { ...todayOrderWhere, status: 'cancel' } });
 
-        // 3. Total Revenue (All time)
+        // 3. Drawer Cash globally
+        const openSessions = await Session.findAll({
+            where: { status: 'open' }
+        });
+        const drawerCash = openSessions.reduce((sum, session) => sum + parseFloat(session.currentBalance || 0), 0);
+
+        // 4. Today's Cashouts globally
+        const todaysCashOuts = await SessionTransaction.sum('amount', {
+            where: {
+                type: { [Op.in]: ['remove', 'refund'] },
+                createdAt: { [Op.between]: [startOfDay, endOfDay] }
+            }
+        }) || 0;
+
+        // 5. Total Revenue (All time)
         const allCompletedOrders = await Order.findAll({
             include: [{ model: Payment, as: 'payments' }]
         });
@@ -644,6 +658,8 @@ exports.getAdminDashboard = async (req, res) => {
             todayActiveOrdersCount,
             todayCancelledOrdersCount,
             totalRevenue: totalRevenue.toFixed(2),
+            drawerCash: drawerCash.toFixed(2),
+            todaysCashOuts: todaysCashOuts.toFixed(2),
             expiredProductsList,
             restockAlertsList,
             discountAlertsList
