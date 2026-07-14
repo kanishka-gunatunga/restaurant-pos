@@ -223,7 +223,9 @@ function deriveAggregatePaymentStatus(orderTotal, payments) {
     const net = sumNetCollected(list);
 
     if (list.length === 0) {
-        return total <= tol ? 'paid' : 'pending';
+        // CHANGED: 0-amount orders without payments were automatically becoming paid. 
+        // Old code: return total <= tol ? 'paid' : 'pending';
+        return 'pending';
     }
 
     const fullRefundOnly = list.every((p) => p.status === 'refund');
@@ -237,6 +239,13 @@ function deriveAggregatePaymentStatus(orderTotal, payments) {
 
     const outstandingC = computeOutstandingCents(total, list);
     if (outstandingC > matchTolC) {
+        return 'pending';
+    }
+
+    // CHANGED: Ensure that orders with no processed payments (e.g. only pending) 
+    // do not get marked as paid even if the total is 0.
+    const hasProcessedPayment = list.some(p => p.status === 'paid' || p.status === 'partial_refund' || p.status === 'refund');
+    if (!hasProcessedPayment) {
         return 'pending';
     }
 
