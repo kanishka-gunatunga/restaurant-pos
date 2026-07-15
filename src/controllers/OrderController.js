@@ -1373,7 +1373,6 @@ exports.updateOrder = async (req, res) => {
             originalItemsMap.set(key, originalItemsMap.get(key) + parseFloat(orig.quantity));
         }
 
-        const deltaItems = [];
 
         for (const [key, { item, totalQty }] of newItemsMap.entries()) {
             const originalQty = originalItemsMap.get(key) || 0;
