@@ -677,7 +677,7 @@ exports.createOrder = async (req, res) => {
                                     orderId: orderIdForSideEffects,
                                     code,
                                     barcode,
-                                    valueFormatted: `Rs.${parseFloat(item.unitPrice).toFixed(2)}`,
+                                    value: parseFloat(item.unitPrice) || 0,
                                     validityLabel: '12 months',
                                     expiryDate,
                                     issuedToName: printOrder.customer?.name || null,

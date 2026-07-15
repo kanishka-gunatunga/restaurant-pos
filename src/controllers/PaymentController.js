@@ -316,7 +316,7 @@ exports.createPayment = async (req, res) => {
                         await t.rollback();
                         return res.status(400).json({ message: `Voucher ${code} has expired` });
                     }
-                    const voucherValue = parseFloat(voucher.valueFormatted.replace(/[^0-9.-]+/g, '')) || 0;
+                    const voucherValue = parseFloat(voucher.value) || 0;
                     if (amountNum > voucherValue) {
                         await t.rollback();
                         return res.status(400).json({ message: `Payment amount exceeds voucher value of Rs.${voucherValue.toFixed(2)}` });

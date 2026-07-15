@@ -384,7 +384,7 @@ exports.generateVoucherStructuredData = (voucher, branch, order) => {
         barcode: voucher.barcode,
         dateTime: formatDateTime(voucher.createdAt),
         branchName: voucher.branchName,
-        valueFormatted: voucher.valueFormatted,
+        valueFormatted: `Rs.${parseFloat(voucher.value || 0).toFixed(2)}`,
         validityLabel: voucher.validityLabel,
         expiryDate: voucher.expiryDate,
         issuedToName: voucher.issuedToName,
