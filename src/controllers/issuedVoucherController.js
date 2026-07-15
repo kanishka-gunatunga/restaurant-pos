@@ -1,10 +1,27 @@
 const { Op } = require('sequelize');
 const IssuedVoucher = require('../models/IssuedVoucher');
 const Order = require('../models/Order');
+const User = require('../models/User');
+const UserDetail = require('../models/UserDetail');
 
 exports.getAllIssuedVouchers = async (req, res) => {
     try {
         const vouchers = await IssuedVoucher.findAll({
+            include: [{
+                model: Order,
+                as: 'order',
+                attributes: ['id'],
+                include: [{
+                    model: User,
+                    as: 'user',
+                    attributes: ['id'],
+                    include: [{
+                        model: UserDetail,
+                        as: 'UserDetail',
+                        attributes: ['name']
+                    }]
+                }]
+            }],
             order: [['createdAt', 'DESC']],
         });
 
@@ -15,7 +32,7 @@ exports.getAllIssuedVouchers = async (req, res) => {
         let redeemedValue = 0;
 
         for (const v of vouchers) {
-            const val = parseFloat(v.valueFormatted.replace(/[^0-9.-]+/g, '')) || 0;
+            const val = v.value || 0;
             if (v.status === 'active') {
                 totalActiveCount++;
                 activeValue += val;
@@ -25,8 +42,15 @@ exports.getAllIssuedVouchers = async (req, res) => {
             }
         }
 
+        const mappedVouchers = vouchers.map(v => {
+            const vData = v.toJSON();
+            vData.issuedByName = v.order?.user?.UserDetail?.name || null;
+            delete vData.order;
+            return vData;
+        });
+
         return res.json({
-            data: vouchers,
+            data: mappedVouchers,
             summary: {
                 totalActiveCount,
                 activeValueFormatted: `Rs.${activeValue.toFixed(2)}`,
@@ -113,14 +137,14 @@ exports.validateVoucher = async (req, res) => {
             return res.status(400).json({ message: 'Voucher has expired' });
         }
 
-        const value = parseFloat(voucher.valueFormatted.replace(/[^0-9.-]+/g, '')) || 0;
+        const value = voucher.value || 0;
 
         return res.json({
             id: voucher.id,
             code: voucher.code,
             amount: value,
             status: voucher.status
-        });
+         });
     } catch (error) {
         console.error('Error validating voucher:', error);
         return res.status(500).json({ message: error.message });

@@ -80,7 +80,6 @@ const tableRoutes = require('./routes/tableRoutes');
 const returnRoutes = require('./routes/returnRoutes');
 const voucherTemplateRoutes = require('./routes/voucherTemplateRoutes');
 const issuedVoucherRoutes = require('./routes/issuedVoucherRoutes');
-const issuedVoucherRoutes = require('./routes/issuedVoucherRoutes');
 const healthRoutes = require('./routes/healthRoutes');
 
 app.set('trust proxy', 1);

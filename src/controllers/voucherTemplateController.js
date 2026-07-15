@@ -17,11 +17,11 @@ exports.getAllTemplates = async (req, res) => {
 
 exports.createTemplate = async (req, res) => {
     try {
-        const { id, valueFormatted, imageUrl, validityLabel, status } = req.body;
+        const { id, value, imageUrl, validityLabel, status } = req.body;
         
         const template = await VoucherTemplate.create({
             id: id || require('crypto').randomUUID(),
-            valueFormatted,
+            value,
             imageUrl: imageUrl || '/product-placeholder.svg',
             validityLabel,
             status: status || 'active'
@@ -33,7 +33,7 @@ exports.createTemplate = async (req, res) => {
                 userId: req.user.id,
                 branchId: userDetail?.branchId || 1,
                 activityType: 'Voucher Template Created',
-                description: `Voucher Template ${valueFormatted} created`,
+                description: `Voucher Template ${value} created`,
                 metadata: { templateId: template.id }
             });
         }
@@ -48,7 +48,7 @@ exports.createTemplate = async (req, res) => {
 exports.updateTemplate = async (req, res) => {
     try {
         const { id } = req.params;
-        const { valueFormatted, imageUrl, validityLabel, status } = req.body;
+        const { value, imageUrl, validityLabel, status } = req.body;
         
         const template = await VoucherTemplate.findByPk(id);
         if (!template) {
@@ -56,7 +56,7 @@ exports.updateTemplate = async (req, res) => {
         }
 
         await template.update({
-            valueFormatted: valueFormatted !== undefined ? valueFormatted : template.valueFormatted,
+            value: value !== undefined ? value : template.value,
             imageUrl: imageUrl !== undefined ? imageUrl : template.imageUrl,
             validityLabel: validityLabel !== undefined ? validityLabel : template.validityLabel,
             status: status !== undefined ? status : template.status
@@ -68,7 +68,7 @@ exports.updateTemplate = async (req, res) => {
                 userId: req.user.id,
                 branchId: userDetail?.branchId || 1,
                 activityType: 'Voucher Template Updated',
-                description: `Voucher Template ${template.valueFormatted} updated`,
+                description: `Voucher Template ${template.value} updated`,
                 metadata: { templateId: id }
             });
         }
@@ -102,7 +102,7 @@ exports.updateTemplateStatus = async (req, res) => {
                 userId: req.user.id,
                 branchId: userDetail?.branchId || 1,
                 activityType: 'Voucher Template Status Changed',
-                description: `Voucher Template ${template.valueFormatted} status set to ${status}`,
+                description: `Voucher Template ${template.value} status set to ${status}`,
                 metadata: { templateId: id, status }
             });
         }

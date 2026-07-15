@@ -23,7 +23,11 @@ exports.generateReceiptHtml = (order, payment, branch) => {
             }).join('');
         }
 
-        const name = item.productBundle?.name || item.bogoPromotion?.name || item.product?.name || 'Item';
+        let name = item.productBundle?.name || item.bogoPromotion?.name || item.product?.name;
+        if (!name && !item.productId && !item.productBundleId && !item.bogoPromotionId) {
+            name = 'Gift Voucher';
+        }
+        name = name || 'Item';
         const vOpt = item.variationOption || item.variation_option;
         const variationSummary = vOpt ? (vOpt.Variation?.name ? `${vOpt.Variation.name}: ${vOpt.name}` : vOpt.name) : '';
         const variation = variationSummary ? `(${variationSummary})` : '';
@@ -60,7 +64,7 @@ exports.generateReceiptHtml = (order, payment, branch) => {
             <div style="display: flex; justify-content: flex-end; font-weight: bold; font-size: 1.2em;"><span>${formatOrderReference(order)}</span></div>
 
             <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
-                <span>CASHIER: ${order.user?.name || 'Staff'}</span>
+                <span>CASHIER: ${order.user?.UserDetail?.name || order.user?.name || 'Staff'}</span>
                 <span>UNIT: ${branch?.id || '1'}</span>
             </div>
 
@@ -279,7 +283,7 @@ exports.generateReceiptStructuredData = (order, payment, branch) => {
         orderNo: order.orderNo,
         orderType: capitalize(order.orderType || 'N/A'),
         dateTime: formatDateTime(order.createdAt),
-        cashier: order.user?.name || 'Staff',
+        cashier: order.user?.UserDetail?.name || order.user?.name || 'Staff',
         unit: String(branch?.id || '1'),
         customerName: order.customer?.name,
         customerMobile: order.customer?.mobile,
@@ -289,7 +293,11 @@ exports.generateReceiptStructuredData = (order, payment, branch) => {
             mobile: branch?.mobile || '011 2 175 275'
         },
         items: order.items.map(item => {
-            const name = item.productBundle?.name || item.bogoPromotion?.name || item.product?.name || 'Item';
+            let name = item.productBundle?.name || item.bogoPromotion?.name || item.product?.name;
+            if (!name && !item.productId && !item.productBundleId && !item.bogoPromotionId) {
+                name = 'Gift Voucher';
+            }
+            name = name || 'Item';
             const vOpt = item.variationOption || item.variation_option;
             const variationSummary = vOpt ? (vOpt.Variation?.name ? `${vOpt.Variation.name}: ${vOpt.name}` : vOpt.name) : '';
 
@@ -368,7 +376,7 @@ exports.generateKitchenStructuredData = (order, branch) => {
 /**
  * Generate structured JSON for Voucher receipts (for ESC/POS)
  */
-exports.generateVoucherStructuredData = (voucher, branch) => {
+exports.generateVoucherStructuredData = (voucher, branch, order) => {
     return {
         type: 'voucher',
         voucherId: voucher.id.toString().padStart(8, '0'),

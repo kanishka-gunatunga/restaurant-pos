@@ -258,15 +258,36 @@ exports.getCategoryById = async (req, res) => {
 
 exports.exportTemplate = async (req, res) => {
     try {
+        const categories = await Category.findAll({
+            where: { parentId: null },
+            include: [{
+                model: Category,
+                as: 'subcategories',
+                required: false
+            }]
+        });
+
+        const exportData = [
+            ['Category Name', 'Subcategories (Comma Separated)', 'Status']
+        ];
+
+        if (categories.length === 0) {
+            exportData.push(['Fast Food', 'Burgers, Fries, Hot Dogs', 'active']);
+            exportData.push(['Italian', 'Pizza, Pasta, Salads', 'active']);
+            exportData.push(['Beverages', 'Soft Drinks, Hot Drinks', 'active']);
+        } else {
+            categories.forEach(cat => {
+                const subNames = cat.subcategories && cat.subcategories.length > 0
+                    ? cat.subcategories.map(sub => sub.name).join(', ')
+                    : '';
+                exportData.push([cat.name, subNames, cat.status || 'active']);
+            });
+        }
+
         const wb = xlsx.utils.book_new();
 
         // Sheet 1: Categories
-        const categoriesWs = xlsx.utils.aoa_to_sheet([
-            ['Category Name', 'Subcategories (Comma Separated)', 'Status'],
-            ['Fast Food', 'Burgers, Fries, Hot Dogs', 'active'],
-            ['Italian', 'Pizza, Pasta, Salads', 'active'],
-            ['Beverages', 'Soft Drinks, Hot Drinks', 'active']
-        ]);
+        const categoriesWs = xlsx.utils.aoa_to_sheet(exportData);
         categoriesWs['!cols'] = [
             { wch: 25 }, { wch: 50 }, { wch: 10 }
         ];
@@ -275,7 +296,7 @@ exports.exportTemplate = async (req, res) => {
 
         const excelBuffer = xlsx.write(wb, { type: 'buffer', bookType: 'xlsx' });
 
-        res.setHeader('Content-Disposition', 'attachment; filename=category_import_template.xlsx');
+        res.setHeader('Content-Disposition', 'attachment; filename=categories_export.xlsx');
         res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
         res.send(excelBuffer);
 

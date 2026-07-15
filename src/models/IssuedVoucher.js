@@ -24,8 +24,8 @@ const IssuedVoucher = sequelize.define('IssuedVoucher', {
         allowNull: false,
         unique: true,
     },
-    valueFormatted: {
-        type: DataTypes.STRING,
+    value: {
+        type: DataTypes.DECIMAL(10, 2),
         allowNull: false,
     },
     validityLabel: {

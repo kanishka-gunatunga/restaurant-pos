@@ -6,8 +6,8 @@ const VoucherTemplate = sequelize.define('VoucherTemplate', {
         type: DataTypes.STRING,
         primaryKey: true,
     },
-    valueFormatted: {
-        type: DataTypes.STRING,
+    value: {
+        type: DataTypes.DECIMAL(10, 2),
         allowNull: false,
     },
     imageUrl: {

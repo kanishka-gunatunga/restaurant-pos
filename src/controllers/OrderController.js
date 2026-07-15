@@ -603,6 +603,13 @@ exports.createOrder = async (req, res) => {
                     const printOrder = await Order.findByPk(orderIdForSideEffects, {
                         include: [
                             tableOrderInclude,
+                            customerOrderInclude,
+                            { 
+                                model: User, 
+                                as: 'user', 
+                                attributes: ['id'],
+                                include: [{ model: UserDetail, as: 'UserDetail', attributes: ['name'] }]
+                            },
                             {
                                 model: OrderItem,
                                 as: 'items',
@@ -675,11 +682,11 @@ exports.createOrder = async (req, res) => {
                                     expiryDate,
                                     issuedToName: printOrder.customer?.name || null,
                                     issuedToPhone: printOrder.customer?.mobile || null,
-                                    branchName: branch?.location || 'CATERING BY AHAS GAWWA',
+                                    branchName: branch?.name || branch?.location || 'CATERING BY AHAS GAWWA',
                                     status: 'active'
                                 });
 
-                                const vData = templateService.generateVoucherStructuredData(issuedVoucher, branch);
+                                const vData = templateService.generateVoucherStructuredData(issuedVoucher, branch, printOrder);
                                 await PrintJob.create({
                                     order_id: orderIdForSideEffects,
                                     printer_name: 'XP-80',

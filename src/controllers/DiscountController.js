@@ -167,13 +167,23 @@ exports.createDiscount = async (req, res) => {
  */
 exports.getAllDiscounts = async (req, res) => {
     try {
-        const { status, search } = req.query;
+        const { status, search, excludeExpired } = req.query;
 
         const where = {};
         if (status === 'inactive') {
             where.status = 'inactive';
         } else if (status !== 'all') {
             where.status = 'active';
+        }
+
+        if (excludeExpired === 'true') {
+            const today = new Date().toISOString().split('T')[0];
+            where.expiryDate = {
+                [Op.or]: [
+                    { [Op.is]: null },
+                    { [Op.gte]: today }
+                ]
+            };
         }
 
         if (search) {
