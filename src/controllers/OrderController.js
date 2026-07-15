@@ -1355,31 +1355,47 @@ exports.updateOrder = async (req, res) => {
             return `${item.productId}_${item.variationOptionId || ''}_${modsKey}`;
         };
 
+        const newItemsMap = new Map();
         for (const item of fullOrder.items) {
             const key = getItemKey(item);
-            processedKeys.add(key);
+            if (!newItemsMap.has(key)) {
+                newItemsMap.set(key, { item, totalQty: 0 });
+            }
+            newItemsMap.get(key).totalQty += parseFloat(item.quantity);
+        }
 
-            const originalQty = originalItems
-                .filter(orig => getItemKey(orig) === key)
-                .reduce((sum, orig) => sum + parseFloat(orig.quantity), 0);
+        const originalItemsMap = new Map();
+        for (const orig of originalItems) {
+            const key = getItemKey(orig);
+            if (!originalItemsMap.has(key)) {
+                originalItemsMap.set(key, 0);
+            }
+            originalItemsMap.set(key, originalItemsMap.get(key) + parseFloat(orig.quantity));
+        }
 
-            const deltaQty = parseFloat(item.quantity) - originalQty;
-            if (Math.abs(deltaQty) > 0.001) {
-                const clonedItem = item.toJSON ? item.toJSON() : JSON.parse(JSON.stringify(item));
-                clonedItem.quantity = deltaQty;
-                deltaItems.push(clonedItem);
+        const deltaItems = [];
+
+        for (const [key, { item, totalQty }] of newItemsMap.entries()) {
+            const originalQty = originalItemsMap.get(key) || 0;
+            const deltaQty = totalQty - originalQty;
+
+            if (deltaQty > 0.001) {
+                const cloned = item.toJSON ? item.toJSON() : JSON.parse(JSON.stringify(item));
+                cloned.quantity = deltaQty;
+                deltaItems.push(cloned);
             }
         }
 
-        for (const orig of originalItems) {
-            const key = getItemKey(orig);
-            if (!processedKeys.has(key)) {
-                processedKeys.add(key);
-                const deltaQty = 0 - parseFloat(orig.quantity);
-                if (Math.abs(deltaQty) > 0.001) {
-                    const clonedItem = orig.toJSON ? orig.toJSON() : JSON.parse(JSON.stringify(orig));
-                    clonedItem.quantity = deltaQty;
-                    deltaItems.push(clonedItem);
+        for (const [key, originalQty] of originalItemsMap.entries()) {
+            if (!newItemsMap.has(key)) {
+                const deltaQty = 0 - originalQty;
+                if (deltaQty > 0.001) {
+                    // This is currently impossible since originalQty is positive, but keeping it
+                    // structurally similar to the previous intent just in case.
+                    const orig = originalItems.find(o => getItemKey(o) === key);
+                    const cloned = orig.toJSON ? orig.toJSON() : JSON.parse(JSON.stringify(orig));
+                    cloned.quantity = deltaQty;
+                    deltaItems.push(cloned);
                 }
             }
         }
