@@ -568,6 +568,15 @@ exports.createOrder = async (req, res) => {
         const activityBranchId = userDetail?.branchId || 1;
         const activityTableLabel = selectedTable?.table_name || tableNumber || 'N/A';
         const activityTableName = selectedTable?.table_name || tableNumber;
+        // Capture recipient data from the raw payload NOW — before setImmediate,
+        // because recipientName/recipientMobile are NOT stored in order_items.
+        // We match them positionally to the voucher items fetched from DB.
+        const voucherRecipientData = (order_products || [])
+            .filter(item => item.itemType === 'voucher')
+            .map(item => ({
+                recipientName: item.recipientName || null,
+                recipientMobile: item.recipientMobile || null,
+            }));
         setImmediate(() => {
             void (async () => {
                 try {
@@ -661,7 +670,12 @@ exports.createOrder = async (req, res) => {
                     const voucherItems = printOrder.items.filter(item => isVoucherItem(item));
                     
                     if (voucherItems.length > 0) {
+                        let voucherRecipientIndex = 0;
                         for (const item of voucherItems) {
+                            // Look up the recipient data captured from the raw request payload
+                            const recipient = voucherRecipientData[voucherRecipientIndex] || {};
+                            voucherRecipientIndex++;
+
                             const qty = Math.max(1, parseInt(item.quantity) || 1);
                             for (let i = 0; i < qty; i++) {
                                 const code1 = crypto.randomBytes(2).toString('hex').toUpperCase();
@@ -680,8 +694,10 @@ exports.createOrder = async (req, res) => {
                                     value: parseFloat(item.unitPrice) || 0,
                                     validityLabel: '12 months',
                                     expiryDate,
-                                    issuedToName: printOrder.customer?.name || null,
-                                    issuedToPhone: printOrder.customer?.mobile || null,
+                                    // Use recipient fields from the raw payload (not re-fetched DB items,
+                                    // since recipientName/recipientMobile are not persisted in order_items)
+                                    issuedToName: recipient.recipientName || printOrder.customer?.name || null,
+                                    issuedToPhone: recipient.recipientMobile || printOrder.customer?.mobile || null,
                                     branchName: branch?.name || branch?.location || 'CATERING BY AHAS GAWWA',
                                     status: 'active'
                                 });

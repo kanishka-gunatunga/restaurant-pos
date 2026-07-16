@@ -186,11 +186,14 @@ exports.getSalesReport = async (req, res) => {
         orders.forEach(order => {
             const customerCategory = order.customer?.category || 'normal';
             const catStats = categorySummaries[customerCategory] || categorySummaries.normal;
-            
+
             const deliveryCharge = parseFloat(order.deliveryChargeAmount || 0);
             totalDeliveryCharges += deliveryCharge;
             catStats.delivery += deliveryCharge;
+
+            // Order-level subtotal (before any discounts) — used to allocate order discount proportionally
             const orderSubtotal = order.items.reduce((sum, item) => sum + (parseFloat(item.unitPrice) * item.quantity), 0);
+            const orderLevelDiscount = parseFloat(order.orderDiscount || 0);
 
             order.items.forEach(item => {
                 const customerCategory = order.customer?.category || 'normal';
@@ -201,8 +204,6 @@ exports.getSalesReport = async (req, res) => {
                 if (!itemSummaries[key]) {
                     const productName = item.product?.name || 'Unknown';
                     const vOpt = item.variationOption;
-                    //  const variationName = vOpt ? (vOpt.Variation?.name ? `${vOpt.Variation.name}: ${vOpt.name}` : vOpt.name) : '';
-                    // const fullName = variationName ? `${productName} (${variationName})` : productName;
                     const variationSuffix = vOpt?.name ? ` - ${vOpt.name}` : '';
                     const fullName = `${productName}${variationSuffix}`;
 
@@ -213,25 +214,37 @@ exports.getSalesReport = async (req, res) => {
                         "Category": item.product?.category?.name || 'Uncategorized',
                         "Qty Sold": 0,
                         "Unit Price": parseFloat(item.unitPrice),
-                        "Discount": 0,
+                        "Item Discount": 0,
+                        "Order Discount": 0,
+                        "Total Discount": 0,
                         "Total Amount": 0
                     };
                 }
 
                 const itemSubtotal = parseFloat(item.unitPrice) * item.quantity;
-                const itemDiscount = parseFloat(item.productDiscount || 0) * item.quantity;
-                const totalAmount = itemSubtotal - itemDiscount;
+
+                // Per-item (product-level) discount
+                const itemLevelDiscount = parseFloat(item.productDiscount || 0) * item.quantity;
+
+                // Proportional share of the order-level discount for this item
+                const itemShare = orderSubtotal > 0 ? itemSubtotal / orderSubtotal : 0;
+                const itemOrderDiscount = orderLevelDiscount * itemShare;
+
+                const totalDiscount = itemLevelDiscount + itemOrderDiscount;
+                const totalAmount = itemSubtotal - totalDiscount;
 
                 itemSummaries[key]["Qty Sold"] += item.quantity;
-                itemSummaries[key]["Discount"] += itemDiscount;
+                itemSummaries[key]["Item Discount"] += itemLevelDiscount;
+                itemSummaries[key]["Order Discount"] += itemOrderDiscount;
+                itemSummaries[key]["Total Discount"] += totalDiscount;
                 itemSummaries[key]["Total Amount"] += totalAmount;
 
                 totalGrossSalesAmount += itemSubtotal;
-                totalDiscountsGiven += itemDiscount;
-                
+                totalDiscountsGiven += totalDiscount;
+
                 const catStats = categorySummaries[customerCategory] || categorySummaries.normal;
                 catStats.gross += itemSubtotal;
-                catStats.discount += itemDiscount;
+                catStats.discount += totalDiscount;
             });
         });
 
@@ -241,6 +254,10 @@ exports.getSalesReport = async (req, res) => {
             .sort((a, b) => a["Customer Category"].localeCompare(b["Customer Category"]))
             .map(item => ({
                 ...item,
+                "Unit Price": item["Unit Price"].toFixed(2),
+                "Item Discount": item["Item Discount"].toFixed(2),
+                "Order Discount": item["Order Discount"].toFixed(2),
+                "Total Discount": item["Total Discount"].toFixed(2),
                 "Total Amount": item["Total Amount"].toFixed(2)
             }));
 
@@ -258,7 +275,7 @@ exports.getSalesReport = async (req, res) => {
         if (exportType === 'excel') {
             return exportToExcel(res, "Sales_Report_Item_Wise", reportData, summary);
         } else if (exportType === 'pdf') {
-            const headers = ["Customer Category", "Product No", "Product Name", "Category", "Qty Sold", "Unit Price", "Discount", "Total Amount"];
+            const headers = ["Customer Category", "Product No", "Product Name", "Category", "Qty Sold", "Unit Price", "Item Discount", "Order Discount", "Total Discount", "Total Amount"];
             return exportToPDF(res, "Sales Report (Item-Wise)", { dateRange: `${startDate} to ${endDate}` }, headers, reportData, summary);
         }
 
@@ -489,7 +506,7 @@ exports.getPaymentsReport = async (req, res) => {
  */
 exports.getProductPerformanceReport = async (req, res) => {
     try {
-        const { startDate, endDate, branch, export: exportType } = req.query;
+        const { startDate, endDate, branch, product, export: exportType } = req.query;
 
         if (!startDate || !endDate) {
             return res.status(400).json({ message: 'Missing required parameters: startDate, endDate' });
@@ -510,7 +527,14 @@ exports.getProductPerformanceReport = async (req, res) => {
             orderWhere.branchId = resolvedBranchId;
         }
 
+        // Apply product filter when a specific product is selected
+        const itemWhere = {};
+        if (product && product !== 'all') {
+            itemWhere.productId = product;
+        }
+
         const items = await OrderItem.findAll({
+            where: itemWhere,
             include: [
                 {
                     model: Order,

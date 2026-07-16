@@ -32,7 +32,7 @@ exports.getAllIssuedVouchers = async (req, res) => {
         let redeemedValue = 0;
 
         for (const v of vouchers) {
-            const val = v.value || 0;
+            const val = parseFloat(v.value) || 0;
             if (v.status === 'active') {
                 totalActiveCount++;
                 activeValue += val;
